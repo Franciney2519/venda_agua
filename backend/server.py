@@ -51,8 +51,13 @@ class ResourceInput(BaseModel):
     signature: Optional[str] = None
     delivered_at: Optional[str] = None
     notes: Optional[str] = None
+    payment_method: Optional[str] = None
+    received_value: Optional[float] = None
+    problem_type: Optional[str] = None
+    problem_quantity: Optional[int] = None
 
 def now(): return datetime.now(timezone.utc).isoformat()
+def delivered_value(d): return float(d.get("received_value") if d.get("received_value") is not None else d.get("value", 0))
 def hash_password(password): return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 def check_password(password, hashed): return bcrypt.checkpw(password.encode(), hashed.encode())
 def token_for(user): return jwt.encode({"sub": user["id"], "email": user["email"], "role": user["role"], "exp": datetime.now(timezone.utc)+timedelta(hours=12)}, os.environ["JWT_SECRET"], algorithm=JWT_ALGORITHM)
@@ -109,7 +114,7 @@ async def dashboard(user=Depends(current_user)):
     deliveries = await db.deliveries.find({}, {"_id": 0}).sort("created_at", -1).to_list(20)
     products = await db.products.find({}, {"_id": 0}).to_list(100)
     expenses = await db.expenses.find({}, {"_id": 0}).to_list(100)
-    revenue = sum(float(d.get("value", 0)) for d in deliveries if d.get("status") == "delivered")
+    revenue = sum(delivered_value(d) for d in deliveries if d.get("status") == "delivered")
     return {"revenue": revenue, "expenses": sum(float(e.get("amount", 0)) for e in expenses), "deliveries": deliveries, "products": products, "expenses_list": expenses, "user": user}
 
 async def list_resource(collection): return await db[collection].find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
@@ -237,7 +242,7 @@ async def daily_closing(date: Optional[str] = None, user=Depends(admin_user)):
         name = d.get("driver") or "Sem entregador"
         row = drivers.setdefault(name, {"driver": name, "deliveries_total": 0, "deliveries_done": 0, "revenue": 0, "expenses_approved": 0, "expenses_pending": 0, "expenses_rejected": 0, "balance": 0})
         row["deliveries_total"] += 1
-        if d.get("status") == "delivered": row["deliveries_done"] += 1; row["revenue"] += float(d.get("value", 0))
+        if d.get("status") == "delivered": row["deliveries_done"] += 1; row["revenue"] += delivered_value(d)
     for e in expenses:
         name = e.get("driver") or "Sem entregador"
         row = drivers.setdefault(name, {"driver": name, "deliveries_total": 0, "deliveries_done": 0, "revenue": 0, "expenses_approved": 0, "expenses_pending": 0, "expenses_rejected": 0, "balance": 0})
@@ -266,9 +271,9 @@ async def reports(start: Optional[str] = None, end: Optional[str] = None, user=D
     for item in deliveries:
         name = item.get("driver") or "Sem entregador"
         row = drivers.setdefault(name, {"driver": name, "deliveries": 0, "delivered": 0, "revenue": 0})
-        row["deliveries"] += 1; row["revenue"] += float(item.get("value", 0))
+        row["deliveries"] += 1; row["revenue"] += delivered_value(item)
         if item.get("status") == "delivered": row["delivered"] += 1
-    return {"revenue": sum(float(x.get("value", 0)) for x in deliveries if x.get("status") == "delivered"), "expenses": sum(float(x.get("amount", 0)) for x in expenses), "deliveries": len(deliveries), "low_stock": sum(1 for x in products if x.get("quantity", 0) < x.get("minimum", 0)), "drivers": list(drivers.values()), "products": products, "period": {"start": start, "end": end}}
+    return {"revenue": sum(delivered_value(x) for x in deliveries if x.get("status") == "delivered"), "expenses": sum(float(x.get("amount", 0)) for x in expenses), "deliveries": len(deliveries), "low_stock": sum(1 for x in products if x.get("quantity", 0) < x.get("minimum", 0)), "drivers": list(drivers.values()), "products": products, "period": {"start": start, "end": end}}
 
 @api.get("/reports/export.csv", response_class=PlainTextResponse)
 async def export_reports_csv(start: Optional[str] = None, end: Optional[str] = None, user=Depends(admin_user)):
@@ -286,9 +291,9 @@ async def export_reports_csv(start: Optional[str] = None, end: Optional[str] = N
     w.writerow(["Período", start or "início", end or "hoje"])
     w.writerow([])
     w.writerow(["ENTREGAS"])
-    w.writerow(["Data", "Cliente", "Endereço", "Entregador", "Produto", "Qtd", "Valor", "Status"])
+    w.writerow(["Data", "Cliente", "Endereço", "Entregador", "Produto", "Qtd", "Valor", "Valor recebido", "Forma pagto", "Qtd c/ problema", "Tipo problema", "Status"])
     for d in deliveries:
-        w.writerow([d.get("created_at",""), d.get("customer",""), d.get("address",""), d.get("driver",""), d.get("product",""), d.get("quantity",""), d.get("value",""), d.get("status","")])
+        w.writerow([d.get("created_at",""), d.get("customer",""), d.get("address",""), d.get("driver",""), d.get("product",""), d.get("quantity",""), d.get("value",""), d.get("received_value",""), d.get("payment_method",""), d.get("problem_quantity",""), d.get("problem_type",""), d.get("status","")])
     w.writerow([])
     w.writerow(["DESPESAS"])
     w.writerow(["Data", "Tipo", "Entregador", "Valor", "Status"])

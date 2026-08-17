@@ -77,11 +77,11 @@ function Stat({ label, value, detail, Icon, tone = '' }) { return <div className
 
 function Modal({ title, fields, onClose, onSave }) { const [form, setForm] = useState({}), [error, setError] = useState(''); async function submit(e) { e.preventDefault(); if (fields.some(x => x.required !== false && !String(form[x.key] || '').trim())) return setError('Preencha os campos obrigatórios.'); try { await onSave(form) } catch (e) { setError(e.response?.data?.detail || 'Não foi possível salvar.') } } return <div className="modal-backdrop"><form className="quick-modal" onSubmit={submit}><button type="button" className="modal-close" onClick={onClose} data-testid="modal-close-button"><X /></button><p className="eyebrow">NOVO LANÇAMENTO</p><h3>{title}</h3>{fields.map(f => <label key={f.key}>{f.label}{f.options ? <select required={f.required !== false} data-testid={`modal-${f.key}-input`} onChange={e => setForm({ ...form, [f.key]: e.target.value })}><option value="">Selecione</option>{f.options.map(x => <option key={x}>{x}</option>)}</select> : <input required={f.required !== false} type={f.type || 'text'} data-testid={`modal-${f.key}-input`} onChange={e => setForm({ ...form, [f.key]: e.target.value })} />}</label>)}{error && <div className="error" data-testid="form-validation-error">{error}</div>}<button className="primary full" data-testid="modal-submit-button"><Save size={16} /> Salvar lançamento</button></form></div> }
 
-const fields = { product: [{ key: 'name', label: 'Nome do produto' }, { key: 'category', label: 'Categoria', options: ['Retornável', 'Descartável'] }, { key: 'quantity', label: 'Quantidade', type: 'number' }, { key: 'minimum', label: 'Estoque mínimo', type: 'number' }], delivery: [{ key: 'customer', label: 'Cliente' }, { key: 'address', label: 'Endereço' }, { key: 'driver', label: 'Entregador' }, { key: 'product', label: 'Produto' }, { key: 'quantity', label: 'Quantidade', type: 'number' }, { key: 'value', label: 'Valor', type: 'number' }], expense: [{ key: 'type', label: 'Categoria', options: ['Combustível', 'Pedágio', 'Manutenção', 'Outros'] }, { key: 'driver', label: 'Entregador' }, { key: 'amount', label: 'Valor', type: 'number' }], customer: [{ key: 'name', label: 'Nome / empresa' }, { key: 'address', label: 'Endereço' }, { key: 'phone', label: 'Telefone', required: false }] };
+const fields = { product: [{ key: 'name', label: 'Nome do produto' }, { key: 'category', label: 'Categoria', options: ['Retornável', 'Descartável'] }, { key: 'quantity', label: 'Quantidade', type: 'number' }, { key: 'minimum', label: 'Estoque mínimo', type: 'number' }], delivery: [{ key: 'customer', label: 'Cliente' }, { key: 'address', label: 'Endereço' }, { key: 'driver', label: 'Entregador' }, { key: 'product', label: 'Produto' }, { key: 'quantity', label: 'Quantidade', type: 'number' }, { key: 'value', label: 'Valor', type: 'number' }], expense: [{ key: 'type', label: 'Categoria', options: ['Combustível', 'Alimentação', 'Pedágio', 'Manutenção', 'Outros'] }, { key: 'driver', label: 'Entregador' }, { key: 'amount', label: 'Valor', type: 'number' }], customer: [{ key: 'name', label: 'Nome / empresa' }, { key: 'address', label: 'Endereço' }, { key: 'phone', label: 'Telefone', required: false }] };
 
 function Dashboard({ data, create }) { return <><Head eyebrow="PAINEL DE CONTROLE" title="Visão geral" subtitle="Acompanhe a saúde da sua operação em um só lugar." action="Nova entrega" onAction={() => create('delivery')} /><div className="stats"><Stat label="Receita no mês" value={money(data?.revenue)} detail="Receitas concluídas" Icon={CircleDollarSign} /><Stat label="Despesas pendentes" value={money(data?.expenses)} detail="Aguardando aprovação" Icon={WalletCards} tone="orange" /><Stat label="Entregas hoje" value={data?.deliveries?.length || 0} detail="Rotas em acompanhamento" Icon={Truck} tone="green" /><Stat label="Alertas de estoque" value={data?.products?.filter(x => x.quantity < x.minimum).length || 0} detail="Itens abaixo do mínimo" Icon={AlertTriangle} tone="red" /></div><div className="dashboard-grid"><section className="panel performance"><div className="panel-head"><div><h3>Desempenho financeiro</h3><p className="muted">Visão acumulada da operação</p></div><BarChart3 className="blue-text" /></div><div className="chart"><div className="bars">{[45, 62, 54, 78, 66, 92].map((h, i) => <div className="bar-group" key={i}><div className="bar revenue" style={{ height: `${h}%` }} /><div className="bar expense" style={{ height: `${h * .3}%` }} /><span>{['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun'][i]}</span></div>)}</div></div></section><section className="panel route-panel"><div className="panel-head"><div><h3>Rotas de hoje</h3><p className="muted">Status da operação</p></div><Map size={20} className="blue-text" /></div>{['Rota Norte · Carlos Mendes', 'Rota Centro · Ana Souza', 'Rota Sul · João Lima'].map((x, i) => <div className="route" key={x}><div className={`route-icon ${i === 0 ? 'green-bg' : i === 1 ? 'blue-bg' : 'gray-bg'}`}>{i === 0 ? <CheckCircle2 size={18} /> : i === 1 ? <Truck size={18} /> : <Clock3 size={18} />}</div><div><b>{x}</b><small>{i === 0 ? '8 de 8 paradas concluídas' : i === 1 ? '4 de 7 paradas concluídas' : '6 paradas programadas'}</small></div><span className={`tag ${i === 0 ? 'green' : i === 1 ? 'blue' : 'gray'}`}>{i === 0 ? 'Concluída' : i === 1 ? 'Em rota' : 'Pendente'}</span></div>)}</section></div></> }
 
-function Deliveries({ data, setData, create }) { const [filter, setFilter] = useState('all'); const rows = (data?.deliveries || []).filter(x => filter === 'all' || x.status === filter); async function change(d, status) { await api.patch(`/deliveries/${d.id}`, { status }, auth()); setData({ ...data, deliveries: data.deliveries.map(x => x.id === d.id ? { ...x, status } : x) }) } return <><Head eyebrow="LOGÍSTICA" title="Entregas" subtitle="Acompanhe cada entrega e status da rota." action="Lançar entrega" onAction={() => create('delivery')} /><div className="filter-row"><button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')} data-testid="delivery-filter-all">Todas</button><button className={filter === 'pending' ? 'active' : ''} onClick={() => setFilter('pending')} data-testid="delivery-filter-pending">Pendentes</button><button className={filter === 'in_transit' ? 'active' : ''} onClick={() => setFilter('in_transit')} data-testid="delivery-filter-in-transit">Em rota</button></div><section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CLIENTE</th><th>PRODUTO</th><th>ENTREGADOR</th><th>VALOR</th><th>STATUS</th></tr></thead><tbody>{rows.map(d => <tr key={d.id}><td><b>{d.customer}</b><small>{d.address}</small></td><td>{d.product}<small>{d.quantity} unidades</small></td><td>{d.driver}</td><td>{money(d.value)}</td><td><select data-testid={`delivery-status-${d.id}`} value={d.status} onChange={e => change(d, e.target.value)}><option value="pending">Pendente</option><option value="in_transit">Em rota</option><option value="delivered">Entregue</option><option value="failed">Não realizada</option><option value="damaged">Avaria</option></select></td></tr>)}</tbody></table></div></section></> }
+function Deliveries({ data, setData, create }) { const [filter, setFilter] = useState('all'); const rows = (data?.deliveries || []).filter(x => filter === 'all' || x.status === filter); async function change(d, status) { await api.patch(`/deliveries/${d.id}`, { status }, auth()); setData({ ...data, deliveries: data.deliveries.map(x => x.id === d.id ? { ...x, status } : x) }) } return <><Head eyebrow="LOGÍSTICA" title="Entregas" subtitle="Acompanhe cada entrega e status da rota." action="Lançar entrega" onAction={() => create('delivery')} /><div className="filter-row"><button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')} data-testid="delivery-filter-all">Todas</button><button className={filter === 'pending' ? 'active' : ''} onClick={() => setFilter('pending')} data-testid="delivery-filter-pending">Pendentes</button><button className={filter === 'in_transit' ? 'active' : ''} onClick={() => setFilter('in_transit')} data-testid="delivery-filter-in-transit">Em rota</button></div><section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CLIENTE</th><th>PRODUTO</th><th>ENTREGADOR</th><th>VALOR</th><th>STATUS</th></tr></thead><tbody>{rows.map(d => <tr key={d.id}><td><b>{d.customer}</b><small>{d.address}</small></td><td>{d.product}<small>{d.quantity} unidades</small></td><td>{d.driver}</td><td>{money(d.value)}{d.received_value != null && <small>Recebido: {money(d.received_value)}{d.payment_method ? ` · ${d.payment_method}` : ''}</small>}{d.problem_quantity > 0 && <small className="orange-text">{d.problem_quantity} un. com {d.problem_type?.toLowerCase()}</small>}</td><td><select data-testid={`delivery-status-${d.id}`} value={d.status} onChange={e => change(d, e.target.value)}><option value="pending">Pendente</option><option value="in_transit">Em rota</option><option value="delivered">Entregue</option><option value="failed">Não realizada</option><option value="damaged">Avaria</option></select></td></tr>)}</tbody></table></div></section></> }
 
 function SignaturePad({ onSave, onCancel }) {
   const canvasRef = useRef(null);
@@ -113,7 +113,66 @@ function SignaturePad({ onSave, onCancel }) {
   </div></div>
 }
 
+const PAYMENT_METHODS = ['Dinheiro', 'Pix', 'Cartão', 'Boleto'];
+const PROBLEM_TYPES = ['Vazamento', 'Microfuros', 'Outro'];
+
+function CompleteDeliveryModal({ delivery, onNext, onCancel }) {
+  const unitValue = delivery.quantity ? Number(delivery.value || 0) / delivery.quantity : 0;
+  const [problemQty, setProblemQty] = useState(0);
+  const [problemType, setProblemType] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState(PAYMENT_METHODS[0]);
+  const [receivedValue, setReceivedValue] = useState(delivery.value);
+  const [error, setError] = useState('');
+
+  function onProblemQtyChange(v) {
+    const qty = Math.max(0, Math.min(delivery.quantity || 0, Number(v) || 0));
+    setProblemQty(qty);
+    const okQty = (delivery.quantity || 0) - qty;
+    setReceivedValue(Number((okQty * unitValue).toFixed(2)));
+  }
+
+  function submit(e) {
+    e.preventDefault();
+    if (problemQty > 0 && !problemType) return setError('Selecione o tipo de problema identificado.');
+    onNext({
+      payment_method: paymentMethod,
+      received_value: Number(receivedValue) || 0,
+      problem_quantity: Number(problemQty) || 0,
+      problem_type: problemQty > 0 ? problemType : null,
+    });
+  }
+
+  return <div className="modal-backdrop"><form className="quick-modal" onSubmit={submit}>
+    <button type="button" className="modal-close" onClick={onCancel} data-testid="complete-delivery-close"><X /></button>
+    <p className="eyebrow">CONFIRMAÇÃO DE ENTREGA</p>
+    <h3>{delivery.customer}</h3>
+    <p className="muted">{delivery.quantity} {delivery.product} · pedido de {money(delivery.value)}</p>
+    <label>Itens com problema (vazamento / microfuros)
+      <input type="number" min="0" max={delivery.quantity} value={problemQty} data-testid="problem-quantity-input" onChange={e => onProblemQtyChange(e.target.value)} />
+    </label>
+    {problemQty > 0 && <label>Tipo de problema
+      <select required value={problemType} data-testid="problem-type-input" onChange={e => setProblemType(e.target.value)}>
+        <option value="">Selecione</option>
+        {PROBLEM_TYPES.map(x => <option key={x}>{x}</option>)}
+      </select>
+    </label>}
+    {problemQty > 0 && <p className="muted" data-testid="problem-return-note">{problemQty} un. serão devolvidas ao estoque por avaria.</p>}
+    <label>Valor recebido
+      <input type="number" step="0.01" min="0" value={receivedValue} data-testid="received-value-input" onChange={e => setReceivedValue(e.target.value)} />
+    </label>
+    <label>Forma de pagamento
+      <select value={paymentMethod} data-testid="payment-method-input" onChange={e => setPaymentMethod(e.target.value)}>
+        {PAYMENT_METHODS.map(x => <option key={x}>{x}</option>)}
+      </select>
+    </label>
+    {error && <div className="error" data-testid="complete-delivery-error">{error}</div>}
+    <button className="primary full" data-testid="complete-delivery-continue"><Check size={16} /> Continuar para assinatura</button>
+  </form></div>
+}
+
 function MyRoute({ data, setData, user }) {
+  const [completing, setCompleting] = useState(null);
+  const [pendingExtra, setPendingExtra] = useState(null);
   const [signing, setSigning] = useState(null);
   const [busy, setBusy] = useState(null);
   const stops = (data?.deliveries || []).filter(d => d.driver === user.name);
@@ -126,9 +185,15 @@ function MyRoute({ data, setData, user }) {
     setData({ ...data, deliveries: data.deliveries.map(x => x.id === d.id ? { ...x, ...updated } : x) });
     setBusy(null);
   }
+  function proceedToSignature(extra) {
+    setPendingExtra(extra);
+    setSigning(completing);
+    setCompleting(null);
+  }
   async function completeWithSignature(signature) {
     const d = signing; setSigning(null);
-    await updateStatus(d, 'delivered', { signature, delivered_at: new Date().toISOString() });
+    const extra = pendingExtra; setPendingExtra(null);
+    await updateStatus(d, 'delivered', { signature, delivered_at: new Date().toISOString(), ...extra });
   }
 
   const tag = { pending: ['gray', 'Aguardando'], in_transit: ['blue', 'Em rota'], delivered: ['green', 'Entregue'], failed: ['red', 'Não realizada'], damaged: ['orange', 'Avaria'] };
@@ -153,14 +218,20 @@ function MyRoute({ data, setData, user }) {
             <span><CircleDollarSign size={13} /> {money(d.value)}</span>
           </div>
           {d.signature && <div className="stop-signature-preview"><img src={d.signature} alt="Assinatura" data-testid={`signature-preview-${d.id}`} /><small>Recebido{d.delivered_at ? ` em ${new Date(d.delivered_at).toLocaleString('pt-BR')}` : ''}</small></div>}
+          {isDone && (d.payment_method || d.received_value != null || d.problem_quantity > 0) && <div className="stop-card-body" data-testid={`stop-summary-${d.id}`}>
+            {d.payment_method && <span><Wallet size={13} /> {d.payment_method}</span>}
+            {d.received_value != null && <span><CircleDollarSign size={13} /> Recebido: {money(d.received_value)}</span>}
+            {d.problem_quantity > 0 && <span className="tag orange"><AlertTriangle size={13} /> {d.problem_quantity} un. com {d.problem_type?.toLowerCase()}</span>}
+          </div>}
           {!isDone && <div className="stop-card-actions">
             {d.status === 'pending' && <button className="ghost-btn" data-testid={`start-stop-${d.id}`} disabled={busy === d.id} onClick={() => updateStatus(d, 'in_transit')}><Truck size={14} /> Iniciar</button>}
-            <button className="primary" data-testid={`complete-stop-${d.id}`} disabled={busy === d.id} onClick={() => setSigning(d)}><Check size={14} /> Concluir parada</button>
+            <button className="primary" data-testid={`complete-stop-${d.id}`} disabled={busy === d.id} onClick={() => setCompleting(d)}><Check size={14} /> Concluir parada</button>
             <button className="action-btn reject" data-testid={`fail-stop-${d.id}`} disabled={busy === d.id} onClick={() => updateStatus(d, 'failed')}><XCircle size={13} /> Não realizada</button>
           </div>}
         </article>
       })}
     </div>
+    {completing && <CompleteDeliveryModal delivery={completing} onNext={proceedToSignature} onCancel={() => setCompleting(null)} />}
     {signing && <SignaturePad onSave={completeWithSignature} onCancel={() => setSigning(null)} />}
   </>
 }
