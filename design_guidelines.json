@@ -1,0 +1,78 @@
+{
+  "app_name": "HydroSaaS - Water Distribution & Fleet ERP",
+  "app_type": "hybrid_fullstack",
+  "target_audience": "Water distribution companies, route managers, delivery drivers, and administrative staff",
+  "emotional_tone": "Professional, reliable, crisp, precision-oriented, and efficient",
+  "archetype": "ARCHETYPE 1 & 4 (Organic & Earthy / Swiss & High-Contrast)",
+  "color_system": {
+    "primary": "#0066CC",
+    "primary_hover": "#0052A3",
+    "secondary": "#E0F2FE",
+    "accent": "#0EA5E9",
+    "background_light": "#F8FAFC",
+    "background_dark": "#0F172A",
+    "surface_light": "#FFFFFF",
+    "surface_dark": "#1E293B",
+    "text_primary": "#0F172A",
+    "text_secondary": "#475569",
+    "border_color": "#CBD5E1",
+    "success": "#10B981",
+    "warning": "#F59E0B",
+    "danger": "#EF4444"
+  },
+  "typography": {
+    "heading_font": "Plus Jakarta Sans, sans-serif",
+    "body_font": "Inter, sans-serif",
+    "mono_font": "JetBrains Mono, monospace",
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl font-extrabold tracking-tight",
+      "h2": "text-2xl sm:text-3xl font-bold tracking-tight",
+      "h3": "text-xl sm:text-2xl font-semibold",
+      "h4": "text-lg font-semibold",
+      "body": "text-sm sm:text-base text-slate-600 dark:text-slate-300"
+    }
+  },
+  "visual_enhancers": {
+    "border_radius": "rounded-xl",
+    "shadows": "shadow-[0_8px_30px_rgb(0,0,0,0.04)]",
+    "glassmorphism": "backdrop-blur-xl bg-white/80 dark:bg-slate-900/80 border border-slate-200/50 dark:border-slate-800/50",
+    "textures": "Subtle dot grid background pattern"
+  },
+  "components_strategy": {
+    "framework": "React 18 + Tailwind CSS",
+    "ui_library": "Shadcn/UI primitives + Lucide React Icons",
+    "charts": "Recharts for financial, inventory, and delivery analytics",
+    "state_management": "React useState, Context API, and LocalStorage persistence for demo"
+  },
+  "key_modules": [
+    "Admin Dashboard: Real-time KPIs, Revenue vs Expenses, Fleet status, Stock alerts",
+    "Product & Inventory Management: SKU management, minimum stock thresholds, returnable bottle tracking (Galões 20L)",
+    "Customer & Order Management: Customer database, delivery addresses, order placement",
+    "Delivery & Route Control: Route builder, stop sequencing, driver assignment, real-time status (Pending, In Transit, Delivered, Failed, Damaged Bottle)",
+    "Driver Operational Portal: Mobile-optimized view for delivery staff to execute routes, update statuses, and log collections/damages",
+    "Financial & Expense Control: Driver daily cash/pix collections, expense logging, admin approval workflow with net reconciliation"
+  ],
+  "image_urls": [
+    {
+      "category": "hero_background",
+      "url": "https://images.unsplash.com/photo-1642738535034-e32c0be029c1?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDF8MHwxfHNlYXJjaHwzfHx3YXRlciUyMGRlbGl2ZXJ5JTIwdHJ1Y2slMjB3YXJlaG91c2UlMjBib3R0bGVzfGVufDB8fHx8MTc4NjkyNTg5M3ww&ixlib=rb-4.1.0&q=85",
+      "description": "Water distribution truck loaded with bottles"
+    },
+    {
+      "category": "warehouse_stock",
+      "url": "https://images.unsplash.com/photo-1685483749753-0dab7e144794?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDF8MHwxfHNlYXJjaHwxfHx3YXRlciUyMGRlbGl2ZXJ5JTIwdHJ1Y2slMjB3YXJlaG91c2UlMjBib3R0bGVzfGVufDB8fHx8MTc4NjkyNTg5M3ww&ixlib=rb-4.1.0&q=85",
+      "description": "Warehouse shelves and logistics"
+    },
+    {
+      "category": "delivery_action",
+      "url": "https://images.pexels.com/photos/35345078/pexels-photo-35345078.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "Workers unloading water bottles"
+    }
+  ],
+  "universal_guidelines": [
+    "Every interactive and key informational element MUST include a data-testid attribute.",
+    "NO transparent backgrounds on headers or sticky elements without backdrop blur.",
+    "Responsive mobile-first layout with generous padding (p-6 to p-8).",
+    "All forms use validated inputs, toast notifications via Sonner, and clean states."
+  ]
+}

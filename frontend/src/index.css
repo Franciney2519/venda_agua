@@ -1,0 +1,4 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+*{letter-spacing:0}body{margin:0}a,button,input,select{outline-offset:3px}::selection{background:#b9ddfa;color:#083c68}
