@@ -78,7 +78,7 @@ async def dashboard(user=Depends(current_user)):
 async def list_resource(collection): return await db[collection].find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
 async def create_resource(collection, payload, user):
     doc = payload.model_dump(exclude_none=True); doc.update({"id": str(uuid.uuid4()), "created_at": now(), "created_by": user["id"]})
-    await db[collection].insert_one(doc); return doc
+    await db[collection].insert_one(doc); doc.pop("_id", None); return doc
 
 @api.get("/products")
 async def products(user=Depends(current_user)): return await list_resource("products")
@@ -96,6 +96,22 @@ async def update_delivery(item_id: str, data: ResourceInput, user=Depends(curren
 async def expenses(user=Depends(current_user)): return await list_resource("expenses")
 @api.post("/expenses")
 async def add_expense(data: ResourceInput, user=Depends(current_user)): return await create_resource("expenses", data, user)
+@api.get("/customers")
+async def customers(user=Depends(current_user)): return await list_resource("customers")
+@api.post("/customers")
+async def add_customer(data: ResourceInput, user=Depends(admin_user)): return await create_resource("customers", data, user)
+@api.get("/reports")
+async def reports(user=Depends(admin_user)):
+    deliveries = await db.deliveries.find({}, {"_id": 0}).to_list(1000)
+    expenses = await db.expenses.find({}, {"_id": 0}).to_list(1000)
+    products = await db.products.find({}, {"_id": 0}).to_list(1000)
+    drivers = {}
+    for item in deliveries:
+        name = item.get("driver") or "Sem entregador"
+        row = drivers.setdefault(name, {"driver": name, "deliveries": 0, "delivered": 0, "revenue": 0})
+        row["deliveries"] += 1; row["revenue"] += float(item.get("value", 0))
+        if item.get("status") == "delivered": row["delivered"] += 1
+    return {"revenue": sum(float(x.get("value", 0)) for x in deliveries if x.get("status") == "delivered"), "expenses": sum(float(x.get("amount", 0)) for x in expenses), "deliveries": len(deliveries), "low_stock": sum(1 for x in products if x.get("quantity", 0) < x.get("minimum", 0)), "drivers": list(drivers.values()), "products": products}
 
 @app.on_event("startup")
 async def seed():
