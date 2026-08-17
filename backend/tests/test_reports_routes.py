@@ -1,4 +1,4 @@
-import os, requests, pytest, time
+import os, requests, pytest
 BASE_URL = (os.environ.get('REACT_APP_BACKEND_URL') or 'https://water-delivery-pro-6.preview.emergentagent.com').rstrip('/')
 
 def login(email, password):
@@ -64,30 +64,3 @@ def test_export_csv_admin(admin_token):
 def test_export_csv_driver_forbidden(driver_token):
     r = requests.get(f'{BASE_URL}/api/reports/export.csv', headers=H(driver_token), timeout=20)
     assert r.status_code == 403
-
-# Routes plan (network dependent - accept 200 even without coords)
-def test_routes_plan_admin(admin_token):
-    ds = requests.get(f'{BASE_URL}/api/deliveries', headers=H(admin_token), timeout=20).json()
-    ids = [d['id'] for d in ds][:2]
-    r = requests.post(f'{BASE_URL}/api/routes/plan', headers=H(admin_token),
-                      json={'delivery_ids': ids, 'city':'São Paulo', 'state':'SP'}, timeout=60)
-    assert r.status_code == 200, r.text
-    d = r.json()
-    assert 'stops' in d and 'route' in d
-    assert len(d['stops']) == len(ids)
-    for s in d['stops']:
-        assert 'customer' in s and 'address' in s
-    assert 'distance_m' in d['route'] and 'duration_s' in d['route']
-
-def test_routes_plan_empty(admin_token):
-    r = requests.post(f'{BASE_URL}/api/routes/plan', headers=H(admin_token),
-                      json={'delivery_ids': [], 'city':'São Paulo','state':'SP'}, timeout=20)
-    assert r.status_code == 400
-
-def test_routes_plan_driver_allowed(driver_token):
-    # /routes/plan uses current_user (not admin_user), driver should be able to plan
-    ds = requests.get(f'{BASE_URL}/api/deliveries', headers=H(driver_token), timeout=20).json()
-    ids = [d['id'] for d in ds][:1]
-    r = requests.post(f'{BASE_URL}/api/routes/plan', headers=H(driver_token),
-                      json={'delivery_ids': ids, 'city':'São Paulo','state':'SP'}, timeout=60)
-    assert r.status_code == 200

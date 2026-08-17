@@ -1,29 +1,11 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import axios from "axios";
 import { BrowserRouter, Routes, Route, NavLink, Navigate } from "react-router-dom";
-import { LayoutDashboard, Truck, Package, WalletCards, Users, Map, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, CheckCircle2, Clock3, CircleDollarSign, BarChart3, GripVertical, Save, MapPin, Route as RouteIcon, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle, CalendarCheck, Wallet } from "lucide-react";
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
+import { LayoutDashboard, Truck, Package, WalletCards, Users, Map, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, CheckCircle2, Clock3, CircleDollarSign, BarChart3, GripVertical, Save, MapPin, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle, CalendarCheck, Wallet } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import "@/App.css";
 import "@/Operations.css";
-
-// Fix leaflet default icon paths for bundlers
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-});
-
-const numberedIcon = (n, color = "#0878d1") => L.divIcon({
-  className: "hydro-marker",
-  html: `<div style="background:${color};color:#fff;border:3px solid #fff;border-radius:50%;width:32px;height:32px;display:grid;place-items:center;font-weight:700;font-size:13px;box-shadow:0 4px 10px rgba(16,37,63,.25);font-family:'Space Grotesk',sans-serif;">${n}</div>`,
-  iconSize: [32, 32],
-  iconAnchor: [16, 16],
-});
 
 const api = axios.create({ baseURL: `${process.env.REACT_APP_BACKEND_URL}/api` });
 const auth = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem("hydro_token")}` } });
@@ -100,17 +82,6 @@ const fields = { product: [{ key: 'name', label: 'Nome do produto' }, { key: 'ca
 function Dashboard({ data, create }) { return <><Head eyebrow="PAINEL DE CONTROLE" title="Visão geral" subtitle="Acompanhe a saúde da sua operação em um só lugar." action="Nova entrega" onAction={() => create('delivery')} /><div className="stats"><Stat label="Receita no mês" value={money(data?.revenue)} detail="Receitas concluídas" Icon={CircleDollarSign} /><Stat label="Despesas pendentes" value={money(data?.expenses)} detail="Aguardando aprovação" Icon={WalletCards} tone="orange" /><Stat label="Entregas hoje" value={data?.deliveries?.length || 0} detail="Rotas em acompanhamento" Icon={Truck} tone="green" /><Stat label="Alertas de estoque" value={data?.products?.filter(x => x.quantity < x.minimum).length || 0} detail="Itens abaixo do mínimo" Icon={AlertTriangle} tone="red" /></div><div className="dashboard-grid"><section className="panel performance"><div className="panel-head"><div><h3>Desempenho financeiro</h3><p className="muted">Visão acumulada da operação</p></div><BarChart3 className="blue-text" /></div><div className="chart"><div className="bars">{[45, 62, 54, 78, 66, 92].map((h, i) => <div className="bar-group" key={i}><div className="bar revenue" style={{ height: `${h}%` }} /><div className="bar expense" style={{ height: `${h * .3}%` }} /><span>{['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun'][i]}</span></div>)}</div></div></section><section className="panel route-panel"><div className="panel-head"><div><h3>Rotas de hoje</h3><p className="muted">Status da operação</p></div><Map size={20} className="blue-text" /></div>{['Rota Norte · Carlos Mendes', 'Rota Centro · Ana Souza', 'Rota Sul · João Lima'].map((x, i) => <div className="route" key={x}><div className={`route-icon ${i === 0 ? 'green-bg' : i === 1 ? 'blue-bg' : 'gray-bg'}`}>{i === 0 ? <CheckCircle2 size={18} /> : i === 1 ? <Truck size={18} /> : <Clock3 size={18} />}</div><div><b>{x}</b><small>{i === 0 ? '8 de 8 paradas concluídas' : i === 1 ? '4 de 7 paradas concluídas' : '6 paradas programadas'}</small></div><span className={`tag ${i === 0 ? 'green' : i === 1 ? 'blue' : 'gray'}`}>{i === 0 ? 'Concluída' : i === 1 ? 'Em rota' : 'Pendente'}</span></div>)}</section></div></> }
 
 function Deliveries({ data, setData, create }) { const [filter, setFilter] = useState('all'); const rows = (data?.deliveries || []).filter(x => filter === 'all' || x.status === filter); async function change(d, status) { await api.patch(`/deliveries/${d.id}`, { status }, auth()); setData({ ...data, deliveries: data.deliveries.map(x => x.id === d.id ? { ...x, status } : x) }) } return <><Head eyebrow="LOGÍSTICA" title="Entregas" subtitle="Acompanhe cada entrega e status da rota." action="Lançar entrega" onAction={() => create('delivery')} /><div className="filter-row"><button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')} data-testid="delivery-filter-all">Todas</button><button className={filter === 'pending' ? 'active' : ''} onClick={() => setFilter('pending')} data-testid="delivery-filter-pending">Pendentes</button><button className={filter === 'in_transit' ? 'active' : ''} onClick={() => setFilter('in_transit')} data-testid="delivery-filter-in-transit">Em rota</button></div><section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CLIENTE</th><th>PRODUTO</th><th>ENTREGADOR</th><th>VALOR</th><th>STATUS</th></tr></thead><tbody>{rows.map(d => <tr key={d.id}><td><b>{d.customer}</b><small>{d.address}</small></td><td>{d.product}<small>{d.quantity} unidades</small></td><td>{d.driver}</td><td>{money(d.value)}</td><td><select data-testid={`delivery-status-${d.id}`} value={d.status} onChange={e => change(d, e.target.value)}><option value="pending">Pendente</option><option value="in_transit">Em rota</option><option value="delivered">Entregue</option><option value="failed">Não realizada</option><option value="damaged">Avaria</option></select></td></tr>)}</tbody></table></div></section></> }
-
-function FitToBounds({ points }) {
-  const map = useMap();
-  useEffect(() => {
-    if (points && points.length) {
-      const bounds = L.latLngBounds(points.map(p => [p.lat, p.lng]));
-      map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
-    }
-  }, [points, map]);
-  return null;
-}
 
 function SignaturePad({ onSave, onCancel }) {
   const canvasRef = useRef(null);
@@ -196,75 +167,28 @@ function MyRoute({ data, setData, user }) {
 
 function RoutesPage({ data, setData }) {
   const [stops, setStops] = useState(data?.deliveries || []);
-  const [plan, setPlan] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   useEffect(() => setStops(data?.deliveries || []), [data]);
 
   function move(i, d) { const a = [...stops], j = i + d; if (j >= 0 && j < a.length)[a[i], a[j]] = [a[j], a[i]]; setStops(a) }
 
-  async function calcRoute() {
-    setLoading(true); setError('');
-    try {
-      const ids = stops.map(x => x.id);
-      const { data: r } = await api.post('/routes/plan', { delivery_ids: ids, city: 'São Paulo', state: 'SP' }, auth());
-      setPlan(r);
-    } catch (e) {
-      setError(e.response?.data?.detail || 'Não foi possível calcular a rota. Verifique os endereços.');
-    } finally { setLoading(false); }
-  }
-
-  const geocoded = (plan?.stops || []).filter(s => s.lat && s.lng);
-  const polyline = plan?.route?.geometry?.length ? plan.route.geometry.map(c => [c[1], c[0]]) : geocoded.map(s => [s.lat, s.lng]);
-  const distanceKm = plan?.route ? (plan.route.distance_m / 1000).toFixed(1) : null;
-  const durationMin = plan?.route ? Math.round(plan.route.duration_s / 60) : null;
-  const center = geocoded[0] ? [geocoded[0].lat, geocoded[0].lng] : [-23.5505, -46.6333];
-
-  return <><Head eyebrow="PLANEJAMENTO" title="Rotas" subtitle="Ordene as paradas, calcule distâncias reais e visualize no mapa." action={loading ? "Calculando..." : "Traçar rota real"} onAction={calcRoute} actionTestId="calculate-route-button" />
-    <div className="route-builder">
+  return <><Head eyebrow="PLANEJAMENTO" title="Rotas" subtitle="Defina manualmente a sequência das entregas do dia." />
+    <div className="manual-route">
       <section className="panel stop-list" data-testid="stop-list-panel">
         <div className="panel-head"><div><h3>Rota Centro · 18 junho</h3><p className="muted">Sequência de paradas</p></div><span className="tag blue" data-testid="stop-count-tag">{stops.length} paradas</span></div>
-        {stops.map((s, i) => {
-          const geo = (plan?.stops || []).find(x => x.id === s.id);
-          const located = geo && geo.lat;
-          return <div className="stop-row" key={s.id} data-testid={`stop-row-${s.id}`}>
+        {stops.length === 0 && <div className="empty-state" data-testid="no-route-stops">Nenhuma entrega disponível para organizar.</div>}
+        {stops.map((s, i) => <div className="stop-row" key={s.id} data-testid={`stop-row-${s.id}`}>
             <GripVertical size={18} className="grip" />
             <span className="stop-number">{i + 1}</span>
             <div>
               <b>{s.customer}</b>
               <small>{s.address}</small>
-              {plan && <small className={located ? "geo-ok" : "geo-fail"}>{located ? <><MapPin size={11} /> {geo.display_name?.split(',').slice(0, 2).join(',')}</> : <><AlertTriangle size={11} /> Endereço não localizado</>}</small>}
             </div>
             <div className="stop-actions">
-              <button data-testid={`route-up-${s.id}`} onClick={() => move(i, -1)}>↑</button>
-              <button data-testid={`route-down-${s.id}`} onClick={() => move(i, 1)}>↓</button>
+              <button aria-label={`Mover ${s.customer} para cima`} disabled={i === 0} data-testid={`route-up-${s.id}`} onClick={() => move(i, -1)}>↑</button>
+              <button aria-label={`Mover ${s.customer} para baixo`} disabled={i === stops.length - 1} data-testid={`route-down-${s.id}`} onClick={() => move(i, 1)}>↓</button>
             </div>
-          </div>
-        })}
-        <button className="secondary-btn" data-testid="save-order-button" onClick={() => setData({ ...data, deliveries: stops })}><Save size={14} /> Salvar sequência</button>
-      </section>
-
-      <section className="panel map-preview" data-testid="map-panel">
-        <div className="map-toolbar">
-          <div>
-            <b><RouteIcon size={14} /> {plan ? `${distanceKm} km · ${durationMin} min` : 'Rota real via OpenStreetMap'}</b>
-            <span>{plan ? `${geocoded.length} de ${plan.stops.length} paradas localizadas` : 'Clique em "Traçar rota real" para calcular'}</span>
-          </div>
-          {loading && <Loader2 size={18} className="spin blue-text" />}
-        </div>
-        <div className="leaflet-wrap" data-testid="leaflet-map">
-          <MapContainer center={center} zoom={12} style={{ height: '100%', width: '100%' }} scrollWheelZoom={false}>
-            <TileLayer attribution='&copy; OpenStreetMap' url="https://{s}.tile.openstreetmap.org/{z}/{y}/{x}.png" />
-            {geocoded.map((s, i) => (
-              <Marker key={s.id} position={[s.lat, s.lng]} icon={numberedIcon(i + 1)}>
-                <Popup><b>{s.customer}</b><br />{s.address}</Popup>
-              </Marker>
-            ))}
-            {polyline.length >= 2 && <Polyline positions={polyline} pathOptions={{ color: '#0878d1', weight: 4, opacity: 0.75 }} />}
-            {geocoded.length > 0 && <FitToBounds points={geocoded} />}
-          </MapContainer>
-        </div>
-        {error && <div className="error map-error" data-testid="route-error">{error}</div>}
+          </div>)}
+        {stops.length > 0 && <button className="secondary-btn" data-testid="save-order-button" onClick={() => setData({ ...data, deliveries: stops })}><Save size={14} /> Salvar sequência</button>}
       </section>
     </div>
   </>

@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 from pathlib import Path
-import os, uuid, logging, bcrypt, jwt, time, requests
+import os, uuid, logging, bcrypt, jwt
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends, Response
@@ -51,11 +51,6 @@ class ResourceInput(BaseModel):
     signature: Optional[str] = None
     delivered_at: Optional[str] = None
     notes: Optional[str] = None
-
-class RoutePlanInput(BaseModel):
-    delivery_ids: list[str] = []
-    city: str = "São Paulo"
-    state: str = "SP"
 
 def now(): return datetime.now(timezone.utc).isoformat()
 def hash_password(password): return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
@@ -300,33 +295,6 @@ async def export_reports_csv(start: Optional[str] = None, end: Optional[str] = N
     for e in expenses:
         w.writerow([e.get("created_at",""), e.get("type",""), e.get("driver",""), e.get("amount",""), e.get("status","")])
     return Response(content=buf.getvalue(), media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="hydroflow-relatorio.csv"'})
-
-@api.post("/routes/plan")
-async def plan_route(data: RoutePlanInput, user=Depends(current_user)):
-    deliveries = await db.deliveries.find({"id": {"$in": data.delivery_ids}}, {"_id": 0}).to_list(100)
-    if not deliveries: raise HTTPException(400, "Nenhuma parada selecionada")
-    stops = []
-    for delivery in deliveries:
-        query = f"{delivery.get('address', '')}, {data.city}, {data.state}, Brasil"
-        cached = await db.geocodes.find_one({"query": query}, {"_id": 0})
-        result = cached
-        if not result:
-            response = requests.get("https://nominatim.openstreetmap.org/search", params={"q": query, "format": "jsonv2", "limit": 1, "addressdetails": 1}, headers={"User-Agent": "HydroFlow/1.0 route-planner"}, timeout=12)
-            matches = response.json() if response.ok else []
-            if matches:
-                result = {"query": query, "lat": float(matches[0]["lat"]), "lng": float(matches[0]["lon"]), "display_name": matches[0].get("display_name", query)}
-                await db.geocodes.update_one({"query": query}, {"$set": result}, upsert=True)
-            time.sleep(1.05)
-        stops.append({"id": delivery["id"], "customer": delivery.get("customer"), "address": delivery.get("address"), "lat": result.get("lat") if result else None, "lng": result.get("lng") if result else None, "display_name": result.get("display_name") if result else "Endereço não encontrado"})
-    located = [x for x in stops if x["lat"] is not None and x["lng"] is not None]
-    route = {"distance_m": 0, "duration_s": 0, "geometry": []}
-    if len(located) >= 2:
-        coordinates = ";".join(f"{x['lng']},{x['lat']}" for x in located)
-        response = requests.get(f"https://router.project-osrm.org/route/v1/driving/{coordinates}", params={"overview": "full", "geometries": "geojson"}, headers={"User-Agent": "HydroFlow/1.0 route-planner"}, timeout=15)
-        if response.ok and response.json().get("routes"):
-            selected = response.json()["routes"][0]
-            route = {"distance_m": selected["distance"], "duration_s": selected["duration"], "geometry": selected.get("geometry", {}).get("coordinates", [])}
-    return {"stops": stops, "route": route, "provider": "OpenStreetMap + OSRM"}
 
 @app.on_event("startup")
 async def seed():

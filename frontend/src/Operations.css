@@ -52,3 +52,5 @@
   .stop-card-actions{flex-direction:column}
   .stop-card-actions>*{width:100%;justify-content:center}
 }.blue-text{color:#0878d1}@media(max-width:800px){.route-builder{grid-template-columns:1fr}.map-preview{min-height:260px}.report-toolbar{flex-wrap:wrap}.report-toolbar div{min-width:100%}}
+.manual-route{max-width:860px}
+.stop-actions button:disabled{cursor:not-allowed;opacity:.35}

@@ -13,12 +13,11 @@ Perfis Admin/Entregador; entregas com rota e ordem; statuses pendente, em rota, 
 - Dashboard, entregas, estoque, financeiro e clientes com navegação responsiva.
 - APIs MongoDB para dashboard, produtos, entregas, despesas e atualização de status.
 - Dados iniciais de operação para demonstração.
-- Editor de rotas com ordenação de paradas, mapa visual e salvamento da sequência.
+- Editor de rotas com ordenação manual de paradas e salvamento da sequência, sem integração com mapas externos.
 - Relatórios operacionais com receita, despesas, alertas de estoque e desempenho por entregador.
 - Formulários validados para produtos, clientes, entregas e despesas, persistidos via API.
 - Proteção para impedir acesso de entregador ao relatório administrativo.
 ## Backlog priorizado
 - P0: aprovação de despesas e tela mobile dedicada do entregador.
-- P1: mapa integrado com geocodificação real e distância calculada.
 - P1: filtros de período aplicados às consultas de relatórios.
 - P2: relatórios exportáveis e notificações de estoque.
