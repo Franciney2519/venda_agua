@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import axios from "axios";
 import { BrowserRouter, Routes, Route, NavLink, Navigate } from "react-router-dom";
-import { LayoutDashboard, Truck, Package, WalletCards, Users, Map, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, CheckCircle2, Clock3, CircleDollarSign, BarChart3, GripVertical, Save, MapPin, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle, CalendarCheck, Wallet } from "lucide-react";
+import { LayoutDashboard, Truck, Package, WalletCards, Users, Map, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, CheckCircle2, Clock3, CircleDollarSign, BarChart3, GripVertical, Save, MapPin, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle, CalendarCheck, Wallet, Eye, EyeOff } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import "@/App.css";
@@ -32,7 +32,7 @@ function Shell({ user, onLogout, notifications, children }) {
 
 function Login({ onLogin }) {
   const [mode, setMode] = useState('login');
-  const [email, setEmail] = useState('admin@hydroflow.com'), [password, setPassword] = useState('admin123'), [name, setName] = useState(''), [error, setError] = useState(''), [info, setInfo] = useState('');
+  const [email, setEmail] = useState(''), [password, setPassword] = useState(''), [name, setName] = useState(''), [error, setError] = useState(''), [info, setInfo] = useState(''), [showPassword, setShowPassword] = useState(false);
   async function submit(e) {
     e.preventDefault(); setError(''); setInfo('');
     try {
@@ -57,7 +57,7 @@ function Login({ onLogin }) {
       <p className="muted">{isLogin ? 'Entre para acompanhar tudo que acontece na sua base.' : isSignup ? 'Você entrará como entregador. O administrador precisa aprovar o cadastro.' : 'Peça ao administrador para redefinir sua senha diretamente na plataforma.'}</p>
       {isSignup && <label>Nome completo<input data-testid="signup-name-input" value={name} onChange={e => setName(e.target.value)} /></label>}
       <label>E-mail<input data-testid="login-email-input" type="email" value={email} onChange={e => setEmail(e.target.value)} /></label>
-      {!isForgot && <label>Senha<input data-testid="login-password-input" type="password" value={password} onChange={e => setPassword(e.target.value)} /></label>}
+      {!isForgot && <label>Senha<div className="password-field"><input data-testid="login-password-input" type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} /><button type="button" className="password-toggle" data-testid="toggle-password-visibility" aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'} onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeOff size={17} /> : <Eye size={17} />}</button></div></label>}
       {error && <div className="error" data-testid="login-error">{error}</div>}
       {info && <div className="info-box" data-testid="login-info">{info}</div>}
       <button className="primary full" data-testid={isSignup ? 'signup-submit-button' : isForgot ? 'forgot-submit-button' : 'login-submit-button'}>
@@ -67,7 +67,6 @@ function Login({ onLogin }) {
         {!isLogin && <button type="button" className="link-btn" data-testid="switch-to-login" onClick={() => { setMode('login'); setError(''); setInfo(''); }}>← Voltar ao login</button>}
         {isLogin && <><button type="button" className="link-btn" data-testid="switch-to-signup" onClick={() => { setMode('signup'); setError(''); setInfo(''); setPassword(''); }}>Criar conta</button><button type="button" className="link-btn" data-testid="switch-to-forgot" onClick={() => { setMode('forgot'); setError(''); setInfo(''); }}>Esqueci a senha</button></>}
       </div>
-      <div className="demo-hint">Admin: admin@hydroflow.com / admin123<br />Entregador: carlos@hydroflow.com / driver123</div>
     </form></div>
 }
 
