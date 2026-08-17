@@ -48,6 +48,9 @@ class ResourceInput(BaseModel):
     category: Optional[str] = None
     minimum: Optional[int] = 10
     status: Optional[str] = "pending"
+    signature: Optional[str] = None
+    delivered_at: Optional[str] = None
+    notes: Optional[str] = None
 
 class RoutePlanInput(BaseModel):
     delivery_ids: list[str] = []

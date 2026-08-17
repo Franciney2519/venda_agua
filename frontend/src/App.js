@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import axios from "axios";
 import { BrowserRouter, Routes, Route, NavLink, Navigate } from "react-router-dom";
 import { LayoutDashboard, Truck, Package, WalletCards, Users, Map, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, CheckCircle2, Clock3, CircleDollarSign, BarChart3, GripVertical, Save, MapPin, Route as RouteIcon, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle, CalendarCheck, Wallet } from "lucide-react";
@@ -110,6 +110,88 @@ function FitToBounds({ points }) {
     }
   }, [points, map]);
   return null;
+}
+
+function SignaturePad({ onSave, onCancel }) {
+  const canvasRef = useRef(null);
+  const drawing = useRef(false);
+  const [empty, setEmpty] = useState(true);
+  useEffect(() => {
+    const c = canvasRef.current; if (!c) return;
+    const ctx = c.getContext('2d'); ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.strokeStyle = '#10253f';
+    const pos = e => { const r = c.getBoundingClientRect(); const t = e.touches?.[0] || e; return [t.clientX - r.left, t.clientY - r.top]; };
+    const start = e => { e.preventDefault(); drawing.current = true; const [x, y] = pos(e); ctx.beginPath(); ctx.moveTo(x, y); setEmpty(false); };
+    const move = e => { if (!drawing.current) return; e.preventDefault(); const [x, y] = pos(e); ctx.lineTo(x, y); ctx.stroke(); };
+    const end = () => { drawing.current = false; };
+    c.addEventListener('mousedown', start); c.addEventListener('mousemove', move); window.addEventListener('mouseup', end);
+    c.addEventListener('touchstart', start, { passive: false }); c.addEventListener('touchmove', move, { passive: false }); window.addEventListener('touchend', end);
+    return () => { c.removeEventListener('mousedown', start); c.removeEventListener('mousemove', move); window.removeEventListener('mouseup', end); c.removeEventListener('touchstart', start); c.removeEventListener('touchmove', move); window.removeEventListener('touchend', end); };
+  }, []);
+  function clear() { const c = canvasRef.current; c.getContext('2d').clearRect(0, 0, c.width, c.height); setEmpty(true); }
+  function save() { onSave(canvasRef.current.toDataURL('image/png')); }
+  return <div className="modal-backdrop"><div className="quick-modal signature-modal">
+    <button type="button" className="modal-close" onClick={onCancel} data-testid="signature-close"><X /></button>
+    <p className="eyebrow">CONFIRMAÇÃO DE ENTREGA</p>
+    <h3>Assinatura do cliente</h3>
+    <p className="muted">Peça para o cliente assinar abaixo confirmando o recebimento.</p>
+    <canvas ref={canvasRef} width={360} height={180} className="signature-canvas" data-testid="signature-canvas" />
+    <div className="signature-actions">
+      <button type="button" className="ghost-btn" data-testid="signature-clear" onClick={clear}>Limpar</button>
+      <button type="button" className="primary" data-testid="signature-save" onClick={save} disabled={empty}><Check size={16} /> Concluir parada</button>
+    </div>
+  </div></div>
+}
+
+function MyRoute({ data, setData, user }) {
+  const [signing, setSigning] = useState(null);
+  const [busy, setBusy] = useState(null);
+  const stops = (data?.deliveries || []).filter(d => d.driver === user.name);
+  const done = stops.filter(x => x.status === 'delivered').length;
+
+  async function updateStatus(d, status, extra = {}) {
+    setBusy(d.id);
+    const patch = { status, ...extra };
+    const { data: updated } = await api.patch(`/deliveries/${d.id}`, patch, auth());
+    setData({ ...data, deliveries: data.deliveries.map(x => x.id === d.id ? { ...x, ...updated } : x) });
+    setBusy(null);
+  }
+  async function completeWithSignature(signature) {
+    const d = signing; setSigning(null);
+    await updateStatus(d, 'delivered', { signature, delivered_at: new Date().toISOString() });
+  }
+
+  const tag = { pending: ['gray', 'Aguardando'], in_transit: ['blue', 'Em rota'], delivered: ['green', 'Entregue'], failed: ['red', 'Não realizada'], damaged: ['orange', 'Avaria'] };
+  return <><Head eyebrow="MINHA JORNADA" title="Rota do dia" subtitle={`${done} de ${stops.length} paradas concluídas`} />
+    <div className="progress-track" data-testid="route-progress"><div className="progress-fill" style={{ width: stops.length ? `${(done / stops.length) * 100}%` : '0%' }} /></div>
+    {stops.length === 0 && <div className="empty-state" data-testid="no-stops">Nenhuma parada atribuída para você hoje. Fale com o administrador.</div>}
+    <div className="mobile-stops">
+      {stops.map((d, i) => {
+        const [tone, label] = tag[d.status] || ['gray', d.status];
+        const isDone = d.status === 'delivered';
+        return <article className={`stop-card ${isDone ? 'done' : ''}`} key={d.id} data-testid={`mobile-stop-${d.id}`}>
+          <div className="stop-card-head">
+            <span className="stop-index">{i + 1}</span>
+            <div>
+              <b>{d.customer}</b>
+              <small><MapPin size={11} /> {d.address}</small>
+            </div>
+            <span className={`tag ${tone}`}>{label}</span>
+          </div>
+          <div className="stop-card-body">
+            <span><Package size={13} /> {d.product} · {d.quantity} un</span>
+            <span><CircleDollarSign size={13} /> {money(d.value)}</span>
+          </div>
+          {d.signature && <div className="stop-signature-preview"><img src={d.signature} alt="Assinatura" data-testid={`signature-preview-${d.id}`} /><small>Recebido{d.delivered_at ? ` em ${new Date(d.delivered_at).toLocaleString('pt-BR')}` : ''}</small></div>}
+          {!isDone && <div className="stop-card-actions">
+            {d.status === 'pending' && <button className="ghost-btn" data-testid={`start-stop-${d.id}`} disabled={busy === d.id} onClick={() => updateStatus(d, 'in_transit')}><Truck size={14} /> Iniciar</button>}
+            <button className="primary" data-testid={`complete-stop-${d.id}`} disabled={busy === d.id} onClick={() => setSigning(d)}><Check size={14} /> Concluir parada</button>
+            <button className="action-btn reject" data-testid={`fail-stop-${d.id}`} disabled={busy === d.id} onClick={() => updateStatus(d, 'failed')}><XCircle size={13} /> Não realizada</button>
+          </div>}
+        </article>
+      })}
+    </div>
+    {signing && <SignaturePad onSave={completeWithSignature} onCancel={() => setSigning(null)} />}
+  </>
 }
 
 function RoutesPage({ data, setData }) {
@@ -473,7 +555,7 @@ function App() {
   return <Shell user={user} onLogout={logout} notifications={notifications}>
     <Routes>
       <Route path="/" element={<Dashboard data={data} create={setModal} />} />
-      <Route path="/rotas" element={<RoutesPage data={data} setData={setData} />} />
+      <Route path="/rotas" element={user.role === 'driver' ? <MyRoute data={data} setData={setData} user={user} /> : <RoutesPage data={data} setData={setData} />} />
       <Route path="/entregas" element={<Deliveries data={data} setData={setData} create={setModal} />} />
       <Route path="/estoque" element={<Stock data={data} create={setModal} />} />
       <Route path="/financeiro" element={<Finance data={data} setData={setData} create={setModal} user={user} />} />
