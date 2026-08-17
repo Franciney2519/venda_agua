@@ -117,6 +117,35 @@ async def dashboard(user=Depends(current_user)):
     revenue = sum(delivered_value(d) for d in deliveries if d.get("status") == "delivered")
     return {"revenue": revenue, "expenses": sum(float(e.get("amount", 0)) for e in expenses), "deliveries": deliveries, "products": products, "expenses_list": expenses, "user": user}
 
+MONTH_LABELS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+
+@api.get("/dashboard/monthly")
+async def dashboard_monthly(months: int = 6, user=Depends(current_user)):
+    months = max(1, min(24, months))
+    y, m = datetime.now(timezone.utc).year, datetime.now(timezone.utc).month
+    keys = []
+    for _ in range(months):
+        keys.append((y, m))
+        m -= 1
+        if m == 0: m = 12; y -= 1
+    keys.reverse()
+    start = f"{keys[0][0]:04d}-{keys[0][1]:02d}-01T00:00:00"
+    deliveries = await db.deliveries.find({"created_at": {"$gte": start}}, {"_id": 0}).to_list(5000)
+    expenses = await db.expenses.find({"created_at": {"$gte": start}}, {"_id": 0}).to_list(5000)
+    buckets = {f"{y:04d}-{m:02d}": {"month": f"{y:04d}-{m:02d}", "label": MONTH_LABELS[m - 1], "revenue": 0.0, "expenses": 0.0, "deliveries": 0, "delivered": 0} for (y, m) in keys}
+    for d in deliveries:
+        key = (d.get("created_at") or "")[:7]
+        if key not in buckets: continue
+        buckets[key]["deliveries"] += 1
+        if d.get("status") == "delivered":
+            buckets[key]["delivered"] += 1
+            buckets[key]["revenue"] += delivered_value(d)
+    for e in expenses:
+        key = (e.get("created_at") or "")[:7]
+        if key not in buckets: continue
+        buckets[key]["expenses"] += float(e.get("amount", 0))
+    return [buckets[f"{y:04d}-{m:02d}"] for (y, m) in keys]
+
 async def list_resource(collection): return await db[collection].find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
 async def create_resource(collection, payload, user):
     doc = payload.model_dump(exclude_none=True); doc.update({"id": str(uuid.uuid4()), "created_at": now(), "created_by": user["id"]})
