@@ -1,0 +1,30 @@
+{
+  "summary": "Regression testing of PATCH /expenses and /deliveries after exclude_none=True -> exclude_unset=True fix. All 4 focused tests passed (100%). Bug from iteration_4 is fully resolved: partial PATCH with only {status:'approved'} now preserves amount/value/quantity/customer/driver. Activity log correctly records expense_approved.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_patch_preserve_fields.py",
+    "/app/test_reports/pytest/iter5_patch_fix.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ResourceInput is used as a single mega-schema for products/deliveries/expenses/customers - consider splitting for clearer validation, though exclude_unset=True mitigates the immediate risk.",
+    "update_delivery lacks admin_user guard (uses current_user) - any authenticated driver can mutate any delivery. Verify if intended.",
+    "PATCH /expenses always overwrites reviewed_by/reviewed_at even when payload is a non-status field update - acceptable for now but couples audit fields to any admin edit."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "not tested (backend-only request)"},
+  "test_credentials": "admin@hydroflow.com / admin123",
+  "seed_data_creation": "Created TEST_ prefixed expenses and deliveries via API; not cleaned up (small volume, non-blocking).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Regression suite for PATCH partial updates lives at /app/backend/tests/test_patch_preserve_fields.py. Prior iteration_4 bug is fixed. update_delivery uses current_user (not admin_user) - flagged for review, not tested against as it may be intentional (drivers marking own deliveries delivered).",
+  "rca of the issue": "Root cause: ResourceInput has numeric fields with defaults (amount=0, value=0, quantity=1). Using model_dump(exclude_none=True) still emitted these default-zero values when the client sent only {status:...}, because Pydantic populated defaults != None. Fix: exclude_unset=True only serializes fields explicitly provided by the client, preserving DB values for untouched fields."
+}

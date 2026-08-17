@@ -1,0 +1,44 @@
+{
+  "summary": "Validated iteration 4 features: expense approval buttons (P0 bug fix), signup/login/forgot tabs, public signup → pending → admin approve flow, users admin CRUD (create/edit/role/toggle/reset-password/delete), activity audit log, and driver route restrictions. 17/17 new backend tests + 5/5 previous tests pass. Frontend flows all work. HOWEVER — a real data-corruption bug was discovered: PATCH /expenses (and PATCH /deliveries) uses `data.model_dump(exclude_none=True)` on a Pydantic model with numeric defaults (amount=0, quantity=1, value=0, minimum=10, status='pending'), so patching only status wipes the monetary amount and injects unrelated fields.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "PATCH /api/expenses/{id}", "issue": "Sending only {status:'approved'} zeroes out `amount` and injects quantity=1, value=0, minimum=10 into the doc. RCA: ResourceInput has default values (amount=0, quantity=1, minimum=10, status='pending'); `model_dump(exclude_none=True)` keeps those defaults and PATCH overwrites them. Reproduce: POST /api/expenses {amount:100}, then PATCH {status:'approved'} → GET returns amount=0. Fix: use `data.model_dump(exclude_unset=True)` in update_expense (line 142) and update_delivery (line 132), OR change ResourceInput numeric fields to default None.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "PATCH /api/deliveries/{id}", "issue": "Same exclude_none issue — patching only status wipes quantity/value on the delivery record."},
+      {"endpoint": "log_activity(actor)", "issue": "When actor is a target dict from signup (only id+name), stores incomplete actor row; harmless but inconsistent."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Finance table", "issue": "After clicking Aprovar on the seeded Combustível expense (R$85), the row displays R$ 0,00. Root cause is the backend bug above, but the UI immediately reflects the (now zero) amount making it look like the approval broke the record.", "selector": "[data-testid^='approve-expense-']", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_users_expenses_approval.py",
+    "/app/backend/tests/test_hydroflow_review.py",
+    "/app/backend/tests/test_reports_routes.py",
+    "/app/test_reports/pytest/iter4_users.xml"
+  ],
+  "action_items": [
+    "P0/HIGH: Fix PATCH /expenses (and /deliveries) to use `exclude_unset=True` — currently approving an expense wipes its amount. This is a data-corruption bug directly on the P0 feature the user reported.",
+    "After fix, re-run test_users_expenses_approval.py and add an assertion that amount is preserved through the approve PATCH."
+  ],
+  "critical_code_review_comments": [
+    "server.py PATCH endpoints (expenses, deliveries) use `model_dump(exclude_none=True)` on a shared ResourceInput with non-None default values — this silently overwrites fields the caller never sent. Use `exclude_unset=True` for partial updates, or split into dedicated PatchInput models.",
+    "ResourceInput mixes concerns across products/deliveries/expenses/customers with all fields Optional and mostly non-None defaults; leaks unrelated fields into whichever resource is PATCHed.",
+    "app.js still 375 lines with heavy single-line components — becoming hard to review; splitting into /components would help.",
+    "Login form pre-fills admin creds in state (email/password defaults) — fine for demo but should be removed before any production use.",
+    "seed() function updates status only when field is missing; won't correct role from admin→driver or fix passwords if changed in .env after first boot (partial idempotency)."
+  ],
+  "updated_files": ["/app/backend/tests/test_users_expenses_approval.py"],
+  "success_rate": {"backend": "100% (17/17 new + 10/10 legacy)", "frontend": "100% flows executed; 1 UX bug caused by backend"},
+  "test_credentials": "Admin: admin@hydroflow.com / admin123; Driver: carlos@hydroflow.com / driver123",
+  "seed_data_creation": "Tests create TEST_* users/expenses and clean them up in teardown; residual seed expense e1 was mutated to amount=0 by the reproduction — main agent may want to reseed via mongo shell.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "P0 approval buttons exist and PATCH persists status correctly. The critical remaining issue is that ResourceInput defaults leak through exclude_none=True in PATCH /expenses & /deliveries. Fix by switching to exclude_unset=True. All other requested features (signup→pending→approve, user CRUD, /activity audit, /usuarios & /atividade admin-only routes, login tabs with data-testids switch-to-signup / switch-to-forgot / signup-name-input / signup-submit-button) are working.",
+  "rca of the issue": "PATCH /api/expenses/{id} handler: `values = data.model_dump(exclude_none=True)` — because ResourceInput declares amount: Optional[float]=0, quantity: Optional[int]=1, minimum: Optional[int]=10, status: Optional[str]='pending', those attributes are never None when the caller omits them; they take the default value. `exclude_none` only drops None, so PATCH {status:'approved'} sends {amount:0, quantity:1, minimum:10, status:'approved', value:0} to MongoDB $set, wiping the original amount. Mitigation: change to `exclude_unset=True` so only fields explicitly provided by the client are set."
+}
