@@ -19,4 +19,7 @@
 .activity-list li b{display:block;font-size:13px;color:#10253f}
 .activity-list li small{display:block;font-size:11px;color:#6e8298;margin-top:3px}
 .activity-list li time{font-size:11px;color:#8b9cad;font-family:'Space Grotesk',sans-serif}
-.activity-dot{padding:4px 8px;border-radius:4px;font-size:8px;line-height:1}.blue-text{color:#0878d1}@media(max-width:800px){.route-builder{grid-template-columns:1fr}.map-preview{min-height:260px}.report-toolbar{flex-wrap:wrap}.report-toolbar div{min-width:100%}}
+.activity-dot{padding:4px 8px;border-radius:4px;font-size:8px;line-height:1}
+.nav-badge{margin-left:auto;background:#e95d5d;color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;min-width:18px;text-align:center}
+.green-text{color:#11966d;font-weight:600}
+.orange-text{color:#c57816;font-weight:600}.blue-text{color:#0878d1}@media(max-width:800px){.route-builder{grid-template-columns:1fr}.map-preview{min-height:260px}.report-toolbar{flex-wrap:wrap}.report-toolbar div{min-width:100%}}

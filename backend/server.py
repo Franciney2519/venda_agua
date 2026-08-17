@@ -221,6 +221,38 @@ async def delete_user(user_id: str, user=Depends(admin_user)):
 async def activity(user=Depends(admin_user)):
     return await db.activity.find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
 
+@api.get("/notifications")
+async def notifications(user=Depends(current_user)):
+    if user.get("role") != "admin": return {"pending_users": 0, "pending_expenses": 0, "total": 0}
+    pu = await db.users.count_documents({"status": "pending"})
+    pe = await db.expenses.count_documents({"status": "pending"})
+    return {"pending_users": pu, "pending_expenses": pe, "total": pu + pe}
+
+@api.get("/daily-closing")
+async def daily_closing(date: Optional[str] = None, user=Depends(admin_user)):
+    day = date or datetime.now(timezone.utc).date().isoformat()
+    start, end = day + "T00:00:00", day + "T23:59:59"
+    deliveries = await db.deliveries.find({"created_at": {"$gte": start, "$lte": end}}, {"_id": 0}).to_list(1000)
+    expenses = await db.expenses.find({"created_at": {"$gte": start, "$lte": end}}, {"_id": 0}).to_list(1000)
+    drivers = {}
+    for d in deliveries:
+        name = d.get("driver") or "Sem entregador"
+        row = drivers.setdefault(name, {"driver": name, "deliveries_total": 0, "deliveries_done": 0, "revenue": 0, "expenses_approved": 0, "expenses_pending": 0, "expenses_rejected": 0, "balance": 0})
+        row["deliveries_total"] += 1
+        if d.get("status") == "delivered": row["deliveries_done"] += 1; row["revenue"] += float(d.get("value", 0))
+    for e in expenses:
+        name = e.get("driver") or "Sem entregador"
+        row = drivers.setdefault(name, {"driver": name, "deliveries_total": 0, "deliveries_done": 0, "revenue": 0, "expenses_approved": 0, "expenses_pending": 0, "expenses_rejected": 0, "balance": 0})
+        amt = float(e.get("amount", 0))
+        st = e.get("status", "pending")
+        if st == "approved": row["expenses_approved"] += amt
+        elif st == "rejected": row["expenses_rejected"] += amt
+        else: row["expenses_pending"] += amt
+    for row in drivers.values(): row["balance"] = row["revenue"] - row["expenses_approved"]
+    rows = list(drivers.values())
+    totals = {"revenue": sum(r["revenue"] for r in rows), "expenses_approved": sum(r["expenses_approved"] for r in rows), "expenses_pending": sum(r["expenses_pending"] for r in rows), "deliveries_done": sum(r["deliveries_done"] for r in rows), "deliveries_total": sum(r["deliveries_total"] for r in rows), "balance": sum(r["balance"] for r in rows)}
+    return {"date": day, "drivers": rows, "totals": totals}
+
 @api.get("/reports")
 async def reports(start: Optional[str] = None, end: Optional[str] = None, user=Depends(admin_user)):
     query = {}

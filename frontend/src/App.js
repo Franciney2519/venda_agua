@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import axios from "axios";
 import { BrowserRouter, Routes, Route, NavLink, Navigate } from "react-router-dom";
-import { LayoutDashboard, Truck, Package, WalletCards, Users, Map, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, CheckCircle2, Clock3, CircleDollarSign, BarChart3, GripVertical, Save, MapPin, Route as RouteIcon, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle } from "lucide-react";
+import { LayoutDashboard, Truck, Package, WalletCards, Users, Map, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, CheckCircle2, Clock3, CircleDollarSign, BarChart3, GripVertical, Save, MapPin, Route as RouteIcon, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle, CalendarCheck, Wallet } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -28,9 +28,25 @@ const numberedIcon = (n, color = "#0878d1") => L.divIcon({
 const api = axios.create({ baseURL: `${process.env.REACT_APP_BACKEND_URL}/api` });
 const auth = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem("hydro_token")}` } });
 const money = v => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v || 0);
-const nav = [['/', 'Visão geral', LayoutDashboard], ['/rotas', 'Rotas', Map], ['/entregas', 'Entregas', Truck], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/clientes', 'Clientes', Users], ['/usuarios', 'Usuários', ShieldCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
+const nav = [['/', 'Visão geral', LayoutDashboard], ['/rotas', 'Rotas', Map], ['/entregas', 'Entregas', Truck], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/clientes', 'Clientes', Users], ['/usuarios', 'Usuários', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
 
-function Shell({ user, onLogout, children }) { const [open, setOpen] = useState(false); const links = user.role === 'driver' ? nav.filter(x => ['/', '/rotas', '/entregas', '/financeiro'].includes(x[0])) : nav; return <div className="app-shell"><aside className={open ? 'sidebar open' : 'sidebar'}><div className="brand"><span className="brand-mark"><Droplets size={20} /></span><span>hydro<span>flow</span></span></div><div className="workspace"><small>OPERAÇÃO</small><b>{user.role === 'admin' ? 'Admin · Base Central' : 'Entregador'} <span>⌄</span></b></div><nav>{links.map(([to, label, Icon]) => <NavLink key={to} to={to} end={to === '/'} onClick={() => setOpen(false)} data-testid={`nav-${label.toLowerCase().replaceAll(' ', '-')}`}><Icon size={18} />{label}</NavLink>)}</nav><div className="sidebar-bottom"><div className="support"><span className="live-dot" /> Operação normal</div><button className="logout" data-testid="logout-button" onClick={onLogout}><LogOut size={17} /> Sair da conta</button></div></aside><main className="main"><header><button className="mobile-menu" data-testid="mobile-menu-button" onClick={() => setOpen(!open)}>{open ? <X /> : <Menu />}</button><div><p className="eyebrow">{user.role === 'driver' ? 'PORTAL DO ENTREGADOR' : 'PAINEL ADMINISTRATIVO'}</p><h1>Olá, {user.name.split(' ')[0]} <span className="wave">✦</span></h1></div><div className="header-actions"><div className="notification" data-testid="notification-indicator"><span>3</span>◌</div><div className="avatar">{user.name.split(' ').map(x => x[0]).join('').slice(0, 2)}</div></div></header>{children}</main></div> }
+function Shell({ user, onLogout, notifications, children }) {
+  const [open, setOpen] = useState(false);
+  const links = user.role === 'driver' ? nav.filter(x => ['/', '/rotas', '/entregas', '/financeiro'].includes(x[0])) : nav;
+  const badges = { '/usuarios': notifications?.pending_users || 0, '/financeiro': notifications?.pending_expenses || 0 };
+  const total = notifications?.total || 0;
+  return <div className="app-shell"><aside className={open ? 'sidebar open' : 'sidebar'}><div className="brand"><span className="brand-mark"><Droplets size={20} /></span><span>hydro<span>flow</span></span></div><div className="workspace"><small>OPERAÇÃO</small><b>{user.role === 'admin' ? 'Admin · Base Central' : 'Entregador'} <span>⌄</span></b></div>
+    <nav>{links.map(([to, label, Icon]) => <NavLink key={to} to={to} end={to === '/'} onClick={() => setOpen(false)} data-testid={`nav-${label.toLowerCase().replaceAll(' ', '-')}`}>
+      <Icon size={18} />{label}
+      {badges[to] > 0 && <span className="nav-badge" data-testid={`badge-${to.replace('/', '')}`}>{badges[to]}</span>}
+    </NavLink>)}</nav>
+    <div className="sidebar-bottom"><div className="support"><span className="live-dot" /> Operação normal</div><button className="logout" data-testid="logout-button" onClick={onLogout}><LogOut size={17} /> Sair da conta</button></div></aside>
+    <main className="main"><header><button className="mobile-menu" data-testid="mobile-menu-button" onClick={() => setOpen(!open)}>{open ? <X /> : <Menu />}</button><div><p className="eyebrow">{user.role === 'driver' ? 'PORTAL DO ENTREGADOR' : 'PAINEL ADMINISTRATIVO'}</p><h1>Olá, {user.name.split(' ')[0]} <span className="wave">✦</span></h1></div>
+      <div className="header-actions">
+        <div className="notification" data-testid="notification-indicator" title={total ? `${total} pendências` : 'Sem pendências'}>{total > 0 && <span data-testid="notification-count">{total}</span>}◌</div>
+        <div className="avatar">{user.name.split(' ').map(x => x[0]).join('').slice(0, 2)}</div>
+      </div></header>{children}</main></div>
+}
 
 function Login({ onLogin }) {
   const [mode, setMode] = useState('login');
@@ -178,6 +194,7 @@ function Finance({ data, setData, create, user }) {
   async function reviewExpense(e, status) {
     const { data: updated } = await api.patch(`/expenses/${e.id}`, { status }, auth());
     setData({ ...data, expenses_list: data.expenses_list.map(x => x.id === e.id ? updated : x) });
+    window.hydroRefreshNotifications?.();
   }
   const isAdmin = user?.role === 'admin';
   return <><Head eyebrow="CONTROLE FINANCEIRO" title="Financeiro" subtitle="Recebimentos e despesas lançados pela equipe." action="Lançar despesa" onAction={() => create('expense')} />
@@ -210,7 +227,7 @@ function UsersPage({ me }) {
   const [items, setItems] = useState([]);
   const [modal, setModal] = useState(null);
   const [filter, setFilter] = useState('all');
-  async function load() { const { data } = await api.get('/users', auth()); setItems(data); }
+  async function load() { const { data } = await api.get('/users', auth()); setItems(data); window.hydroRefreshNotifications?.(); }
   useEffect(() => { load(); }, []);
   const filtered = items.filter(x => filter === 'all' || (filter === 'pending' && x.status === 'pending') || (filter === 'active' && x.active !== false && x.status === 'approved') || (filter === 'inactive' && (x.active === false || x.status === 'rejected')));
   async function approve(u) { await api.post(`/users/${u.id}/approve`, {}, auth()); load(); }
@@ -287,6 +304,72 @@ function ActivityPage() {
         <time>{new Date(a.created_at).toLocaleString('pt-BR')}</time>
       </li>)}
     </ul></section></>
+}
+
+function DailyClosing() {
+  const [date, setDate] = useState(todayISO(0));
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  async function load() {
+    setLoading(true);
+    try { const { data: r } = await api.get('/daily-closing', { ...auth(), params: { date } }); setData(r); } finally { setLoading(false); }
+  }
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [date]);
+
+  function exportPDF() {
+    const doc = new jsPDF();
+    doc.setFontSize(18); doc.setTextColor(8, 120, 209);
+    doc.text('HydroFlow · Fechamento do Dia', 14, 20);
+    doc.setFontSize(10); doc.setTextColor(110, 130, 152);
+    doc.text(`Data: ${date}`, 14, 28);
+    doc.setFontSize(11); doc.setTextColor(16, 37, 63);
+    const t = data?.totals || {};
+    doc.text(`Receita bruta: ${money(t.revenue)}`, 14, 40);
+    doc.text(`Despesas aprovadas: ${money(t.expenses_approved)}`, 14, 47);
+    doc.text(`Saldo líquido do dia: ${money(t.balance)}`, 14, 54);
+    doc.text(`Entregas concluídas: ${t.deliveries_done || 0} de ${t.deliveries_total || 0}`, 14, 61);
+    autoTable(doc, {
+      startY: 70,
+      head: [['Entregador', 'Entregas', 'Receita', 'Desp. aprov.', 'Desp. pend.', 'Saldo']],
+      body: (data?.drivers || []).map(d => [d.driver, `${d.deliveries_done}/${d.deliveries_total}`, money(d.revenue), money(d.expenses_approved), money(d.expenses_pending), money(d.balance)]),
+      headStyles: { fillColor: [8, 120, 209] },
+    });
+    doc.save(`hydroflow-fechamento-${date}.pdf`);
+  }
+
+  const totals = data?.totals || {};
+  const rows = data?.drivers || [];
+  return <><Head eyebrow="FECHAMENTO DIÁRIO" title="Fechamento do dia" subtitle="Resumo por entregador — recebimentos, despesas aprovadas e saldo final." />
+    <div className="report-toolbar">
+      <div className="report-filters">
+        <label>Data<input type="date" value={date} data-testid="closing-date-input" onChange={e => setDate(e.target.value)} /></label>
+        <button className="ghost-btn" data-testid="closing-today-button" onClick={() => setDate(todayISO(0))}>Hoje</button>
+        <button className="ghost-btn" data-testid="closing-yesterday-button" onClick={() => setDate(todayISO(-1))}>Ontem</button>
+      </div>
+      <div className="report-actions">
+        {loading && <Loader2 size={16} className="spin blue-text" />}
+        <button className="primary" data-testid="closing-export-pdf" onClick={exportPDF}><FileText size={15} /> Exportar PDF</button>
+      </div>
+    </div>
+    <div className="stats">
+      <Stat label="Receita bruta" value={money(totals.revenue)} detail="Entregas concluídas" Icon={CircleDollarSign} tone="green" />
+      <Stat label="Despesas aprovadas" value={money(totals.expenses_approved)} detail="Descontadas do dia" Icon={Wallet} tone="orange" />
+      <Stat label="Saldo líquido" value={money(totals.balance)} detail="Receita − Despesas" Icon={ArrowUpRight} tone="" />
+      <Stat label="Entregas" value={`${totals.deliveries_done || 0}/${totals.deliveries_total || 0}`} detail="Concluídas / Programadas" Icon={Truck} />
+    </div>
+    <section className="panel table-panel" data-testid="closing-panel">
+      <div className="panel-head"><div><h3>Fechamento por entregador</h3><p className="muted">{rows.length ? `${rows.length} entregador(es) com movimentação no dia` : 'Nenhuma movimentação encontrada para essa data'}</p></div></div>
+      <div className="table-wrap"><table><thead><tr><th>ENTREGADOR</th><th>ENTREGAS</th><th>RECEITA</th><th>DESP. APROVADAS</th><th>DESP. PENDENTES</th><th>SALDO</th></tr></thead><tbody>
+        {rows.map(d => <tr key={d.driver} data-testid={`closing-row-${d.driver}`}>
+          <td><b>{d.driver}</b><small>{d.deliveries_done} de {d.deliveries_total} concluídas</small></td>
+          <td><span className="tag blue">{d.deliveries_done}/{d.deliveries_total}</span></td>
+          <td>{money(d.revenue)}</td>
+          <td className="green-text">{money(d.expenses_approved)}</td>
+          <td className="orange-text">{money(d.expenses_pending)}</td>
+          <td><b>{money(d.balance)}</b></td>
+        </tr>)}
+      </tbody></table></div>
+    </section></>
 }
 
 function todayISO(offset = 0) { const d = new Date(); d.setDate(d.getDate() + offset); return d.toISOString().slice(0, 10); }
@@ -370,5 +453,37 @@ function Reports() {
     <section className="panel table-panel"><div className="panel-head"><div><h3>Desempenho por entregador</h3><p className="muted">Volume, receita e conclusão</p></div></div><div className="table-wrap"><table><thead><tr><th>ENTREGADOR</th><th>ENTREGAS</th><th>CONCLUÍDAS</th><th>RECEITA</th><th>EFICIÊNCIA</th></tr></thead><tbody>{(r?.drivers || []).map(d => <tr key={d.driver}><td><b>{d.driver}</b></td><td>{d.deliveries}</td><td>{d.delivered}</td><td>{money(d.revenue)}</td><td><span className="tag green">{d.deliveries ? Math.round(d.delivered / d.deliveries * 100) : 0}%</span></td></tr>)}</tbody></table></div></section></>
 }
 
-function App() { const [user, setUser] = useState(null), [data, setData] = useState(null), [customers, setCustomers] = useState([]), [checking, setChecking] = useState(true), [modal, setModal] = useState(null); useEffect(() => { const t = localStorage.getItem('hydro_token'); if (t) api.get('/auth/me', auth()).then(x => setUser(x.data)).catch(() => localStorage.removeItem('hydro_token')).finally(() => setChecking(false)); else setChecking(false) }, []); useEffect(() => { if (user) Promise.all([api.get('/dashboard', auth()), api.get('/customers', auth())]).then(([a, c]) => { setData(a.data); setCustomers(c.data) }) }, [user]); if (checking) return <div className="loading">Carregando operação...</div>; if (!user) return <Login onLogin={setUser} />; const logout = () => { localStorage.removeItem('hydro_token'); setUser(null) }; async function save(kind, form) { const endpoints = { product: '/products', delivery: '/deliveries', expense: '/expenses', customer: '/customers' }; const payload = { ...form };['quantity', 'minimum', 'value', 'amount'].forEach(k => { if (payload[k] !== undefined) payload[k] = Number(payload[k]) }); if (kind === 'delivery') payload.status = 'pending'; if (kind === 'expense') { payload.status = 'pending'; if (!payload.driver) payload.driver = user.name; } const { data: x } = await api.post(endpoints[kind], payload, auth()); if (kind === 'customer') setCustomers([...customers, x]); else { const key = kind === 'product' ? 'products' : kind === 'delivery' ? 'deliveries' : 'expenses_list'; setData({ ...data, [key]: [...(data?.[key] || []), x] }) } setModal(null) } const adminOnly = el => user.role === 'admin' ? el : <Navigate to="/" replace />; return <Shell user={user} onLogout={logout}><Routes><Route path="/" element={<Dashboard data={data} create={setModal} />} /><Route path="/rotas" element={<RoutesPage data={data} setData={setData} />} /><Route path="/entregas" element={<Deliveries data={data} setData={setData} create={setModal} />} /><Route path="/estoque" element={<Stock data={data} create={setModal} />} /><Route path="/financeiro" element={<Finance data={data} setData={setData} create={setModal} user={user} />} /><Route path="/clientes" element={<Customers items={customers} create={setModal} />} /><Route path="/usuarios" element={adminOnly(<UsersPage me={user} />)} /><Route path="/atividade" element={adminOnly(<ActivityPage />)} /><Route path="/relatorios" element={adminOnly(<Reports />)} /></Routes>{modal && <Modal title={{ product: 'Cadastrar produto', delivery: 'Lançar entrega', expense: 'Lançar despesa', customer: 'Cadastrar cliente' }[modal]} fields={fields[modal]} onClose={() => setModal(null)} onSave={x => save(modal, x)} />}</Shell> }
+function App() {
+  const [user, setUser] = useState(null), [data, setData] = useState(null), [customers, setCustomers] = useState([]), [checking, setChecking] = useState(true), [modal, setModal] = useState(null), [notifications, setNotifications] = useState({ pending_users: 0, pending_expenses: 0, total: 0 });
+  useEffect(() => { const t = localStorage.getItem('hydro_token'); if (t) api.get('/auth/me', auth()).then(x => setUser(x.data)).catch(() => localStorage.removeItem('hydro_token')).finally(() => setChecking(false)); else setChecking(false) }, []);
+  useEffect(() => { if (user) Promise.all([api.get('/dashboard', auth()), api.get('/customers', auth())]).then(([a, c]) => { setData(a.data); setCustomers(c.data) }) }, [user]);
+  useEffect(() => {
+    if (!user) return;
+    const fetchNotif = () => api.get('/notifications', auth()).then(x => setNotifications(x.data)).catch(() => { });
+    fetchNotif();
+    const id = setInterval(fetchNotif, 30000);
+    window.hydroRefreshNotifications = fetchNotif;
+    return () => clearInterval(id);
+  }, [user, data]);
+  if (checking) return <div className="loading">Carregando operação...</div>;
+  if (!user) return <Login onLogin={setUser} />;
+  const logout = () => { localStorage.removeItem('hydro_token'); setUser(null) };
+  async function save(kind, form) { const endpoints = { product: '/products', delivery: '/deliveries', expense: '/expenses', customer: '/customers' }; const payload = { ...form };['quantity', 'minimum', 'value', 'amount'].forEach(k => { if (payload[k] !== undefined) payload[k] = Number(payload[k]) }); if (kind === 'delivery') payload.status = 'pending'; if (kind === 'expense') { payload.status = 'pending'; if (!payload.driver) payload.driver = user.name; } const { data: x } = await api.post(endpoints[kind], payload, auth()); if (kind === 'customer') setCustomers([...customers, x]); else { const key = kind === 'product' ? 'products' : kind === 'delivery' ? 'deliveries' : 'expenses_list'; setData({ ...data, [key]: [...(data?.[key] || []), x] }) } setModal(null) }
+  const adminOnly = el => user.role === 'admin' ? el : <Navigate to="/" replace />;
+  return <Shell user={user} onLogout={logout} notifications={notifications}>
+    <Routes>
+      <Route path="/" element={<Dashboard data={data} create={setModal} />} />
+      <Route path="/rotas" element={<RoutesPage data={data} setData={setData} />} />
+      <Route path="/entregas" element={<Deliveries data={data} setData={setData} create={setModal} />} />
+      <Route path="/estoque" element={<Stock data={data} create={setModal} />} />
+      <Route path="/financeiro" element={<Finance data={data} setData={setData} create={setModal} user={user} />} />
+      <Route path="/clientes" element={<Customers items={customers} create={setModal} />} />
+      <Route path="/usuarios" element={adminOnly(<UsersPage me={user} />)} />
+      <Route path="/fechamento" element={adminOnly(<DailyClosing />)} />
+      <Route path="/atividade" element={adminOnly(<ActivityPage />)} />
+      <Route path="/relatorios" element={adminOnly(<Reports />)} />
+    </Routes>
+    {modal && <Modal title={{ product: 'Cadastrar produto', delivery: 'Lançar entrega', expense: 'Lançar despesa', customer: 'Cadastrar cliente' }[modal]} fields={fields[modal]} onClose={() => setModal(null)} onSave={x => save(modal, x)} />}
+  </Shell>
+}
 export default () => <BrowserRouter><App /></BrowserRouter>;
