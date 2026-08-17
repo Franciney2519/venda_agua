@@ -391,7 +391,8 @@ function DailyClosing() {
     setLoading(true);
     try { const { data: r } = await api.get('/daily-closing', { ...auth(), params: { date } }); setData(r); } finally { setLoading(false); }
   }
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [date]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [date]);
 
   function exportPDF() {
     const doc = new jsPDF();
@@ -467,7 +468,8 @@ function Reports() {
       setR({ revenue: 0, expenses: 0, deliveries: 0, low_stock: 0, drivers: [] });
     } finally { setLoading(false); }
   }
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [start, end]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [start, end]);
 
   function applyPreset(v) {
     setPreset(v);
