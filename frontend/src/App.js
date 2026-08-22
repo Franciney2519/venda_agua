@@ -818,19 +818,34 @@ function MobileBottomNav({ tab, setTab }) {
 
 function MobileToast({ text, tone = 'green' }) { if (!text) return null; return <div className={`mob-toast ${tone}`} data-testid="mob-toast">{text}</div> }
 
-function MobileCustomerRow({ c, done, onClick, testPrefix = 'mob-customer-row' }) {
+function MobileStopRow({ c, done, onClick }) {
   const brands = brandListOf(c);
-  return <button type="button" className={`mob-customer-row${done ? ' done' : ''}`} data-testid={`${testPrefix}-${c.id || 'new'}`} onClick={onClick}>
+  const priceLine = brands.map(b => `${b.brand} ${money(b.price)}`).join(' · ');
+  return <button type="button" className={`mob-customer-row${done ? ' done' : ''}`} data-testid={`mob-customer-row-${c.id}`} onClick={onClick}>
+    <span className="mob-customer-avatar done-aware">{done ? '✓' : (c.name?.[0] || '?')}</span>
+    <span className="mob-customer-info">
+      <b>{c.name}</b>
+      <small>{c.address}</small>
+      {priceLine && <small>{priceLine}</small>}
+    </span>
+    <span className={`mob-tag${done ? ' done' : ' neutral'}`}>{done ? 'Lançado' : 'Lançar'}</span>
+  </button>
+}
+
+function MobilePickerRow({ c, onClick }) {
+  const brands = brandListOf(c);
+  const line = brands.length ? `${brands.length} ${brands.length === 1 ? 'marca' : 'marcas'} · ${brands.map(b => b.brand).join(', ')}` : 'sem marca cadastrada';
+  return <button type="button" className="mob-customer-row" data-testid={`mob-picker-row-${c.id || 'new'}`} onClick={onClick}>
     <span className="mob-customer-avatar">{c.name?.[0] || '?'}</span>
-    <span className="mob-customer-info"><b>{c.name}</b><small>{brands.length ? `${brands.length} marca${brands.length > 1 ? 's' : ''} · ${brands.map(b => b.brand).join(', ')}` : 'sem marca cadastrada'}</small></span>
-    {done ? <span className="mob-tag done">✓ Lançado</span> : <ChevronRight size={18} />}
+    <span className="mob-customer-info"><b>{c.name}</b><small>{line}</small></span>
+    <ChevronRight size={20} color="var(--mob-blue)" />
   </button>
 }
 
 function MobileClientesTab({ customers, entries, date, onOpenPicker, onOpenCustomer, search, setSearch }) {
   const todaysEntries = entries.filter(e => e.date === date);
   const doneNames = new Set(todaysEntries.map(e => e.customer));
-  const receivedToday = todaysEntries.reduce((s, e) => s + Number(e.total || 0), 0);
+  const receivedToday = todaysEntries.reduce((s, e) => s + Number(e.pix_value || 0) + Number(e.cash_value || 0), 0);
   const filtered = customers.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
   const goal = customers.length || 1;
   const progress = Math.min(100, (doneNames.size / goal) * 100);
@@ -842,7 +857,7 @@ function MobileClientesTab({ customers, entries, date, onOpenPicker, onOpenCusto
     <button type="button" className="mob-cta" data-testid="mob-new-delivery-button" onClick={onOpenPicker}><Plus size={20} /> Nova entrega</button>
     <div className="mob-search"><Search size={16} /><input placeholder="Buscar cliente" value={search} data-testid="mob-search-input" onChange={e => setSearch(e.target.value)} /></div>
     <div className="mob-customer-list">
-      {filtered.map(c => <MobileCustomerRow key={c.id} c={c} done={doneNames.has(c.name)} onClick={() => onOpenCustomer(c)} />)}
+      {filtered.map(c => <MobileStopRow key={c.id} c={c} done={doneNames.has(c.name)} onClick={() => onOpenCustomer(c)} />)}
       {filtered.length === 0 && <p className="muted" style={{ padding: 16 }}>Nenhum cliente encontrado.</p>}
     </div>
   </div>
@@ -860,10 +875,10 @@ function MobilePickerSheet({ customers, onClose, onPick, onNewCustomer }) {
       </div>
       <div className="mob-search"><Search size={16} /><input autoFocus placeholder="Digite o nome do cliente" value={q} data-testid="mob-picker-search" onChange={e => setQ(e.target.value)} /></div>
       <div className="mob-sheet-list">
-        {filtered.map(c => <MobileCustomerRow key={c.id} c={c} onClick={() => onPick(c)} testPrefix="mob-picker-row" />)}
+        {filtered.map(c => <MobilePickerRow key={c.id} c={c} onClick={() => onPick(c)} />)}
         {filtered.length === 0 && <p className="muted" style={{ padding: 16 }}>Nenhum cliente encontrado.</p>}
       </div>
-      <button type="button" className="mob-secondary-btn" data-testid="mob-new-customer-button" onClick={onNewCustomer}><Plus size={16} /> Cliente novo (sem cadastro)</button>
+      <button type="button" className="mob-outline-btn wide" data-testid="mob-new-customer-button" onClick={onNewCustomer}><Plus size={16} /> Cliente novo (sem cadastro)</button>
     </div>
   </div>
 }
@@ -1013,8 +1028,8 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete }) {
       </div>}
 
       {error && <div className="error" data-testid="mob-panel-error">{error}</div>}
-      <button type="button" className="mob-cta" disabled={!canSubmit || saving} data-testid="mob-sign-button" onClick={() => setSigning(true)}><Check size={18} /> Assinar e concluir</button>
-      <button type="button" className="mob-danger-btn" data-testid="mob-fail-button" onClick={onClose}><XCircle size={16} /> Não consegui entregar</button>
+      <button type="button" className="mob-cta" disabled={!canSubmit || saving} data-testid="mob-sign-button" onClick={() => setSigning(true)}>Assinar e concluir</button>
+      <button type="button" className="mob-danger-btn" data-testid="mob-fail-button" onClick={onClose}>Não consegui entregar</button>
     </div>
   </div>
 }
@@ -1022,24 +1037,26 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete }) {
 function MobileDiarioTab({ entries, date }) {
   const todays = entries.filter(e => e.date === date);
   const totals = todays.reduce((s, e) => ({ qty: s.qty + Number(e.billed_quantity || 0), pix: s.pix + Number(e.pix_value || 0), cash: s.cash + Number(e.cash_value || 0) }), { qty: 0, pix: 0, cash: 0 });
+  const mfDetail = e => e.mf_plan === 'swap' ? 'trocado' : e.mf_plan === 'refused' ? 'cliente não quis' : (e.mf_date || '');
   return <div className="mob-screen">
     <div className="mob-total-cards">
-      <div className="mob-total-card"><span>Galões</span><b>{totals.qty}</b></div>
-      <div className="mob-total-card"><span>Pix</span><b>{money(totals.pix)}</b></div>
-      <div className="mob-total-card"><span>Dinheiro</span><b>{money(totals.cash)}</b></div>
+      <div className="mob-total-card"><span>GALÕES</span><b>{totals.qty}</b></div>
+      <div className="mob-total-card"><span>PIX</span><b className="blue">{money(totals.pix)}</b></div>
+      <div className="mob-total-card"><span>DINHEIRO</span><b className="green">{money(totals.cash)}</b></div>
     </div>
+    <p className="mob-eyebrow" style={{ margin: '4px 0 0' }}>LANÇAMENTOS DE HOJE</p>
     <div className="mob-entry-list">
-      {todays.length === 0 && <div className="mob-empty-dashed">Nenhum lançamento ainda hoje.</div>}
+      {todays.length === 0 && <div className="mob-empty-dashed">Nada lançado ainda. Conclua uma parada na aba Rota.</div>}
       {todays.map(e => {
         const lineItems = e.items?.length ? e.items : (e.brand ? [{ brand: e.brand, quantity: e.billed_quantity ?? e.quantity }] : []);
-        const itemsLabel = lineItems.map(it => `${it.quantity} ${it.brand}`).join(' + ');
+        const itemsLabel = lineItems.map(it => `${it.quantity} ${it.brand}`).join(' + ') || `${e.billed_quantity ?? e.quantity} galões`;
         return <div className="mob-entry-card" key={e.id} data-testid={`mob-entry-${e.id}`}>
           <div className="mob-entry-top"><b>{e.customer}</b><b>{money(e.total)}</b></div>
           <div className="mob-chips">
-            {itemsLabel && <span className="mob-chip">{itemsLabel}</span>}
-            {e.pix_value > 0 && <span className="mob-chip">Pix {money(e.pix_value)}</span>}
-            {e.cash_value > 0 && <span className="mob-chip">Dinheiro {money(e.cash_value)}</span>}
-            {e.mf_quantity > 0 && <span className="mob-chip orange">{e.mf_quantity} MF{e.mf_date ? ` · ${e.mf_date}` : ''}</span>}
+            <span className="mob-chip neutral">{itemsLabel}</span>
+            <span className="mob-chip blue">Pix {money(e.pix_value)}</span>
+            <span className="mob-chip green">Dinheiro {money(e.cash_value)}</span>
+            {e.mf_quantity > 0 && <span className="mob-chip orange">{e.mf_quantity} MF · {mfDetail(e)}</span>}
             {e.comp_value > 0 && <span className="mob-chip orange">{money(e.comp_value)} · {e.comp_days}d</span>}
           </div>
         </div>
@@ -1053,17 +1070,20 @@ function MobileCaixaTab({ entries, expensesTotal, date, onAddExpense, onCloseDay
   const pix = todays.reduce((s, e) => s + Number(e.pix_value || 0), 0);
   const cash = todays.reduce((s, e) => s + Number(e.cash_value || 0), 0);
   const comp = todays.reduce((s, e) => s + Number(e.comp_value || 0), 0);
-  const toDeliver = Math.max(0, cash - expensesTotal);
   return <div className="mob-screen">
-    <div className="mob-cash-hero"><span>DINHEIRO A ENTREGAR NA BASE</span><b data-testid="mob-cash-to-deliver">{money(toDeliver)}</b></div>
-    <div className="mob-cash-rows">
-      <div className="mob-cash-row"><span className="mob-cash-icon blue"><CircleDollarSign size={18} /></span><div><b>Pix recebido</b><small>Vai direto pra conta</small></div><b>{money(pix)}</b></div>
-      <div className="mob-cash-row"><span className="mob-cash-icon green"><Wallet size={18} /></span><div><b>Dinheiro recebido</b><small>Em espécie</small></div><b>{money(cash)}</b></div>
-      <div className="mob-cash-row"><span className="mob-cash-icon orange"><Clock3 size={18} /></span><div><b>Vendas a prazo</b><small>A receber depois</small></div><b>{money(comp)}</b></div>
-      <div className="mob-cash-row"><span className="mob-cash-icon red"><WalletCards size={18} /></span><div><b>Despesas do dia</b><small>Descontadas do dinheiro</small></div><b>-{money(expensesTotal)}</b></div>
+    <div className="mob-cash-hero">
+      <span>A ENTREGAR NA BASE</span>
+      <b data-testid="mob-cash-to-deliver">{money(cash)}</b>
+      <small>dinheiro em espécie · Pix já cai na conta</small>
     </div>
-    <button type="button" className="mob-secondary-btn" data-testid="mob-add-expense-shortcut" onClick={onAddExpense}><Plus size={16} /> Lançar despesa</button>
-    <button type="button" className="mob-cta" data-testid="mob-close-day-button" onClick={onCloseDay}><Check size={18} /> Fechar o dia</button>
+    <div className="mob-cash-rows">
+      <div className="mob-cash-row"><span className="mob-cash-icon blue"><CircleDollarSign size={16} /></span><div><b>Recebido em Pix</b><small>já na conta da empresa</small></div><b className="blue">{money(pix)}</b></div>
+      <div className="mob-cash-row"><span className="mob-cash-icon green"><Wallet size={16} /></span><div><b>Recebido em dinheiro</b><small>entregar na base</small></div><b className="green">{money(cash)}</b></div>
+      <div className="mob-cash-row"><span className="mob-cash-icon orange"><Clock3 size={16} /></span><div><b>Vendas a prazo</b><small>COMP lançado hoje</small></div><b className="orange">{money(comp)}</b></div>
+      <div className="mob-cash-row"><span className="mob-cash-icon orange"><WalletCards size={16} /></span><div><b>Despesas do dia</b><small>aguardando aprovação</small></div><b className="orange">{money(expensesTotal)}</b></div>
+    </div>
+    <button type="button" className="mob-outline-btn" data-testid="mob-add-expense-shortcut" onClick={onAddExpense}><Plus size={16} /> Lançar despesa</button>
+    <button type="button" className="mob-cta" data-testid="mob-close-day-button" onClick={onCloseDay}>Fechar o dia</button>
   </div>
 }
 
@@ -1096,18 +1116,20 @@ function MobileDespesasTab({ user }) {
     <div className="mob-expense-grid">
       {MOBILE_EXPENSE_CATEGORIES.map(([label, Icon]) => <button type="button" key={label} className={category === label ? 'active' : ''} data-testid={`mob-expense-cat-${label}`} onClick={() => setCategory(label)}><Icon size={22} /><span>{label}</span></button>)}
     </div>
-    <label className="mob-field-lg">VALOR<input type="number" step="0.01" value={amount} data-testid="mob-expense-amount" onChange={e => setAmount(e.target.value)} /></label>
-    <label className="mob-field-md">OBSERVAÇÃO<input value={note} data-testid="mob-expense-note" onChange={e => setNote(e.target.value)} /></label>
-    <button type="button" className="mob-dashed-btn" data-testid="mob-expense-photo"><Camera size={16} /> Foto do comprovante</button>
+    <label className="mob-field-lg">VALOR (R$)<input type="number" step="0.01" placeholder="0,00" value={amount} data-testid="mob-expense-amount" onChange={e => setAmount(e.target.value)} /></label>
+    <label className="mob-field-md">OBSERVAÇÃO (OPCIONAL)<input placeholder="ex: posto na saída da cidade" value={note} data-testid="mob-expense-note" onChange={e => setNote(e.target.value)} /></label>
+    <button type="button" className="mob-photo-btn" data-testid="mob-expense-photo"><Camera size={20} /> Foto do comprovante</button>
     {error && <div className="error" data-testid="mob-expense-error">{error}</div>}
-    <button type="button" className="mob-cta" data-testid="mob-expense-submit" onClick={submit}><Check size={18} /> Enviar para aprovação</button>
+    <button type="button" className="mob-cta" data-testid="mob-expense-submit" onClick={submit}>Enviar para aprovação</button>
     <p className="mob-eyebrow" style={{ marginTop: 22 }}>MINHAS DESPESAS DE HOJE · {money(total)}</p>
     <div className="mob-expense-list">
       {items.length === 0 && <div className="mob-empty-dashed">Nenhuma despesa lançada.</div>}
-      {items.map(x => <div className="mob-expense-row" key={x.id} data-testid={`mob-expense-row-${x.id}`}>
-        <div><b>{x.type}</b>{x.notes && <small>{x.notes}</small>}</div>
-        <div className="mob-expense-right"><b>{money(x.amount)}</b><span className={`mob-status ${x.status === 'approved' ? 'green' : 'orange'}`}>{x.status === 'approved' ? 'Aprovada' : 'Aguardando'}</span></div>
-      </div>)}
+      {items.map(x => { const CatIcon = (MOBILE_EXPENSE_CATEGORIES.find(c => c[0] === x.type) || [])[1] || MoreHorizontal; return <div className="mob-expense-row" key={x.id} data-testid={`mob-expense-row-${x.id}`}>
+        <span className="mob-expense-icon"><CatIcon size={17} /></span>
+        <div><b>{x.type}</b><small>{new Date(x.created_at || Date.now()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</small></div>
+        <span className={`mob-status ${x.status === 'approved' ? 'green' : 'orange'}`}>{x.status === 'approved' ? 'Aprovada' : 'Aguardando'}</span>
+        <b>{money(x.amount)}</b>
+      </div> })}
     </div>
     <MobileToast text={toast} />
   </div>
@@ -1115,18 +1137,22 @@ function MobileDespesasTab({ user }) {
 
 function MobileAjustesTab({ user, theme, setTheme, textScale, setTextScale, onLogout }) {
   return <div className="mob-screen">
-    <p className="mob-eyebrow">APARÊNCIA</p>
-    <div className="mob-appearance-row">
-      <button type="button" className={theme === 'light' ? 'active' : ''} data-testid="mob-theme-light" onClick={() => setTheme('light')}><Sun size={18} /> Claro</button>
-      <button type="button" className={theme === 'dark' ? 'active' : ''} data-testid="mob-theme-dark" onClick={() => setTheme('dark')}><Moon size={18} /> Escuro</button>
+    <div className="mob-settings-card">
+      <p className="mob-eyebrow">APARÊNCIA</p>
+      <div className="mob-appearance-row">
+        <button type="button" className={theme === 'light' ? 'active' : ''} data-testid="mob-theme-light" onClick={() => setTheme('light')}><Sun size={18} /> Claro</button>
+        <button type="button" className={theme === 'dark' ? 'active' : ''} data-testid="mob-theme-dark" onClick={() => setTheme('dark')}><Moon size={18} /> Escuro</button>
+      </div>
+      <p className="mob-eyebrow" style={{ marginTop: 6 }}>TAMANHO DO TEXTO</p>
+      <div className="mob-appearance-row">
+        {[[1, 15], [1.1, 17], [1.2, 19]].map(([v, fs]) => <button type="button" key={v} className={textScale === v ? 'active' : ''} style={{ fontSize: fs, fontWeight: 700 }} data-testid={`mob-scale-${v}`} onClick={() => setTextScale(v)}>A</button>)}
+      </div>
     </div>
-    <p className="mob-eyebrow">TAMANHO DO TEXTO</p>
-    <div className="mob-appearance-row">
-      {[[1, 14], [1.1, 18], [1.2, 22]].map(([v, fs]) => <button type="button" key={v} className={textScale === v ? 'active' : ''} style={{ fontSize: fs }} data-testid={`mob-scale-${v}`} onClick={() => setTextScale(v)}>A</button>)}
+    <div className="mob-settings-card">
+      <p className="mob-eyebrow">CONTA</p>
+      <div className="mob-account-row"><span className="mob-avatar">{user.name.split(' ').map(x => x[0]).join('').slice(0, 2)}</span><div><b>{user.name}</b><small>Entregador</small></div></div>
+      <button type="button" className="mob-danger-btn full" data-testid="mob-logout-button" onClick={onLogout}>Sair da conta</button>
     </div>
-    <p className="mob-eyebrow">CONTA</p>
-    <div className="mob-account-card"><span className="mob-avatar">{user.name.split(' ').map(x => x[0]).join('').slice(0, 2)}</span><div><b>{user.name}</b><small>Entregador</small></div></div>
-    <button type="button" className="mob-danger-btn full" data-testid="mob-logout-button" onClick={onLogout}><LogOut size={16} /> Sair da conta</button>
   </div>
 }
 
@@ -1157,7 +1183,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
     setTimeout(() => setToast(''), 2200);
   }
 
-  const titles = { clientes: ['Clientes de hoje', 'Selecione o cliente e lance a quantidade'], diario: ['Controle Diário', 'Seus lançamentos de hoje'], caixa: ['Caixa do dia', 'Recebimentos e despesas'], despesas: ['Despesas', 'Lance e envie para aprovação'], ajustes: ['Ajustes', 'Tema, texto e conta'] };
+  const titles = { clientes: ['Clientes de hoje', 'Selecione o cliente e lance a quantidade'], diario: ['Controle Diário', 'Hoje · viagem 1'], caixa: ['Caixa do dia', 'Fechamento do entregador'], despesas: ['Despesas', 'Lance e envie para aprovação'], ajustes: ['Ajustes', 'Tema, texto e conta'] };
   const [title, subtitle] = titles[tab];
 
   return <div className={`mobile-app${theme === 'dark' ? ' dark' : ''}`} style={{ '--scale': textScale }} data-testid="mobile-driver-app">

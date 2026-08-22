@@ -97,6 +97,9 @@
 .mob-cta{width:100%;height:68px;border-radius:16px;background:var(--mob-blue);color:#fff;font:700 calc(18px * var(--scale)) 'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;gap:10px;box-shadow:0 10px 22px #0878d13d}
 .mob-cta:disabled{opacity:.45;box-shadow:none}
 .mob-secondary-btn{width:100%;height:60px;border-radius:14px;background:var(--mob-blue-soft);color:var(--mob-blue);border:1.5px solid var(--mob-blue-border);font:700 calc(15px * var(--scale)) 'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;gap:8px}
+.mob-outline-btn{width:100%;height:60px;border-radius:14px;background:var(--mob-surface);color:var(--mob-blue);border:1.5px solid var(--mob-line);font:700 calc(16px * var(--scale)) 'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:4px}
+.mob-outline-btn.wide{margin-top:14px}
+.mob-photo-btn{width:100%;height:64px;border-radius:14px;background:var(--mob-blue-soft);color:var(--mob-blue);border:1.5px dashed var(--mob-blue-border);font:700 calc(15px * var(--scale)) 'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;gap:10px}
 .mob-danger-btn{width:100%;height:56px;border-radius:14px;background:var(--mob-red-soft);color:var(--mob-red);border:1.5px solid var(--mob-red-border);font:700 calc(14px * var(--scale)) 'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;gap:8px}
 .mob-danger-btn.full{margin-top:6px}
 .mob-ghost-btn{flex:1;height:52px;border-radius:12px;background:var(--mob-surface2);color:var(--mob-ink);font:700 calc(14px * var(--scale)) 'DM Sans',sans-serif}
@@ -113,9 +116,12 @@
 .mob-customer-info{flex:1;display:flex;flex-direction:column;gap:3px;min-width:0}
 .mob-customer-info b{font-size:calc(16px * var(--scale));font-weight:700}
 .mob-customer-info small{font-size:calc(12.5px * var(--scale));color:var(--mob-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mob-tag{font-size:calc(11px * var(--scale));font-weight:700;padding:5px 8px;border-radius:8px;background:var(--mob-blue-soft);color:var(--mob-blue);white-space:nowrap;flex:none}
+.mob-tag{font-size:calc(11px * var(--scale));font-weight:700;padding:7px 10px;border-radius:8px;background:var(--mob-blue-soft);color:var(--mob-blue);white-space:nowrap;flex:none}
 .mob-tag.done{background:var(--mob-green-soft);color:var(--mob-green)}
 .mob-tag.orange{background:var(--mob-orange-soft);color:var(--mob-orange)}
+.mob-tag.neutral{background:var(--mob-surface2);color:var(--mob-muted)}
+.mob-customer-avatar.done-aware{background:var(--mob-blue-soft);color:var(--mob-blue)}
+.mob-customer-row.done .mob-customer-avatar.done-aware{background:var(--mob-green-soft);color:var(--mob-green)}
 
 .mob-backdrop{position:fixed;inset:0;background:#10253f7a;z-index:30;display:flex;align-items:flex-end}
 .mob-sheet{width:100%;max-height:88%;overflow-y:auto;background:var(--mob-surface);color:var(--mob-ink);border-radius:24px 24px 0 0;padding:8px 18px 22px;box-shadow:0 12px 28px #10253f3d}
@@ -199,23 +205,32 @@
 .mob-total-card{background:var(--mob-surface);border:1px solid var(--mob-line);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:6px}
 .mob-total-card span{font-size:calc(11.5px * var(--scale));color:var(--mob-muted);font-weight:700;text-transform:uppercase}
 .mob-total-card b{font:700 calc(22px * var(--scale)) 'Space Grotesk',sans-serif}
+.mob-total-card b.blue{color:var(--mob-blue)}
+.mob-total-card b.green{color:var(--mob-green)}
 .mob-empty-dashed{border:1.5px dashed var(--mob-line);border-radius:14px;padding:30px 16px;text-align:center;color:var(--mob-muted);font-size:calc(13px * var(--scale))}
 .mob-entry-list{display:flex;flex-direction:column;gap:10px}
 .mob-entry-card{background:var(--mob-surface);border:1px solid var(--mob-line);border-radius:14px;padding:14px}
 .mob-entry-top{display:flex;justify-content:space-between;font-size:calc(16px * var(--scale));font-weight:700;margin-bottom:8px}
 .mob-chips{display:flex;flex-wrap:wrap;gap:6px}
-.mob-chip{flex:none;white-space:nowrap;font-size:calc(12px * var(--scale));font-weight:600;padding:5px 9px;border-radius:8px;background:var(--mob-surface2);color:var(--mob-ink)}
+.mob-chip{flex:none;white-space:nowrap;font-size:calc(12px * var(--scale));font-weight:600;padding:5px 9px;border-radius:8px;background:var(--mob-surface2);color:var(--mob-muted)}
+.mob-chip.neutral{background:var(--mob-surface2);color:var(--mob-muted)}
+.mob-chip.blue{background:var(--mob-blue-soft);color:var(--mob-blue)}
+.mob-chip.green{background:var(--mob-green-soft);color:var(--mob-green)}
 .mob-chip.orange{background:var(--mob-orange-soft);color:var(--mob-orange)}
 
 .mob-cash-hero{background:linear-gradient(160deg,var(--mob-blue),var(--mob-blue-deep));border-radius:20px;padding:22px;color:#fff;display:flex;flex-direction:column;gap:8px}
 .mob-cash-hero span{font-size:calc(11.5px * var(--scale));letter-spacing:.6px;opacity:.85;font-weight:700;text-transform:uppercase}
 .mob-cash-hero b{font:700 calc(40px * var(--scale)) 'Space Grotesk',sans-serif;letter-spacing:-1px}
+.mob-cash-hero small{font-size:calc(12.5px * var(--scale));opacity:.85}
 .mob-cash-rows{display:flex;flex-direction:column;gap:10px}
 .mob-cash-row{display:flex;align-items:center;gap:12px;background:var(--mob-surface);border:1px solid var(--mob-line);border-radius:14px;padding:12px}
 .mob-cash-row>div{flex:1}
 .mob-cash-row b{font-size:calc(13.5px * var(--scale))}
 .mob-cash-row small{display:block;color:var(--mob-muted);font-size:calc(11px * var(--scale))}
-.mob-cash-row>b{font-size:calc(14px * var(--scale))}
+.mob-cash-row>b{font:700 calc(16px * var(--scale)) 'Space Grotesk',sans-serif}
+.mob-cash-row>b.blue{color:var(--mob-blue)}
+.mob-cash-row>b.green{color:var(--mob-green)}
+.mob-cash-row>b.orange{color:var(--mob-orange)}
 .mob-cash-icon{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;flex:none}
 .mob-cash-icon.blue{background:var(--mob-blue-soft);color:var(--mob-blue)}
 .mob-cash-icon.green{background:var(--mob-green-soft);color:var(--mob-green)}
@@ -231,9 +246,12 @@
 .mob-field-md{display:grid;gap:6px;font-size:calc(11px * var(--scale));font-weight:700;color:var(--mob-muted);text-transform:uppercase}
 .mob-field-md input{padding:13px;border-radius:12px;border:1px solid var(--mob-line);font-size:calc(16px * var(--scale));background:var(--mob-surface);color:var(--mob-ink)}
 .mob-expense-list{display:flex;flex-direction:column;gap:10px}
-.mob-expense-row{display:flex;justify-content:space-between;align-items:center;background:var(--mob-surface);border:1px solid var(--mob-line);border-radius:12px;padding:12px}
-.mob-expense-row b{font-size:calc(14px * var(--scale))}
-.mob-expense-row small{display:block;color:var(--mob-muted);font-size:calc(11.5px * var(--scale))}
+.mob-expense-row{display:flex;align-items:center;gap:10px;background:var(--mob-surface);border:1px solid var(--mob-line);border-radius:14px;padding:12px 14px}
+.mob-expense-row>div{flex:1;min-width:0}
+.mob-expense-row b{font-size:calc(14.5px * var(--scale))}
+.mob-expense-row>b{font:700 calc(15px * var(--scale)) 'Space Grotesk',sans-serif;flex:none;white-space:nowrap}
+.mob-expense-row small{display:block;color:var(--mob-muted);font-size:calc(12px * var(--scale));margin-top:2px}
+.mob-expense-icon{width:38px;height:38px;border-radius:11px;background:var(--mob-orange-soft);color:var(--mob-orange);display:grid;place-items:center;flex:none}
 .mob-expense-right{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
 .mob-status{font-size:calc(10.5px * var(--scale));font-weight:700;padding:4px 8px;border-radius:8px}
 .mob-status.orange{background:var(--mob-orange-soft);color:var(--mob-orange)}
@@ -245,5 +263,9 @@
 .mob-account-card{display:flex;align-items:center;gap:12px;background:var(--mob-surface);border:1px solid var(--mob-line);border-radius:14px;padding:14px}
 .mob-account-card b{display:block;font-size:calc(14px * var(--scale))}
 .mob-account-card small{color:var(--mob-muted);font-size:calc(12px * var(--scale))}
+.mob-settings-card{background:var(--mob-surface);border:1px solid var(--mob-line);border-radius:16px;padding:18px;display:grid;gap:14px}
+.mob-account-row{display:flex;align-items:center;gap:12px}
+.mob-account-row b{display:block;font-size:calc(15px * var(--scale))}
+.mob-account-row small{color:var(--mob-muted);font-size:calc(12px * var(--scale))}
 
 @media(min-width:701px){.mobile-app{display:none}}
