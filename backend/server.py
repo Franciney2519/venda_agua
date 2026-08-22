@@ -187,6 +187,13 @@ async def update_expense(item_id: str, data: ResourceInput, user=Depends(admin_u
     doc = await db.expenses.find_one({"id": item_id}, {"_id": 0})
     await log_activity(f"expense_{doc.get('status','updated')}", user, {"id": item_id, "name": doc.get("type"), "email": doc.get("driver")})
     return doc
+@api.delete("/expenses/{item_id}")
+async def delete_expense(item_id: str, user=Depends(current_user)):
+    target = await db.expenses.find_one({"id": item_id}, {"_id": 0})
+    if not target: raise HTTPException(404, "Lançamento não encontrado")
+    if user.get("role") != "admin" and target.get("created_by") != user["id"]: raise HTTPException(403, "Sem permissão")
+    await db.expenses.delete_one({"id": item_id})
+    return {"message": "Excluído"}
 @api.get("/customers")
 async def customers(user=Depends(current_user)): return await list_resource("customers")
 @api.post("/customers")

@@ -22,6 +22,11 @@ Perfis Admin/Entregador; entregas com rota e ordem; statuses pendente, em rota, 
 - Produtos com marca e custo de compra (`cost_price`) para cálculo de margem.
 - Tela "Controle Diário" do entregador (rota `/controle-diario`), nos moldes do controle em planilha: ao selecionar o cliente, marca e preço vêm automaticamente do cadastro (somente leitura); o entregador só preenche quantidade, MF (troca por microfuro/avaria), comp e valores recebidos (Pix/Dinheiro). Coleção `daily_entries` no backend.
 - Relatório "Lucro por cliente" em Relatórios: receita − custo (via `cost_price` do produto/marca) por cliente, no período filtrado.
+- MF agora abate quantidade e valor da entrega (`billed_quantity`); COMP virou venda a prazo (15/30 dias) com `due_date` calculada a partir da data de entrega.
+- Tela "Provisão de Pagamento" (admin, `/provisao`): contas a receber a prazo por vencimento, com marcação de recebido/pendente.
+- Aba "Despesas do Dia" dentro do Controle Diário: entregador lança despesa (alimentação, combustível, internet, outros) sem precisar de aprovação do admin; tela mostra recebido do dia − despesas = saldo a repassar.
+- Rascunhos de formulário (Controle Diário e Despesas do Dia) persistidos em `localStorage` por usuário+data, para não perder lançamento em andamento se a página recarregar.
+- Ao lançar Pix, o campo Dinheiro completa automaticamente o restante do total esperado do lançamento (qtd líquida × preço − valor a prazo), e vice-versa.
 ## Backlog priorizado
 - P0: aprovação de despesas e tela mobile dedicada do entregador.
 - P1: filtros de período aplicados às consultas de relatórios.

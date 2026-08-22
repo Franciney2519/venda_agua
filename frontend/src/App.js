@@ -10,6 +10,13 @@ import "@/Operations.css";
 const api = axios.create({ baseURL: `${process.env.REACT_APP_BACKEND_URL}/api` });
 const auth = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem("hydro_token")}` } });
 const money = v => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v || 0);
+
+function useDraft(key, initial) {
+  const [value, setValue] = useState(() => { try { const saved = localStorage.getItem(key); return saved ? JSON.parse(saved) : initial; } catch { return initial; } });
+  useEffect(() => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { } }, [key, value]);
+  function clear() { try { localStorage.removeItem(key); } catch { } setValue(initial); }
+  return [value, setValue, clear];
+}
 const nav = [['/', 'Visão geral', LayoutDashboard], ['/rotas', 'Rotas', Map], ['/entregas', 'Entregas', Truck], ['/controle-diario', 'Controle Diário', CalendarCheck], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/usuarios', 'Usuários', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
 
 function Shell({ user, onLogout, notifications, children }) {
@@ -321,21 +328,75 @@ function Customers({ items, create }) { return <><Head eyebrow="RELACIONAMENTO" 
 
 const DAILY_ENTRY_FIELDS = ['customer', 'brand', 'quantity', 'price', 'mf_quantity', 'comp_value', 'comp_days', 'pix_value', 'cash_value'];
 
+const EXPENSE_CATEGORIES = ['Alimentação', 'Combustível', 'Internet', 'Outros'];
+
+function DailyExpensesTab({ user, date }) {
+  const [items, setItems] = useState([]);
+  const [draft, setDraft, clearDraft] = useDraft(`hydro_expense_draft_${user.id}_${date}`, { category: EXPENSE_CATEGORIES[0], amount: '' });
+  const { category, amount } = draft;
+  const setCategory = c => setDraft({ ...draft, category: c });
+  const setAmount = a => setDraft({ ...draft, amount: a });
+  const [error, setError] = useState('');
+
+  async function load() {
+    const { data } = await api.get('/expenses', auth());
+    setItems(data.filter(x => (x.driver || '') === user.name && (x.created_at || '').slice(0, 10) === date));
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [date]);
+
+  async function submit(e) {
+    e.preventDefault(); setError('');
+    if (!amount || Number(amount) <= 0) return setError('Informe um valor válido.');
+    try {
+      const { data } = await api.post('/expenses', { type: category, driver: user.name, amount: Number(amount), status: 'approved' }, auth());
+      setItems([data, ...items]); clearDraft();
+    } catch (e) { setError(e.response?.data?.detail || 'Não foi possível lançar.'); }
+  }
+  async function remove(id) { await api.delete(`/expenses/${id}`, auth()).catch(() => { }); setItems(items.filter(x => x.id !== id)); }
+
+  const total = items.reduce((s, x) => s + Number(x.amount || 0), 0);
+  return <section className="panel table-panel">
+    <form className="daily-entry-form" style={{ gridTemplateColumns: '1fr 1fr auto' }} onSubmit={submit}>
+      <label>Categoria<select value={category} data-testid="expense-category-input" onChange={e => setCategory(e.target.value)}>{EXPENSE_CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></label>
+      <label>Valor<input type="number" step="0.01" value={amount} data-testid="expense-amount-input" onChange={e => setAmount(e.target.value)} /></label>
+      <button className="primary" data-testid="expense-add-button"><Plus size={15} /> Lançar despesa</button>
+    </form>
+    {error && <div className="error" data-testid="expense-form-error">{error}</div>}
+    <div className="table-wrap"><table><thead><tr><th>CATEGORIA</th><th>VALOR</th><th /></tr></thead><tbody>
+      {items.map(x => <tr key={x.id} data-testid={`expense-row-${x.id}`}>
+        <td><b>{x.type}</b></td><td>{money(x.amount)}</td>
+        <td><button className="action-btn reject" data-testid={`expense-delete-${x.id}`} onClick={() => remove(x.id)}><Trash2 size={13} /></button></td>
+      </tr>)}
+      {items.length === 0 && <tr><td colSpan={3} className="muted" style={{ padding: 16 }}>Nenhuma despesa lançada nesta data.</td></tr>}
+    </tbody>
+    {items.length > 0 && <tfoot><tr><td><b>Total</b></td><td><b>{money(total)}</b></td><td /></tr></tfoot>}
+    </table></div>
+  </section>
+}
+
 function DailyControl({ user, customers }) {
   const [date, setDate] = useState(todayISO(0));
+  const [tab, setTab] = useState('entries');
   const [entries, setEntries] = useState([]);
-  const [form, setForm] = useState({ trip_number: '1' });
+  const [expensesTotal, setExpensesTotal] = useState(0);
+  const [form, setForm] = useDraft(`hydro_daily_draft_${user.id}_${date}`, { trip_number: '1' });
   const [error, setError] = useState('');
 
   async function load() { const { data } = await api.get('/daily-entries', { ...auth(), params: user.role === 'driver' ? { date, driver: user.name } : { date } }); setEntries(data); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [date]);
+  useEffect(() => { api.get('/expenses', auth()).then(({ data }) => setExpensesTotal(data.filter(x => (x.driver || '') === user.name && (x.created_at || '').slice(0, 10) === date).reduce((s, x) => s + Number(x.amount || 0), 0))); }, [date, tab, user.name]);
 
   function pickCustomer(name) {
     const c = customers.find(x => x.name === name);
     setForm({ ...form, customer: name, brand: c?.brand || '', price: c?.price ?? '' });
   }
   const customerFound = !!customers.find(x => x.name === form.customer);
+  const expectedTotal = Math.max(0, (Number(form.quantity || 0) - Number(form.mf_quantity || 0)) * Number(form.price || 0));
+  const remainingForCash = Math.max(0, expectedTotal - Number(form.comp_value || 0));
+  function setPix(v) { const pix = Number(v) || 0; setForm({ ...form, pix_value: v, cash_value: v === '' ? form.cash_value : String(Math.max(0, remainingForCash - pix)) }); }
+  function setCash(v) { const cash = Number(v) || 0; setForm({ ...form, cash_value: v, pix_value: v === '' ? form.pix_value : String(Math.max(0, remainingForCash - cash)) }); }
 
   async function submit(e) {
     e.preventDefault(); setError('');
@@ -353,14 +414,25 @@ function DailyControl({ user, customers }) {
 
   const totals = entries.reduce((s, e) => ({ qty: s.qty + Number(e.quantity || 0), pix: s.pix + Number(e.pix_value || 0), cash: s.cash + Number(e.cash_value || 0), total: s.total + Number(e.total || 0) }), { qty: 0, pix: 0, cash: 0, total: 0 });
 
-  return <><Head eyebrow="OPERAÇÃO DIÁRIA" title="Controle Diário" subtitle="Lance cada cliente atendido na viagem, igual ao controle de papel." />
+  const received = totals.total;
+  const balance = received - expensesTotal;
+  return <><Head eyebrow="OPERAÇÃO DIÁRIA" title="Controle Diário" subtitle="Lance cada cliente atendido na viagem e as despesas do dia, igual ao controle de papel." />
     <div className="report-toolbar">
       <div className="report-filters">
         <label>Data<input type="date" value={date} data-testid="daily-date-input" onChange={e => setDate(e.target.value)} /></label>
         <label>Nº Viagem<input value={form.trip_number || ''} data-testid="daily-trip-input" onChange={e => setForm({ ...form, trip_number: e.target.value })} /></label>
       </div>
     </div>
-    <section className="panel table-panel">
+    <div className="stats">
+      <Stat label="Recebido hoje" value={money(received)} detail="Pix + Dinheiro + a prazo" Icon={CircleDollarSign} tone="green" />
+      <Stat label="Despesas do dia" value={money(expensesTotal)} detail="Alimentação, combustível, internet..." Icon={WalletCards} tone="orange" />
+      <Stat label="Saldo a repassar" value={money(balance)} detail="Recebido − despesas" Icon={ArrowUpRight} />
+    </div>
+    <div className="filter-row">
+      <button className={tab === 'entries' ? 'active' : ''} data-testid="daily-tab-entries" onClick={() => setTab('entries')}>Lançamentos</button>
+      <button className={tab === 'expenses' ? 'active' : ''} data-testid="daily-tab-expenses" onClick={() => setTab('expenses')}>Despesas do Dia</button>
+    </div>
+    {tab === 'expenses' ? <DailyExpensesTab user={user} date={date} /> : <section className="panel table-panel">
       <form className="daily-entry-form" onSubmit={submit}>
         <label>Cliente<input list="daily-customers" value={form.customer || ''} data-testid="daily-customer-input" onChange={e => pickCustomer(e.target.value)} /><datalist id="daily-customers">{customers.map(c => <option key={c.id} value={c.name} />)}</datalist></label>
         <label>Marca<input value={form.brand || ''} readOnly={customerFound} placeholder={customerFound ? '' : 'Cliente sem cadastro'} data-testid="daily-brand-input" onChange={e => setForm({ ...form, brand: e.target.value })} /></label>
@@ -369,10 +441,11 @@ function DailyControl({ user, customers }) {
         <label>MF (não entregue)<input type="number" value={form.mf_quantity || ''} data-testid="daily-mf-input" onChange={e => setForm({ ...form, mf_quantity: e.target.value })} /></label>
         <label>Valor a prazo<input type="number" step="0.01" value={form.comp_value || ''} data-testid="daily-comp-value-input" onChange={e => setForm({ ...form, comp_value: e.target.value })} /></label>
         <label>Prazo<select data-testid="daily-comp-days-input" value={form.comp_days || '15'} onChange={e => setForm({ ...form, comp_days: e.target.value })}><option value="15">15 dias</option><option value="30">30 dias</option></select></label>
-        <label>Pix<input type="number" step="0.01" value={form.pix_value || ''} data-testid="daily-pix-input" onChange={e => setForm({ ...form, pix_value: e.target.value })} /></label>
-        <label>Dinheiro<input type="number" step="0.01" value={form.cash_value || ''} data-testid="daily-cash-input" onChange={e => setForm({ ...form, cash_value: e.target.value })} /></label>
+        <label>Pix<input type="number" step="0.01" value={form.pix_value || ''} data-testid="daily-pix-input" onChange={e => setPix(e.target.value)} /></label>
+        <label>Dinheiro<input type="number" step="0.01" value={form.cash_value || ''} data-testid="daily-cash-input" onChange={e => setCash(e.target.value)} /></label>
         <button className="primary" data-testid="daily-add-button"><Plus size={15} /> Lançar</button>
       </form>
+      {expectedTotal > 0 && <p className="muted" style={{ padding: '0 22px 14px' }} data-testid="daily-expected-total">Total a receber deste lançamento: <b>{money(expectedTotal)}</b>{form.comp_value ? ` (${money(remainingForCash)} em Pix/Dinheiro + ${money(Number(form.comp_value))} a prazo)` : ''}</p>}
       {error && <div className="error" data-testid="daily-form-error">{error}</div>}
       <div className="table-wrap"><table><thead><tr><th>CLIENTE</th><th>MARCA</th><th>QTD PROG.</th><th>MF</th><th>QTD ENTREGUE</th><th>VALOR ÁGUA</th><th>A PRAZO</th><th>PIX</th><th>DINHEIRO</th><th>TOTAL</th><th /></tr></thead><tbody>
         {entries.map(e => <tr key={e.id} data-testid={`daily-row-${e.id}`}>
@@ -388,7 +461,7 @@ function DailyControl({ user, customers }) {
       </tbody>
       {entries.length > 0 && <tfoot><tr><td colSpan={4}><b>Totais</b></td><td><b>{totals.qty}</b></td><td /><td /><td>{money(totals.pix)}</td><td>{money(totals.cash)}</td><td><b>{money(totals.total)}</b></td><td /></tr></tfoot>}
       </table></div>
-    </section></>
+    </section>}</>
 }
 
 function UsersPage({ me }) {
