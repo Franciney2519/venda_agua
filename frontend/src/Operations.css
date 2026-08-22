@@ -63,8 +63,8 @@
   --mob-green:#11966d;--mob-green-soft:#e7f7f0;--mob-green-border:#c3ebd8;
   --mob-orange:#c57816;--mob-orange-soft:#fff4e5;--mob-orange-border:#f6dfb7;
   --mob-red:#d54e4e;--mob-red-soft:#fff0f0;--mob-red-border:#f4c8c8;
-  min-height:100vh;display:flex;flex-direction:column;background:var(--mob-bg);color:var(--mob-ink);
-  font-family:'DM Sans',sans-serif;position:fixed;inset:0;overflow-y:auto;z-index:5;
+  min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;background:var(--mob-bg);color:var(--mob-ink);
+  font-family:'DM Sans',sans-serif;position:relative;z-index:5;
 }
 .mobile-app.dark{
   --mob-bg:#0e1620;--mob-surface:#16202c;--mob-surface2:#1d2836;--mob-ink:#e9eef4;--mob-muted:#94a7ba;--mob-line:#26313f;
