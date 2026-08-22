@@ -27,6 +27,8 @@ Perfis Admin/Entregador; entregas com rota e ordem; statuses pendente, em rota, 
 - Aba "Despesas do Dia" dentro do Controle Diário: entregador lança despesa (alimentação, combustível, internet, outros) sem precisar de aprovação do admin; tela mostra recebido do dia − despesas = saldo a repassar.
 - Rascunhos de formulário (Controle Diário e Despesas do Dia) persistidos em `localStorage` por usuário+data, para não perder lançamento em andamento se a página recarregar.
 - Ao lançar Pix, o campo Dinheiro completa automaticamente o restante do total esperado do lançamento (qtd líquida × preço − valor a prazo), e vice-versa.
+- Programação de entrega deixou de ser exclusiva do admin: o entregador programa a própria entrega em "Entregas"/"Rotas" (`POST /deliveries` liberado para qualquer usuário autenticado; o campo entregador é preenchido automaticamente com o próprio nome quando quem lança não é admin).
+- Cliente pode ter mais de uma marca de água preferida, cada uma com preço próprio (`customers.brands: [{brand, price}]`). Cadastro de cliente ganhou modal dedicado com linhas dinâmicas de marca/preço. No Controle Diário, se o cliente tiver mais de uma marca, o entregador escolhe qual está entregando naquele lançamento e o preço daquela marca é aplicado automaticamente.
 ## Backlog priorizado
 - P0: aprovação de despesas e tela mobile dedicada do entregador.
 - P1: filtros de período aplicados às consultas de relatórios.

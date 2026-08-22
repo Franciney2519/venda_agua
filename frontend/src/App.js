@@ -83,7 +83,43 @@ function Stat({ label, value, detail, Icon, tone = '' }) { return <div className
 
 function Modal({ title, fields, onClose, onSave }) { const [form, setForm] = useState({}), [error, setError] = useState(''); async function submit(e) { e.preventDefault(); if (fields.some(x => x.required !== false && !String(form[x.key] || '').trim())) return setError('Preencha os campos obrigatórios.'); try { await onSave(form) } catch (e) { setError(e.response?.data?.detail || 'Não foi possível salvar.') } } return <div className="modal-backdrop"><form className="quick-modal" onSubmit={submit}><button type="button" className="modal-close" onClick={onClose} data-testid="modal-close-button"><X /></button><p className="eyebrow">NOVO LANÇAMENTO</p><h3>{title}</h3>{fields.map(f => <label key={f.key}>{f.label}{f.options ? <select required={f.required !== false} data-testid={`modal-${f.key}-input`} onChange={e => setForm({ ...form, [f.key]: e.target.value })}><option value="">Selecione</option>{f.options.map(x => <option key={x}>{x}</option>)}</select> : <input required={f.required !== false} type={f.type || 'text'} data-testid={`modal-${f.key}-input`} onChange={e => setForm({ ...form, [f.key]: e.target.value })} />}</label>)}{error && <div className="error" data-testid="form-validation-error">{error}</div>}<button className="primary full" data-testid="modal-submit-button"><Save size={16} /> Salvar lançamento</button></form></div> }
 
-const fields = { product: [{ key: 'name', label: 'Nome do produto' }, { key: 'brand', label: 'Marca', required: false }, { key: 'category', label: 'Categoria', options: ['Retornável', 'Descartável'] }, { key: 'quantity', label: 'Quantidade', type: 'number' }, { key: 'minimum', label: 'Estoque mínimo', type: 'number' }, { key: 'cost_price', label: 'Custo de compra (R$/un)', type: 'number', required: false }], delivery: [{ key: 'customer', label: 'Cliente' }, { key: 'address', label: 'Endereço' }, { key: 'driver', label: 'Entregador' }, { key: 'product', label: 'Produto' }, { key: 'quantity', label: 'Quantidade', type: 'number' }, { key: 'value', label: 'Valor', type: 'number' }], expense: [{ key: 'type', label: 'Categoria', options: ['Combustível', 'Alimentação', 'Pedágio', 'Manutenção', 'Outros'] }, { key: 'driver', label: 'Entregador' }, { key: 'amount', label: 'Valor', type: 'number' }], customer: [{ key: 'name', label: 'Nome / empresa' }, { key: 'address', label: 'Endereço' }, { key: 'phone', label: 'Telefone', required: false }, { key: 'brand', label: 'Marca preferida', required: false }, { key: 'price', label: 'Preço da água (R$/un)', type: 'number', required: false }] };
+const fields = { product: [{ key: 'name', label: 'Nome do produto' }, { key: 'brand', label: 'Marca', required: false }, { key: 'category', label: 'Categoria', options: ['Retornável', 'Descartável'] }, { key: 'quantity', label: 'Quantidade', type: 'number' }, { key: 'minimum', label: 'Estoque mínimo', type: 'number' }, { key: 'cost_price', label: 'Custo de compra (R$/un)', type: 'number', required: false }], delivery: [{ key: 'customer', label: 'Cliente' }, { key: 'address', label: 'Endereço' }, { key: 'driver', label: 'Entregador' }, { key: 'product', label: 'Produto' }, { key: 'quantity', label: 'Quantidade', type: 'number' }, { key: 'value', label: 'Valor', type: 'number' }], expense: [{ key: 'type', label: 'Categoria', options: ['Combustível', 'Alimentação', 'Pedágio', 'Manutenção', 'Outros'] }, { key: 'driver', label: 'Entregador' }, { key: 'amount', label: 'Valor', type: 'number' }], customer: [{ key: 'name', label: 'Nome / empresa' }, { key: 'address', label: 'Endereço' }, { key: 'phone', label: 'Telefone', required: false }] };
+
+function CustomerModal({ onClose, onSave }) {
+  const [form, setForm] = useState({ name: '', address: '', phone: '' });
+  const [brands, setBrands] = useState([{ brand: '', price: '' }]);
+  const [error, setError] = useState('');
+
+  function updateBrand(i, key, value) { const next = [...brands]; next[i] = { ...next[i], [key]: value }; setBrands(next); }
+  function addBrand() { setBrands([...brands, { brand: '', price: '' }]); }
+  function removeBrand(i) { setBrands(brands.filter((_, idx) => idx !== i)); }
+
+  async function submit(e) {
+    e.preventDefault(); setError('');
+    if (!form.name.trim() || !form.address.trim()) return setError('Preencha os campos obrigatórios.');
+    const cleanBrands = brands.filter(b => b.brand.trim()).map(b => ({ brand: b.brand.trim(), price: Number(b.price) || 0 }));
+    try { await onSave({ ...form, brands: cleanBrands, brand: cleanBrands[0]?.brand, price: cleanBrands[0]?.price }); }
+    catch (e) { setError(e.response?.data?.detail || 'Não foi possível salvar.'); }
+  }
+
+  return <div className="modal-backdrop"><form className="quick-modal" onSubmit={submit}>
+    <button type="button" className="modal-close" onClick={onClose} data-testid="modal-close-button"><X /></button>
+    <p className="eyebrow">NOVO LANÇAMENTO</p>
+    <h3>Cadastrar cliente</h3>
+    <label>Nome / empresa<input required value={form.name} data-testid="modal-name-input" onChange={e => setForm({ ...form, name: e.target.value })} /></label>
+    <label>Endereço<input required value={form.address} data-testid="modal-address-input" onChange={e => setForm({ ...form, address: e.target.value })} /></label>
+    <label>Telefone<input value={form.phone} data-testid="modal-phone-input" onChange={e => setForm({ ...form, phone: e.target.value })} /></label>
+    <label>Marcas de água que este cliente pede (com preço combinado de cada uma)</label>
+    {brands.map((b, i) => <div className="brand-price-row" key={i}>
+      <input placeholder="Marca (ex: Minalar)" value={b.brand} data-testid={`modal-brand-input-${i}`} onChange={e => updateBrand(i, 'brand', e.target.value)} />
+      <input type="number" step="0.01" placeholder="Preço R$/un" value={b.price} data-testid={`modal-brand-price-${i}`} onChange={e => updateBrand(i, 'price', e.target.value)} />
+      {brands.length > 1 && <button type="button" className="action-btn reject" onClick={() => removeBrand(i)}><Trash2 size={13} /></button>}
+    </div>)}
+    <button type="button" className="ghost-btn" data-testid="modal-add-brand" onClick={addBrand}><Plus size={14} /> Adicionar outra marca</button>
+    {error && <div className="error" data-testid="form-validation-error">{error}</div>}
+    <button className="primary full" data-testid="modal-submit-button"><Save size={16} /> Salvar lançamento</button>
+  </form></div>
+}
 
 function PerformanceChart() {
   const [monthly, setMonthly] = useState([]);
@@ -324,7 +360,7 @@ function Finance({ data, setData, create, user }) {
       </tbody></table></div></section></>
 }
 
-function Customers({ items, create }) { return <><Head eyebrow="RELACIONAMENTO" title="Clientes" subtitle="Sua carteira, marca preferida e preço combinado por cliente." action="Novo cliente" onAction={() => create('customer')} /><div className="customer-grid">{items.map(x => <div className="customer-card" key={x.id}><div className="customer-avatar">{x.name?.[0]}</div><div><b>{x.name}</b><span>{x.address}</span><small>{x.phone || 'Cliente ativo'}</small>{(x.brand || x.price) && <small>{x.brand ? `Marca: ${x.brand}` : ''}{x.brand && x.price ? ' · ' : ''}{x.price ? `Preço: ${money(x.price)}/un` : ''}</small>}</div><ArrowUpRight size={18} /></div>)}</div></> }
+function Customers({ items, create }) { return <><Head eyebrow="RELACIONAMENTO" title="Clientes" subtitle="Sua carteira, marcas de água e preço combinado por cliente." action="Novo cliente" onAction={() => create('customer')} /><div className="customer-grid">{items.map(x => { const brandList = x.brands?.length ? x.brands : (x.brand ? [{ brand: x.brand, price: x.price }] : []); return <div className="customer-card" key={x.id}><div className="customer-avatar">{x.name?.[0]}</div><div><b>{x.name}</b><span>{x.address}</span><small>{x.phone || 'Cliente ativo'}</small>{brandList.length > 0 && <div className="customer-brands">{brandList.map((b, i) => <span className="tag blue" key={i}>{b.brand} · {money(b.price)}</span>)}</div>}</div><ArrowUpRight size={18} /></div> })}</div></> }
 
 const DAILY_ENTRY_FIELDS = ['customer', 'brand', 'quantity', 'price', 'mf_quantity', 'comp_value', 'comp_days', 'pix_value', 'cash_value'];
 
@@ -388,11 +424,22 @@ function DailyControl({ user, customers }) {
   useEffect(() => { load(); }, [date]);
   useEffect(() => { api.get('/expenses', auth()).then(({ data }) => setExpensesTotal(data.filter(x => (x.driver || '') === user.name && (x.created_at || '').slice(0, 10) === date).reduce((s, x) => s + Number(x.amount || 0), 0))); }, [date, tab, user.name]);
 
+  function customerBrands(c) { return c?.brands?.length ? c.brands : (c?.brand ? [{ brand: c.brand, price: c.price }] : []); }
+
   function pickCustomer(name) {
     const c = customers.find(x => x.name === name);
-    setForm({ ...form, customer: name, brand: c?.brand || '', price: c?.price ?? '' });
+    const opts = customerBrands(c);
+    const first = opts[0];
+    setForm({ ...form, customer: name, brand: first?.brand || '', price: first?.price ?? '' });
   }
-  const customerFound = !!customers.find(x => x.name === form.customer);
+  function pickBrand(brandName) {
+    const c = customers.find(x => x.name === form.customer);
+    const opt = customerBrands(c).find(b => b.brand === brandName);
+    setForm({ ...form, brand: brandName, price: opt?.price ?? form.price });
+  }
+  const selectedCustomer = customers.find(x => x.name === form.customer);
+  const customerFound = !!selectedCustomer;
+  const brandOptions = customerBrands(selectedCustomer);
   const expectedTotal = Math.max(0, (Number(form.quantity || 0) - Number(form.mf_quantity || 0)) * Number(form.price || 0));
   const remainingForCash = Math.max(0, expectedTotal - Number(form.comp_value || 0));
   function setPix(v) { const pix = Number(v) || 0; setForm({ ...form, pix_value: v, cash_value: v === '' ? form.cash_value : String(Math.max(0, remainingForCash - pix)) }); }
@@ -435,7 +482,10 @@ function DailyControl({ user, customers }) {
     {tab === 'expenses' ? <DailyExpensesTab user={user} date={date} /> : <section className="panel table-panel">
       <form className="daily-entry-form" onSubmit={submit}>
         <label>Cliente<input list="daily-customers" value={form.customer || ''} data-testid="daily-customer-input" onChange={e => pickCustomer(e.target.value)} /><datalist id="daily-customers">{customers.map(c => <option key={c.id} value={c.name} />)}</datalist></label>
-        <label>Marca<input value={form.brand || ''} readOnly={customerFound} placeholder={customerFound ? '' : 'Cliente sem cadastro'} data-testid="daily-brand-input" onChange={e => setForm({ ...form, brand: e.target.value })} /></label>
+        <label>Marca{brandOptions.length > 1
+          ? <select value={form.brand || ''} data-testid="daily-brand-select" onChange={e => pickBrand(e.target.value)}>{brandOptions.map(b => <option key={b.brand} value={b.brand}>{b.brand}</option>)}</select>
+          : <input value={form.brand || ''} readOnly={customerFound} placeholder={customerFound ? '' : 'Cliente sem cadastro'} data-testid="daily-brand-input" onChange={e => setForm({ ...form, brand: e.target.value })} />}
+        </label>
         <label>Qtd programada<input type="number" value={form.quantity || ''} data-testid="daily-quantity-input" onChange={e => setForm({ ...form, quantity: e.target.value })} /></label>
         <label>Valor água<input type="number" step="0.01" value={form.price || ''} readOnly={customerFound} placeholder={customerFound ? '' : 'Cliente sem cadastro'} data-testid="daily-price-input" onChange={e => setForm({ ...form, price: e.target.value })} /></label>
         <label>MF (não entregue)<input type="number" value={form.mf_quantity || ''} data-testid="daily-mf-input" onChange={e => setForm({ ...form, mf_quantity: e.target.value })} /></label>
@@ -752,7 +802,8 @@ function App() {
   if (checking) return <div className="loading">Carregando operação...</div>;
   if (!user) return <Login onLogin={setUser} />;
   const logout = () => { localStorage.removeItem('hydro_token'); setUser(null) };
-  async function save(kind, form) { const endpoints = { product: '/products', delivery: '/deliveries', expense: '/expenses', customer: '/customers' }; const payload = { ...form };['quantity', 'minimum', 'value', 'amount'].forEach(k => { if (payload[k] !== undefined) payload[k] = Number(payload[k]) }); if (kind === 'delivery') payload.status = 'pending'; if (kind === 'expense') { payload.status = 'pending'; if (!payload.driver) payload.driver = user.name; } const { data: x } = await api.post(endpoints[kind], payload, auth()); if (kind === 'customer') setCustomers([...customers, x]); else { const key = kind === 'product' ? 'products' : kind === 'delivery' ? 'deliveries' : 'expenses_list'; setData({ ...data, [key]: [...(data?.[key] || []), x] }) } setModal(null) }
+  async function save(kind, form) { const endpoints = { product: '/products', delivery: '/deliveries', expense: '/expenses', customer: '/customers' }; const payload = { ...form };['quantity', 'minimum', 'value', 'amount'].forEach(k => { if (payload[k] !== undefined) payload[k] = Number(payload[k]) }); if (kind === 'delivery') { payload.status = 'pending'; if (user.role !== 'admin') payload.driver = user.name; } if (kind === 'expense') { payload.status = 'pending'; if (!payload.driver) payload.driver = user.name; } const { data: x } = await api.post(endpoints[kind], payload, auth()); if (kind === 'customer') setCustomers([...customers, x]); else { const key = kind === 'product' ? 'products' : kind === 'delivery' ? 'deliveries' : 'expenses_list'; setData({ ...data, [key]: [...(data?.[key] || []), x] }) } setModal(null) }
+  const modalFields = modal === 'delivery' && user.role !== 'admin' ? fields.delivery.filter(f => f.key !== 'driver') : fields[modal];
   const adminOnly = el => user.role === 'admin' ? el : <Navigate to="/" replace />;
   return <Shell user={user} onLogout={logout} notifications={notifications}>
     <Routes>
@@ -769,7 +820,8 @@ function App() {
       <Route path="/atividade" element={adminOnly(<ActivityPage />)} />
       <Route path="/relatorios" element={adminOnly(<Reports />)} />
     </Routes>
-    {modal && <Modal title={{ product: 'Cadastrar produto', delivery: 'Lançar entrega', expense: 'Lançar despesa', customer: 'Cadastrar cliente' }[modal]} fields={fields[modal]} onClose={() => setModal(null)} onSave={x => save(modal, x)} />}
+    {modal === 'customer' && <CustomerModal onClose={() => setModal(null)} onSave={x => save('customer', x)} />}
+    {modal && modal !== 'customer' && <Modal title={{ product: 'Cadastrar produto', delivery: 'Programar entrega', expense: 'Lançar despesa' }[modal]} fields={modalFields} onClose={() => setModal(null)} onSave={x => save(modal, x)} />}
   </Shell>
 }
 export default () => <BrowserRouter><App /></BrowserRouter>;

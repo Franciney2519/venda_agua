@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 import os, uuid, logging, bcrypt, jwt
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Optional, List
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends, Response
 from fastapi.responses import PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -57,6 +57,7 @@ class ResourceInput(BaseModel):
     problem_quantity: Optional[int] = None
     brand: Optional[str] = None
     price: Optional[float] = None
+    brands: Optional[List[dict]] = None
     cost_price: Optional[float] = None
     date: Optional[str] = None
     trip_number: Optional[str] = None
@@ -169,7 +170,9 @@ async def add_product(data: ResourceInput, user=Depends(admin_user)): return awa
 @api.get("/deliveries")
 async def deliveries(user=Depends(current_user)): return await list_resource("deliveries")
 @api.post("/deliveries")
-async def add_delivery(data: ResourceInput, user=Depends(admin_user)): return await create_resource("deliveries", data, user)
+async def add_delivery(data: ResourceInput, user=Depends(current_user)):
+    if user.get("role") != "admin": data.driver = user["name"]
+    return await create_resource("deliveries", data, user)
 @api.patch("/deliveries/{item_id}")
 async def update_delivery(item_id: str, data: ResourceInput, user=Depends(current_user)):
     values = data.model_dump(exclude_unset=True); await db.deliveries.update_one({"id": item_id}, {"$set": values})
