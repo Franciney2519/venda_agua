@@ -17,7 +17,8 @@ DRIVER = {"email": "carlos@hydroflow.com", "password": "driver123"}
 def _login(creds):
     r = requests.post(f"{BASE_URL}/api/auth/login", json=creds)
     assert r.status_code == 200, r.text
-    return r.json()["token"], r.json()["user"]
+    body = r.json()
+    return body["token"], body
 
 
 @pytest.fixture(scope="module")
