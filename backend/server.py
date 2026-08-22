@@ -67,6 +67,9 @@ class ResourceInput(BaseModel):
     pix_value: Optional[float] = None
     cash_value: Optional[float] = None
     received: Optional[bool] = None
+    items: Optional[List[dict]] = None
+    mf_plan: Optional[str] = None
+    mf_date: Optional[str] = None
 
 def now(): return datetime.now(timezone.utc).isoformat()
 def delivered_value(d): return float(d.get("received_value") if d.get("received_value") is not None else d.get("value", 0))
@@ -219,13 +222,25 @@ async def add_daily_entry(data: ResourceInput, user=Depends(current_user)):
     doc = data.model_dump(exclude_none=True)
     doc["driver"] = doc.get("driver") or user["name"]
     doc["date"] = doc.get("date") or datetime.now(timezone.utc).date().isoformat()
-    qty = float(doc.get("quantity") or 0)
-    mf = float(doc.get("mf_quantity") or 0)
-    billed_qty = max(0.0, qty - mf)
-    price = float(doc.get("price") or 0)
-    comp_value = float(doc.get("comp_value") or 0)
+    items = doc.get("items")
+    if items:
+        billed_qty = sum(float(it.get("quantity") or 0) for it in items)
+        mf_total = sum(float(it.get("mf_quantity") or 0) for it in items)
+        total = sum(float(it.get("quantity") or 0) * float(it.get("price") or 0) for it in items)
+    else:
+        qty = float(doc.get("quantity") or 0)
+        mf_total = float(doc.get("mf_quantity") or 0)
+        billed_qty = max(0.0, qty - mf_total)
+        price = float(doc.get("price") or 0)
+        total = billed_qty * price
     doc["billed_quantity"] = billed_qty
-    doc["total"] = billed_qty * price
+    doc["mf_quantity"] = mf_total
+    doc["total"] = total
+    comp_value = float(doc.get("comp_value") or 0)
+    pix_value = float(doc.get("pix_value") or 0)
+    cash_value = float(doc.get("cash_value") or 0)
+    if round(pix_value + cash_value + comp_value, 2) != round(total, 2):
+        raise HTTPException(400, f"Pix + Dinheiro + A prazo (R$ {pix_value + cash_value + comp_value:.2f}) precisa somar o total do lançamento (R$ {total:.2f})")
     if comp_value > 0:
         days = int(doc.get("comp_days") or 15)
         doc["comp_days"] = days

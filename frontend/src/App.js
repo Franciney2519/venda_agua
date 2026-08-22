@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import axios from "axios";
 import { BrowserRouter, Routes, Route, NavLink, Navigate } from "react-router-dom";
-import { LayoutDashboard, Truck, Package, WalletCards, Users, Map, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, CheckCircle2, Clock3, CircleDollarSign, BarChart3, GripVertical, Save, MapPin, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle, CalendarCheck, Wallet, Eye, EyeOff } from "lucide-react";
+import { LayoutDashboard, Truck, Package, WalletCards, Users, Map, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, CheckCircle2, Clock3, CircleDollarSign, BarChart3, GripVertical, Save, MapPin, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle, CalendarCheck, Wallet, Eye, EyeOff, Minus, Sun, Moon, Camera, Search, MoreHorizontal, Fuel, Utensils, Wrench, Receipt, ChevronRight } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import "@/App.css";
@@ -16,6 +16,18 @@ function useDraft(key, initial) {
   useEffect(() => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { } }, [key, value]);
   function clear() { try { localStorage.removeItem(key); } catch { } setValue(initial); }
   return [value, setValue, clear];
+}
+
+function useMediaQuery(query) {
+  const [matches, setMatches] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches);
+  useEffect(() => {
+    const mql = window.matchMedia(query);
+    const handler = () => setMatches(mql.matches);
+    handler();
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, [query]);
+  return matches;
 }
 const nav = [['/', 'Visão geral', LayoutDashboard], ['/rotas', 'Rotas', Map], ['/entregas', 'Entregas', Truck], ['/controle-diario', 'Controle Diário', CalendarCheck], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/usuarios', 'Usuários', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
 
@@ -787,6 +799,385 @@ function Reports() {
     </tbody>{profit?.rows?.length > 0 && <tfoot><tr><td><b>Totais</b></td><td><b>{profit.totals.quantity}</b></td><td><b>{money(profit.totals.revenue)}</b></td><td><b>{money(profit.totals.cost)}</b></td><td><b>{money(profit.totals.profit)}</b></td></tr></tfoot>}</table></div></section></>
 }
 
+/* ===================== App mobile do entregador ===================== */
+
+function brandListOf(c) { return c?.brands?.length ? c.brands : (c?.brand ? [{ brand: c.brand, price: c.price }] : []); }
+
+function MobileHeader({ user, title, subtitle, theme, onToggleTheme }) {
+  return <header className="mob-header">
+    <span className="mob-avatar">{user.name.split(' ').map(x => x[0]).join('').slice(0, 2)}</span>
+    <div className="mob-header-text"><b>{title}</b><span>{subtitle}</span></div>
+    <button type="button" className="mob-theme-btn" data-testid="mob-theme-toggle" aria-label="Alternar tema" onClick={onToggleTheme}>{theme === 'dark' ? <Moon size={18} /> : <Sun size={18} />}</button>
+  </header>
+}
+
+function MobileBottomNav({ tab, setTab }) {
+  const items = [['clientes', 'Clientes', Users], ['diario', 'Diário', CalendarCheck], ['caixa', 'Caixa', CircleDollarSign], ['despesas', 'Despesas', WalletCards], ['ajustes', 'Mais', MoreHorizontal]];
+  return <nav className="mob-bottom-nav">{items.map(([key, label, Icon]) => <button type="button" key={key} className={tab === key ? 'active' : ''} data-testid={`mob-tab-${key}`} onClick={() => setTab(key)}><Icon size={20} /><span>{label}</span></button>)}</nav>
+}
+
+function MobileToast({ text, tone = 'green' }) { if (!text) return null; return <div className={`mob-toast ${tone}`} data-testid="mob-toast">{text}</div> }
+
+function MobileCustomerRow({ c, done, onClick, testPrefix = 'mob-customer-row' }) {
+  const brands = brandListOf(c);
+  return <button type="button" className={`mob-customer-row${done ? ' done' : ''}`} data-testid={`${testPrefix}-${c.id || 'new'}`} onClick={onClick}>
+    <span className="mob-customer-avatar">{c.name?.[0] || '?'}</span>
+    <span className="mob-customer-info"><b>{c.name}</b><small>{brands.length ? `${brands.length} marca${brands.length > 1 ? 's' : ''} · ${brands.map(b => b.brand).join(', ')}` : 'sem marca cadastrada'}</small></span>
+    {done ? <span className="mob-tag done">✓ Lançado</span> : <ChevronRight size={18} />}
+  </button>
+}
+
+function MobileClientesTab({ customers, entries, date, onOpenPicker, onOpenCustomer, search, setSearch }) {
+  const todaysEntries = entries.filter(e => e.date === date);
+  const doneNames = new Set(todaysEntries.map(e => e.customer));
+  const receivedToday = todaysEntries.reduce((s, e) => s + Number(e.total || 0), 0);
+  const filtered = customers.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
+  const goal = customers.length || 1;
+  const progress = Math.min(100, (doneNames.size / goal) * 100);
+  return <div className="mob-screen">
+    <div className="mob-summary-card">
+      <div className="mob-summary-row"><span>{doneNames.size} cliente{doneNames.size !== 1 ? 's' : ''} lançado{doneNames.size !== 1 ? 's' : ''} hoje</span><b data-testid="mob-received-today">{money(receivedToday)}</b></div>
+      <div className="mob-progress"><div style={{ width: `${progress}%` }} /></div>
+    </div>
+    <button type="button" className="mob-cta" data-testid="mob-new-delivery-button" onClick={onOpenPicker}><Plus size={20} /> Nova entrega</button>
+    <div className="mob-search"><Search size={16} /><input placeholder="Buscar cliente" value={search} data-testid="mob-search-input" onChange={e => setSearch(e.target.value)} /></div>
+    <div className="mob-customer-list">
+      {filtered.map(c => <MobileCustomerRow key={c.id} c={c} done={doneNames.has(c.name)} onClick={() => onOpenCustomer(c)} />)}
+      {filtered.length === 0 && <p className="muted" style={{ padding: 16 }}>Nenhum cliente encontrado.</p>}
+    </div>
+  </div>
+}
+
+function MobilePickerSheet({ customers, onClose, onPick, onNewCustomer }) {
+  const [q, setQ] = useState('');
+  const filtered = customers.filter(c => c.name.toLowerCase().includes(q.toLowerCase()));
+  return <div className="mob-backdrop" onClick={onClose}>
+    <div className="mob-sheet" onClick={e => e.stopPropagation()}>
+      <div className="mob-sheet-handle" />
+      <div className="mob-sheet-head">
+        <div><h3>Nova entrega</h3><p>Escolha o cliente — marca e preço vêm do cadastro</p></div>
+        <button type="button" className="mob-close" data-testid="mob-picker-close" onClick={onClose}><X size={18} /></button>
+      </div>
+      <div className="mob-search"><Search size={16} /><input autoFocus placeholder="Digite o nome do cliente" value={q} data-testid="mob-picker-search" onChange={e => setQ(e.target.value)} /></div>
+      <div className="mob-sheet-list">
+        {filtered.map(c => <MobileCustomerRow key={c.id} c={c} onClick={() => onPick(c)} testPrefix="mob-picker-row" />)}
+        {filtered.length === 0 && <p className="muted" style={{ padding: 16 }}>Nenhum cliente encontrado.</p>}
+      </div>
+      <button type="button" className="mob-secondary-btn" data-testid="mob-new-customer-button" onClick={onNewCustomer}><Plus size={16} /> Cliente novo (sem cadastro)</button>
+    </div>
+  </div>
+}
+
+function MobileLaunchPanel({ customer, user, date, onClose, onComplete }) {
+  const [customerName, setCustomerName] = useState(customer.name || '');
+  const [lines, setLines] = useState(() => brandListOf(customer).map(b => ({ brand: b.brand, price: Number(b.price) || 0, qty: 0, mf: 0 })));
+  const [adding, setAdding] = useState(false);
+  const [newBrand, setNewBrand] = useState('');
+  const [newPrice, setNewPrice] = useState('');
+  const [pix, setPix] = useState(0);
+  const [cash, setCash] = useState(0);
+  const [compOn, setCompOn] = useState(false);
+  const [comp, setComp] = useState('');
+  const [compDays, setCompDays] = useState(15);
+  const [mfPlan, setMfPlan] = useState(null);
+  const [mfDate, setMfDate] = useState('Amanhã');
+  const [signing, setSigning] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const total = lines.reduce((s, l) => s + l.qty * l.price, 0);
+  const compValue = compOn ? (Number(comp) || 0) : 0;
+  const remaining = Math.max(0, Math.round((total - compValue) * 100) / 100);
+  const totalMf = lines.reduce((s, l) => s + l.mf, 0);
+
+  useEffect(() => {
+    setPix(prev => { const p = Math.min(prev, remaining); setCash(Math.round((remaining - p) * 100) / 100); return p; });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remaining]);
+
+  function incQty(i) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qty: l.qty + 1 } : l)); }
+  function decQty(i) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qty: Math.max(0, l.qty - 1) } : l)); }
+  function incMf(i) { setLines(prev => prev.map((l, idx) => idx === i && l.qty > 0 ? { ...l, qty: l.qty - 1, mf: l.mf + 1 } : l)); }
+  function decMf(i) { setLines(prev => prev.map((l, idx) => idx === i && l.mf > 0 ? { ...l, qty: l.qty + 1, mf: l.mf - 1 } : l)); }
+
+  function addBrandLine() {
+    if (!newBrand.trim()) return;
+    setLines(prev => [...prev, { brand: newBrand.trim(), price: Number(newPrice) || 0, qty: 0, mf: 0, extra: true }]);
+    setNewBrand(''); setNewPrice(''); setAdding(false);
+  }
+
+  function setPixVal(raw) { const v = Math.min(Math.max(0, Number(raw) || 0), remaining); setPix(v); setCash(Math.round((remaining - v) * 100) / 100); }
+  function setCashVal(raw) { const v = Math.min(Math.max(0, Number(raw) || 0), remaining); setCash(v); setPix(Math.round((remaining - v) * 100) / 100); }
+  function allPix() { setPix(remaining); setCash(0); }
+  function allCash() { setCash(remaining); setPix(0); }
+
+  async function complete(signature) {
+    setSaving(true); setError('');
+    const items = lines.filter(l => l.qty > 0 || l.mf > 0).map(l => ({ brand: l.brand, price: l.price, quantity: l.qty, mf_quantity: l.mf, out_of_catalog: !!l.extra }));
+    const payload = {
+      customer: customerName, driver: user.name, date, items,
+      pix_value: Math.round(pix * 100) / 100, cash_value: Math.round(cash * 100) / 100,
+      comp_value: compValue, comp_days: compOn ? compDays : undefined,
+      mf_plan: totalMf > 0 ? mfPlan : undefined, mf_date: totalMf > 0 && mfPlan === 'reschedule' ? mfDate : undefined,
+      signature,
+    };
+    try {
+      const { data } = await api.post('/daily-entries', payload, auth());
+      onComplete(data);
+    } catch (e) { setError(e.response?.data?.detail || 'Não foi possível concluir.'); setSaving(false); setSigning(false); }
+  }
+
+  if (signing) return <SignaturePad onSave={complete} onCancel={() => setSigning(false)} />;
+
+  const canSubmit = lines.some(l => l.qty > 0 || l.mf > 0) && (totalMf === 0 || !!mfPlan) && Math.abs((pix + cash + compValue) - total) < 0.01;
+
+  return <div className="mob-backdrop" onClick={onClose}>
+    <div className="mob-sheet mob-sheet-tall" onClick={e => e.stopPropagation()}>
+      <div className="mob-sheet-handle" />
+      <div className="mob-sheet-head">
+        <div>
+          {customer.id ? <h3>{customer.name}</h3> : <input className="mob-inline-name" placeholder="Nome do cliente" value={customerName} data-testid="mob-new-customer-name" onChange={e => setCustomerName(e.target.value)} />}
+          <p>{customer.address || 'Marcas e preços vêm do cadastro do cliente'}</p>
+        </div>
+        <button type="button" className="mob-close" data-testid="mob-panel-close" onClick={onClose}><X size={18} /></button>
+      </div>
+
+      <p className="mob-eyebrow">MARCAS DO CADASTRO · TOQUE + PARA CADA GALÃO</p>
+      <div className="mob-lines">
+        {lines.map((l, i) => <div className={`mob-line${l.qty > 0 ? ' active' : ''}`} key={i} data-testid={`mob-line-${i}`}>
+          <div className="mob-line-top">
+            <div className="mob-line-info"><b>{l.brand}{l.extra && <span className="mob-tag orange" style={{ marginLeft: 6 }}>nova</span>}</b><small>R$ {l.price.toFixed(2)} por galão</small><span className="mob-line-subtotal">{money(l.qty * l.price)}</span></div>
+            <div className="mob-counter">
+              <button type="button" data-testid={`mob-qty-minus-${i}`} onClick={() => decQty(i)}><Minus size={18} /></button>
+              <span>{l.qty}</span>
+              <button type="button" className="fill" data-testid={`mob-qty-plus-${i}`} onClick={() => incQty(i)}><Plus size={20} /></button>
+            </div>
+          </div>
+          <div className="mob-line-mf">
+            <span>MF · microfuro</span>
+            <div className="mob-counter small">
+              <button type="button" data-testid={`mob-mf-minus-${i}`} onClick={() => decMf(i)}><Minus size={14} /></button>
+              <span>{l.mf}</span>
+              <button type="button" className="mf" data-testid={`mob-mf-plus-${i}`} onClick={() => incMf(i)}><Plus size={16} /></button>
+            </div>
+          </div>
+        </div>)}
+        {lines.length === 0 && <p className="muted">Nenhuma marca cadastrada para este cliente ainda — adicione uma abaixo.</p>}
+      </div>
+
+      {!adding ? <button type="button" className="mob-dashed-btn" data-testid="mob-add-brand-button" onClick={() => setAdding(true)}><Plus size={16} /> Outra marca (fora do cadastro)</button> : <div className="mob-add-brand">
+        <input placeholder="Nome da marca" value={newBrand} data-testid="mob-new-brand-input" onChange={e => setNewBrand(e.target.value)} />
+        <label>Preço combinado (R$ por galão)<input type="number" step="0.01" value={newPrice} data-testid="mob-new-brand-price" onChange={e => setNewPrice(e.target.value)} /></label>
+        <div className="mob-row-actions">
+          <button type="button" className="mob-ghost-btn" onClick={() => { setAdding(false); setNewBrand(''); setNewPrice(''); }}>Cancelar</button>
+          <button type="button" className="primary" data-testid="mob-confirm-add-brand" onClick={addBrandLine}>Adicionar marca</button>
+        </div>
+      </div>}
+
+      <div className="mob-total-row"><span>TOTAL A RECEBER</span><b>{money(total)}</b></div>
+
+      <div className="mob-split-shortcuts">
+        <button type="button" data-testid="mob-all-pix" onClick={allPix}>Tudo Pix</button>
+        <button type="button" data-testid="mob-all-cash" onClick={allCash}>Tudo dinheiro</button>
+      </div>
+
+      <div className="mob-pix-cash">
+        <label className="mob-pix"><span>Pix</span><input type="number" step="0.01" value={pix || ''} data-testid="mob-pix-input" onChange={e => setPixVal(e.target.value)} /></label>
+        <label className="mob-cash"><span>Dinheiro</span><input type="number" step="0.01" value={cash || ''} data-testid="mob-cash-input" onChange={e => setCashVal(e.target.value)} /></label>
+      </div>
+      <p className="mob-help">Digite o que ele tem no Pix ou em dinheiro — o outro campo completa o resto sozinho{compOn ? ` · a prazo: ${money(compValue)}` : ''}</p>
+
+      <div className="mob-comp-row">
+        <div><b>A prazo (COMP)</b><small>Cliente paga em 15 ou 30 dias</small></div>
+        <button type="button" className={`mob-switch${compOn ? ' on' : ''}`} data-testid="mob-comp-switch" onClick={() => setCompOn(!compOn)}><span /></button>
+      </div>
+      {compOn && <div className="mob-comp-fields">
+        <label>Valor a prazo<input type="number" step="0.01" value={comp} data-testid="mob-comp-value" onChange={e => setComp(e.target.value)} /></label>
+        <div className="mob-days-toggle">
+          <button type="button" className={compDays === 15 ? 'active' : ''} data-testid="mob-comp-15" onClick={() => setCompDays(15)}>15 dias</button>
+          <button type="button" className={compDays === 30 ? 'active' : ''} data-testid="mob-comp-30" onClick={() => setCompDays(30)}>30 dias</button>
+        </div>
+      </div>}
+
+      {totalMf > 0 && <div className="mob-mf-decision" data-testid="mob-mf-decision">
+        <b>{totalMf} galão{totalMf > 1 ? 'ões' : ''} com microfuro</b>
+        <p>O que o cliente decidiu sobre esses galões?</p>
+        <div className="mob-mf-options">
+          <button type="button" className={mfPlan === 'reschedule' ? 'active' : ''} data-testid="mob-mf-reschedule" onClick={() => setMfPlan('reschedule')}><Truck size={22} /> Entregar outro dia</button>
+          <button type="button" className={mfPlan === 'swap' ? 'active' : ''} data-testid="mob-mf-swap" onClick={() => setMfPlan('swap')}><Check size={22} /> Trocar agora no caminhão</button>
+          <button type="button" className={mfPlan === 'refused' ? 'active' : ''} data-testid="mob-mf-refused" onClick={() => setMfPlan('refused')}><XCircle size={22} /> Cliente não quis</button>
+        </div>
+        {mfPlan === 'reschedule' && <div className="mob-days-toggle">
+          {['Amanhã', 'Em 2 dias', 'Próxima rota'].map(d => <button type="button" key={d} className={mfDate === d ? 'active' : ''} data-testid={`mob-mf-date-${d}`} onClick={() => setMfDate(d)}>{d}</button>)}
+        </div>}
+      </div>}
+
+      {error && <div className="error" data-testid="mob-panel-error">{error}</div>}
+      <button type="button" className="mob-cta" disabled={!canSubmit || saving} data-testid="mob-sign-button" onClick={() => setSigning(true)}><Check size={18} /> Assinar e concluir</button>
+      <button type="button" className="mob-danger-btn" data-testid="mob-fail-button" onClick={onClose}><XCircle size={16} /> Não consegui entregar</button>
+    </div>
+  </div>
+}
+
+function MobileDiarioTab({ entries, date }) {
+  const todays = entries.filter(e => e.date === date);
+  const totals = todays.reduce((s, e) => ({ qty: s.qty + Number(e.billed_quantity || 0), pix: s.pix + Number(e.pix_value || 0), cash: s.cash + Number(e.cash_value || 0) }), { qty: 0, pix: 0, cash: 0 });
+  return <div className="mob-screen">
+    <div className="mob-total-cards">
+      <div className="mob-total-card"><span>Galões</span><b>{totals.qty}</b></div>
+      <div className="mob-total-card"><span>Pix</span><b>{money(totals.pix)}</b></div>
+      <div className="mob-total-card"><span>Dinheiro</span><b>{money(totals.cash)}</b></div>
+    </div>
+    <div className="mob-entry-list">
+      {todays.length === 0 && <div className="mob-empty-dashed">Nenhum lançamento ainda hoje.</div>}
+      {todays.map(e => {
+        const lineItems = e.items?.length ? e.items : (e.brand ? [{ brand: e.brand, quantity: e.billed_quantity ?? e.quantity }] : []);
+        const itemsLabel = lineItems.map(it => `${it.quantity} ${it.brand}`).join(' + ');
+        return <div className="mob-entry-card" key={e.id} data-testid={`mob-entry-${e.id}`}>
+          <div className="mob-entry-top"><b>{e.customer}</b><b>{money(e.total)}</b></div>
+          <div className="mob-chips">
+            {itemsLabel && <span className="mob-chip">{itemsLabel}</span>}
+            {e.pix_value > 0 && <span className="mob-chip">Pix {money(e.pix_value)}</span>}
+            {e.cash_value > 0 && <span className="mob-chip">Dinheiro {money(e.cash_value)}</span>}
+            {e.mf_quantity > 0 && <span className="mob-chip orange">{e.mf_quantity} MF{e.mf_date ? ` · ${e.mf_date}` : ''}</span>}
+            {e.comp_value > 0 && <span className="mob-chip orange">{money(e.comp_value)} · {e.comp_days}d</span>}
+          </div>
+        </div>
+      })}
+    </div>
+  </div>
+}
+
+function MobileCaixaTab({ entries, expensesTotal, date, onAddExpense, onCloseDay }) {
+  const todays = entries.filter(e => e.date === date);
+  const pix = todays.reduce((s, e) => s + Number(e.pix_value || 0), 0);
+  const cash = todays.reduce((s, e) => s + Number(e.cash_value || 0), 0);
+  const comp = todays.reduce((s, e) => s + Number(e.comp_value || 0), 0);
+  const toDeliver = Math.max(0, cash - expensesTotal);
+  return <div className="mob-screen">
+    <div className="mob-cash-hero"><span>DINHEIRO A ENTREGAR NA BASE</span><b data-testid="mob-cash-to-deliver">{money(toDeliver)}</b></div>
+    <div className="mob-cash-rows">
+      <div className="mob-cash-row"><span className="mob-cash-icon blue"><CircleDollarSign size={18} /></span><div><b>Pix recebido</b><small>Vai direto pra conta</small></div><b>{money(pix)}</b></div>
+      <div className="mob-cash-row"><span className="mob-cash-icon green"><Wallet size={18} /></span><div><b>Dinheiro recebido</b><small>Em espécie</small></div><b>{money(cash)}</b></div>
+      <div className="mob-cash-row"><span className="mob-cash-icon orange"><Clock3 size={18} /></span><div><b>Vendas a prazo</b><small>A receber depois</small></div><b>{money(comp)}</b></div>
+      <div className="mob-cash-row"><span className="mob-cash-icon red"><WalletCards size={18} /></span><div><b>Despesas do dia</b><small>Descontadas do dinheiro</small></div><b>-{money(expensesTotal)}</b></div>
+    </div>
+    <button type="button" className="mob-secondary-btn" data-testid="mob-add-expense-shortcut" onClick={onAddExpense}><Plus size={16} /> Lançar despesa</button>
+    <button type="button" className="mob-cta" data-testid="mob-close-day-button" onClick={onCloseDay}><Check size={18} /> Fechar o dia</button>
+  </div>
+}
+
+const MOBILE_EXPENSE_CATEGORIES = [['Combustível', Fuel], ['Alimentação', Utensils], ['Pedágio', Receipt], ['Manutenção', Wrench], ['Outros', MoreHorizontal]];
+
+function MobileDespesasTab({ user }) {
+  const [items, setItems] = useState([]);
+  const [category, setCategory] = useState('Combustível');
+  const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
+  const [error, setError] = useState('');
+  const [toast, setToast] = useState('');
+
+  async function load() { const { data } = await api.get('/expenses', auth()); setItems(data.filter(x => (x.driver || '') === user.name)); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, []);
+
+  async function submit() {
+    setError('');
+    if (!amount || Number(amount) <= 0) return setError('Informe um valor válido.');
+    try {
+      const { data } = await api.post('/expenses', { type: category, driver: user.name, amount: Number(amount), notes: note, status: 'pending' }, auth());
+      setItems([data, ...items]); setAmount(''); setNote('');
+      setToast('Despesa enviada para aprovação'); setTimeout(() => setToast(''), 2200);
+    } catch (e) { setError(e.response?.data?.detail || 'Não foi possível lançar.'); }
+  }
+
+  const total = items.reduce((s, x) => s + Number(x.amount || 0), 0);
+  return <div className="mob-screen">
+    <div className="mob-expense-grid">
+      {MOBILE_EXPENSE_CATEGORIES.map(([label, Icon]) => <button type="button" key={label} className={category === label ? 'active' : ''} data-testid={`mob-expense-cat-${label}`} onClick={() => setCategory(label)}><Icon size={22} /><span>{label}</span></button>)}
+    </div>
+    <label className="mob-field-lg">VALOR<input type="number" step="0.01" value={amount} data-testid="mob-expense-amount" onChange={e => setAmount(e.target.value)} /></label>
+    <label className="mob-field-md">OBSERVAÇÃO<input value={note} data-testid="mob-expense-note" onChange={e => setNote(e.target.value)} /></label>
+    <button type="button" className="mob-dashed-btn" data-testid="mob-expense-photo"><Camera size={16} /> Foto do comprovante</button>
+    {error && <div className="error" data-testid="mob-expense-error">{error}</div>}
+    <button type="button" className="mob-cta" data-testid="mob-expense-submit" onClick={submit}><Check size={18} /> Enviar para aprovação</button>
+    <p className="mob-eyebrow" style={{ marginTop: 22 }}>MINHAS DESPESAS DE HOJE · {money(total)}</p>
+    <div className="mob-expense-list">
+      {items.length === 0 && <div className="mob-empty-dashed">Nenhuma despesa lançada.</div>}
+      {items.map(x => <div className="mob-expense-row" key={x.id} data-testid={`mob-expense-row-${x.id}`}>
+        <div><b>{x.type}</b>{x.notes && <small>{x.notes}</small>}</div>
+        <div className="mob-expense-right"><b>{money(x.amount)}</b><span className={`mob-status ${x.status === 'approved' ? 'green' : 'orange'}`}>{x.status === 'approved' ? 'Aprovada' : 'Aguardando'}</span></div>
+      </div>)}
+    </div>
+    <MobileToast text={toast} />
+  </div>
+}
+
+function MobileAjustesTab({ user, theme, setTheme, textScale, setTextScale, onLogout }) {
+  return <div className="mob-screen">
+    <p className="mob-eyebrow">APARÊNCIA</p>
+    <div className="mob-appearance-row">
+      <button type="button" className={theme === 'light' ? 'active' : ''} data-testid="mob-theme-light" onClick={() => setTheme('light')}><Sun size={18} /> Claro</button>
+      <button type="button" className={theme === 'dark' ? 'active' : ''} data-testid="mob-theme-dark" onClick={() => setTheme('dark')}><Moon size={18} /> Escuro</button>
+    </div>
+    <p className="mob-eyebrow">TAMANHO DO TEXTO</p>
+    <div className="mob-appearance-row">
+      {[[1, 14], [1.1, 18], [1.2, 22]].map(([v, fs]) => <button type="button" key={v} className={textScale === v ? 'active' : ''} style={{ fontSize: fs }} data-testid={`mob-scale-${v}`} onClick={() => setTextScale(v)}>A</button>)}
+    </div>
+    <p className="mob-eyebrow">CONTA</p>
+    <div className="mob-account-card"><span className="mob-avatar">{user.name.split(' ').map(x => x[0]).join('').slice(0, 2)}</span><div><b>{user.name}</b><small>Entregador</small></div></div>
+    <button type="button" className="mob-danger-btn full" data-testid="mob-logout-button" onClick={onLogout}><LogOut size={16} /> Sair da conta</button>
+  </div>
+}
+
+function DriverMobileApp({ user, customers, onLogout }) {
+  const [theme, setTheme] = useDraft('hydro_theme', 'light');
+  const [textScale, setTextScale] = useDraft('hydro_text_scale', 1);
+  const [tab, setTab] = useState('clientes');
+  const [picker, setPicker] = useState(false);
+  const [sheetCustomer, setSheetCustomer] = useState(null);
+  const [search, setSearch] = useState('');
+  const [entries, setEntries] = useState([]);
+  const [expensesTotal, setExpensesTotal] = useState(0);
+  const [toast, setToast] = useState('');
+  const date = todayISO(0);
+
+  async function loadEntries() { const { data } = await api.get('/daily-entries', { ...auth(), params: { driver: user.name } }); setEntries(data); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { loadEntries(); }, []);
+  useEffect(() => { api.get('/expenses', auth()).then(({ data }) => setExpensesTotal(data.filter(x => (x.driver || '') === user.name && (x.created_at || '').slice(0, 10) === date && x.status !== 'rejected').reduce((s, x) => s + Number(x.amount || 0), 0))); }, [date, tab, user.name]);
+
+  function pickCustomer(c) { setPicker(false); setSheetCustomer(c); }
+  function newCustomer() { setPicker(false); setSheetCustomer({ id: null, name: '', address: '', brands: [] }); }
+
+  function onEntryComplete(entry) {
+    setEntries([entry, ...entries]);
+    setSheetCustomer(null);
+    setToast('Entrega registrada!');
+    setTimeout(() => setToast(''), 2200);
+  }
+
+  const titles = { clientes: ['Clientes de hoje', 'Selecione o cliente e lance a quantidade'], diario: ['Controle Diário', 'Seus lançamentos de hoje'], caixa: ['Caixa do dia', 'Recebimentos e despesas'], despesas: ['Despesas', 'Lance e envie para aprovação'], ajustes: ['Ajustes', 'Tema, texto e conta'] };
+  const [title, subtitle] = titles[tab];
+
+  return <div className={`mobile-app${theme === 'dark' ? ' dark' : ''}`} style={{ '--scale': textScale }} data-testid="mobile-driver-app">
+    <MobileHeader user={user} title={title} subtitle={subtitle} theme={theme} onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />
+    <main className="mob-main">
+      {tab === 'clientes' && <MobileClientesTab customers={customers} entries={entries} date={date} onOpenPicker={() => setPicker(true)} onOpenCustomer={c => setSheetCustomer(c)} search={search} setSearch={setSearch} />}
+      {tab === 'diario' && <MobileDiarioTab entries={entries} date={date} />}
+      {tab === 'caixa' && <MobileCaixaTab entries={entries} expensesTotal={expensesTotal} date={date} onAddExpense={() => setTab('despesas')} onCloseDay={() => { setToast('Dia fechado!'); setTimeout(() => setToast(''), 2200); }} />}
+      {tab === 'despesas' && <MobileDespesasTab user={user} date={date} />}
+      {tab === 'ajustes' && <MobileAjustesTab user={user} theme={theme} setTheme={setTheme} textScale={textScale} setTextScale={setTextScale} onLogout={onLogout} />}
+    </main>
+    <MobileBottomNav tab={tab} setTab={setTab} />
+    {picker && <MobilePickerSheet customers={customers} onClose={() => setPicker(false)} onPick={pickCustomer} onNewCustomer={newCustomer} />}
+    {sheetCustomer && <MobileLaunchPanel customer={sheetCustomer} user={user} date={date} onClose={() => setSheetCustomer(null)} onComplete={onEntryComplete} />}
+    <MobileToast text={toast} />
+  </div>
+}
+
+/* =================== fim app mobile do entregador ==================== */
+
 function App() {
   const [user, setUser] = useState(null), [data, setData] = useState(null), [customers, setCustomers] = useState([]), [checking, setChecking] = useState(true), [modal, setModal] = useState(null), [notifications, setNotifications] = useState({ pending_users: 0, pending_expenses: 0, total: 0 });
   useEffect(() => { const t = localStorage.getItem('hydro_token'); if (t) api.get('/auth/me', auth()).then(x => setUser(x.data)).catch(() => localStorage.removeItem('hydro_token')).finally(() => setChecking(false)); else setChecking(false) }, []);
@@ -799,9 +1190,11 @@ function App() {
     window.hydroRefreshNotifications = fetchNotif;
     return () => clearInterval(id);
   }, [user, data]);
+  const isMobile = useMediaQuery('(max-width:700px)');
   if (checking) return <div className="loading">Carregando operação...</div>;
   if (!user) return <Login onLogin={setUser} />;
   const logout = () => { localStorage.removeItem('hydro_token'); setUser(null) };
+  if (user.role === 'driver' && isMobile) return <DriverMobileApp user={user} customers={customers} onLogout={logout} />;
   async function save(kind, form) { const endpoints = { product: '/products', delivery: '/deliveries', expense: '/expenses', customer: '/customers' }; const payload = { ...form };['quantity', 'minimum', 'value', 'amount'].forEach(k => { if (payload[k] !== undefined) payload[k] = Number(payload[k]) }); if (kind === 'delivery') { payload.status = 'pending'; if (user.role !== 'admin') payload.driver = user.name; } if (kind === 'expense') { payload.status = 'pending'; if (!payload.driver) payload.driver = user.name; } const { data: x } = await api.post(endpoints[kind], payload, auth()); if (kind === 'customer') setCustomers([...customers, x]); else { const key = kind === 'product' ? 'products' : kind === 'delivery' ? 'deliveries' : 'expenses_list'; setData({ ...data, [key]: [...(data?.[key] || []), x] }) } setModal(null) }
   const modalFields = modal === 'delivery' && user.role !== 'admin' ? fields.delivery.filter(f => f.key !== 'driver') : fields[modal];
   const adminOnly = el => user.role === 'admin' ? el : <Navigate to="/" replace />;
