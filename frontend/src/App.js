@@ -10,11 +10,11 @@ import "@/Operations.css";
 const api = axios.create({ baseURL: `${process.env.REACT_APP_BACKEND_URL}/api` });
 const auth = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem("hydro_token")}` } });
 const money = v => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v || 0);
-const nav = [['/', 'Visão geral', LayoutDashboard], ['/rotas', 'Rotas', Map], ['/entregas', 'Entregas', Truck], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/clientes', 'Clientes', Users], ['/usuarios', 'Usuários', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
+const nav = [['/', 'Visão geral', LayoutDashboard], ['/rotas', 'Rotas', Map], ['/entregas', 'Entregas', Truck], ['/controle-diario', 'Controle Diário', CalendarCheck], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/usuarios', 'Usuários', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
 
 function Shell({ user, onLogout, notifications, children }) {
   const [open, setOpen] = useState(false);
-  const links = user.role === 'driver' ? nav.filter(x => ['/', '/rotas', '/entregas', '/financeiro'].includes(x[0])) : nav;
+  const links = user.role === 'driver' ? nav.filter(x => ['/', '/rotas', '/entregas', '/controle-diario', '/financeiro'].includes(x[0])) : nav;
   const badges = { '/usuarios': notifications?.pending_users || 0, '/financeiro': notifications?.pending_expenses || 0 };
   const total = notifications?.total || 0;
   return <div className="app-shell"><aside className={open ? 'sidebar open' : 'sidebar'}><div className="brand"><span className="brand-mark"><Droplets size={20} /></span><span>hydro<span>flow</span></span></div><div className="workspace"><small>OPERAÇÃO</small><b>{user.role === 'admin' ? 'Admin · Base Central' : 'Entregador'} <span>⌄</span></b></div>
@@ -76,7 +76,7 @@ function Stat({ label, value, detail, Icon, tone = '' }) { return <div className
 
 function Modal({ title, fields, onClose, onSave }) { const [form, setForm] = useState({}), [error, setError] = useState(''); async function submit(e) { e.preventDefault(); if (fields.some(x => x.required !== false && !String(form[x.key] || '').trim())) return setError('Preencha os campos obrigatórios.'); try { await onSave(form) } catch (e) { setError(e.response?.data?.detail || 'Não foi possível salvar.') } } return <div className="modal-backdrop"><form className="quick-modal" onSubmit={submit}><button type="button" className="modal-close" onClick={onClose} data-testid="modal-close-button"><X /></button><p className="eyebrow">NOVO LANÇAMENTO</p><h3>{title}</h3>{fields.map(f => <label key={f.key}>{f.label}{f.options ? <select required={f.required !== false} data-testid={`modal-${f.key}-input`} onChange={e => setForm({ ...form, [f.key]: e.target.value })}><option value="">Selecione</option>{f.options.map(x => <option key={x}>{x}</option>)}</select> : <input required={f.required !== false} type={f.type || 'text'} data-testid={`modal-${f.key}-input`} onChange={e => setForm({ ...form, [f.key]: e.target.value })} />}</label>)}{error && <div className="error" data-testid="form-validation-error">{error}</div>}<button className="primary full" data-testid="modal-submit-button"><Save size={16} /> Salvar lançamento</button></form></div> }
 
-const fields = { product: [{ key: 'name', label: 'Nome do produto' }, { key: 'category', label: 'Categoria', options: ['Retornável', 'Descartável'] }, { key: 'quantity', label: 'Quantidade', type: 'number' }, { key: 'minimum', label: 'Estoque mínimo', type: 'number' }], delivery: [{ key: 'customer', label: 'Cliente' }, { key: 'address', label: 'Endereço' }, { key: 'driver', label: 'Entregador' }, { key: 'product', label: 'Produto' }, { key: 'quantity', label: 'Quantidade', type: 'number' }, { key: 'value', label: 'Valor', type: 'number' }], expense: [{ key: 'type', label: 'Categoria', options: ['Combustível', 'Alimentação', 'Pedágio', 'Manutenção', 'Outros'] }, { key: 'driver', label: 'Entregador' }, { key: 'amount', label: 'Valor', type: 'number' }], customer: [{ key: 'name', label: 'Nome / empresa' }, { key: 'address', label: 'Endereço' }, { key: 'phone', label: 'Telefone', required: false }] };
+const fields = { product: [{ key: 'name', label: 'Nome do produto' }, { key: 'brand', label: 'Marca', required: false }, { key: 'category', label: 'Categoria', options: ['Retornável', 'Descartável'] }, { key: 'quantity', label: 'Quantidade', type: 'number' }, { key: 'minimum', label: 'Estoque mínimo', type: 'number' }, { key: 'cost_price', label: 'Custo de compra (R$/un)', type: 'number', required: false }], delivery: [{ key: 'customer', label: 'Cliente' }, { key: 'address', label: 'Endereço' }, { key: 'driver', label: 'Entregador' }, { key: 'product', label: 'Produto' }, { key: 'quantity', label: 'Quantidade', type: 'number' }, { key: 'value', label: 'Valor', type: 'number' }], expense: [{ key: 'type', label: 'Categoria', options: ['Combustível', 'Alimentação', 'Pedágio', 'Manutenção', 'Outros'] }, { key: 'driver', label: 'Entregador' }, { key: 'amount', label: 'Valor', type: 'number' }], customer: [{ key: 'name', label: 'Nome / empresa' }, { key: 'address', label: 'Endereço' }, { key: 'phone', label: 'Telefone', required: false }, { key: 'brand', label: 'Marca preferida', required: false }, { key: 'price', label: 'Preço da água (R$/un)', type: 'number', required: false }] };
 
 function PerformanceChart() {
   const [monthly, setMonthly] = useState([]);
@@ -317,7 +317,79 @@ function Finance({ data, setData, create, user }) {
       </tbody></table></div></section></>
 }
 
-function Customers({ items, create }) { return <><Head eyebrow="RELACIONAMENTO" title="Clientes" subtitle="Sua carteira e endereços de entrega." action="Novo cliente" onAction={() => create('customer')} /><div className="customer-grid">{items.map(x => <div className="customer-card" key={x.id}><div className="customer-avatar">{x.name?.[0]}</div><div><b>{x.name}</b><span>{x.address}</span><small>{x.phone || 'Cliente ativo'}</small></div><ArrowUpRight size={18} /></div>)}</div></> }
+function Customers({ items, create }) { return <><Head eyebrow="RELACIONAMENTO" title="Clientes" subtitle="Sua carteira, marca preferida e preço combinado por cliente." action="Novo cliente" onAction={() => create('customer')} /><div className="customer-grid">{items.map(x => <div className="customer-card" key={x.id}><div className="customer-avatar">{x.name?.[0]}</div><div><b>{x.name}</b><span>{x.address}</span><small>{x.phone || 'Cliente ativo'}</small>{(x.brand || x.price) && <small>{x.brand ? `Marca: ${x.brand}` : ''}{x.brand && x.price ? ' · ' : ''}{x.price ? `Preço: ${money(x.price)}/un` : ''}</small>}</div><ArrowUpRight size={18} /></div>)}</div></> }
+
+const DAILY_ENTRY_FIELDS = ['customer', 'brand', 'quantity', 'price', 'mf_quantity', 'comp_value', 'comp_days', 'pix_value', 'cash_value'];
+
+function DailyControl({ user, customers }) {
+  const [date, setDate] = useState(todayISO(0));
+  const [entries, setEntries] = useState([]);
+  const [form, setForm] = useState({ trip_number: '1' });
+  const [error, setError] = useState('');
+
+  async function load() { const { data } = await api.get('/daily-entries', { ...auth(), params: user.role === 'driver' ? { date, driver: user.name } : { date } }); setEntries(data); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [date]);
+
+  function pickCustomer(name) {
+    const c = customers.find(x => x.name === name);
+    setForm({ ...form, customer: name, brand: c?.brand || '', price: c?.price ?? '' });
+  }
+  const customerFound = !!customers.find(x => x.name === form.customer);
+
+  async function submit(e) {
+    e.preventDefault(); setError('');
+    if (!form.customer || !form.quantity) return setError('Informe ao menos cliente e quantidade.');
+    const payload = { ...form, date };
+    DAILY_ENTRY_FIELDS.filter(k => k !== 'customer' && k !== 'brand').forEach(k => { if (payload[k] !== undefined && payload[k] !== '') payload[k] = Number(payload[k]) });
+    try {
+      const { data } = await api.post('/daily-entries', payload, auth());
+      setEntries([data, ...entries]);
+      setForm({ trip_number: form.trip_number });
+    } catch (e) { setError(e.response?.data?.detail || 'Não foi possível lançar.'); }
+  }
+
+  async function remove(id) { await api.delete(`/daily-entries/${id}`, auth()); setEntries(entries.filter(x => x.id !== id)); }
+
+  const totals = entries.reduce((s, e) => ({ qty: s.qty + Number(e.quantity || 0), pix: s.pix + Number(e.pix_value || 0), cash: s.cash + Number(e.cash_value || 0), total: s.total + Number(e.total || 0) }), { qty: 0, pix: 0, cash: 0, total: 0 });
+
+  return <><Head eyebrow="OPERAÇÃO DIÁRIA" title="Controle Diário" subtitle="Lance cada cliente atendido na viagem, igual ao controle de papel." />
+    <div className="report-toolbar">
+      <div className="report-filters">
+        <label>Data<input type="date" value={date} data-testid="daily-date-input" onChange={e => setDate(e.target.value)} /></label>
+        <label>Nº Viagem<input value={form.trip_number || ''} data-testid="daily-trip-input" onChange={e => setForm({ ...form, trip_number: e.target.value })} /></label>
+      </div>
+    </div>
+    <section className="panel table-panel">
+      <form className="daily-entry-form" onSubmit={submit}>
+        <label>Cliente<input list="daily-customers" value={form.customer || ''} data-testid="daily-customer-input" onChange={e => pickCustomer(e.target.value)} /><datalist id="daily-customers">{customers.map(c => <option key={c.id} value={c.name} />)}</datalist></label>
+        <label>Marca<input value={form.brand || ''} readOnly={customerFound} placeholder={customerFound ? '' : 'Cliente sem cadastro'} data-testid="daily-brand-input" onChange={e => setForm({ ...form, brand: e.target.value })} /></label>
+        <label>Qtd programada<input type="number" value={form.quantity || ''} data-testid="daily-quantity-input" onChange={e => setForm({ ...form, quantity: e.target.value })} /></label>
+        <label>Valor água<input type="number" step="0.01" value={form.price || ''} readOnly={customerFound} placeholder={customerFound ? '' : 'Cliente sem cadastro'} data-testid="daily-price-input" onChange={e => setForm({ ...form, price: e.target.value })} /></label>
+        <label>MF (não entregue)<input type="number" value={form.mf_quantity || ''} data-testid="daily-mf-input" onChange={e => setForm({ ...form, mf_quantity: e.target.value })} /></label>
+        <label>Valor a prazo<input type="number" step="0.01" value={form.comp_value || ''} data-testid="daily-comp-value-input" onChange={e => setForm({ ...form, comp_value: e.target.value })} /></label>
+        <label>Prazo<select data-testid="daily-comp-days-input" value={form.comp_days || '15'} onChange={e => setForm({ ...form, comp_days: e.target.value })}><option value="15">15 dias</option><option value="30">30 dias</option></select></label>
+        <label>Pix<input type="number" step="0.01" value={form.pix_value || ''} data-testid="daily-pix-input" onChange={e => setForm({ ...form, pix_value: e.target.value })} /></label>
+        <label>Dinheiro<input type="number" step="0.01" value={form.cash_value || ''} data-testid="daily-cash-input" onChange={e => setForm({ ...form, cash_value: e.target.value })} /></label>
+        <button className="primary" data-testid="daily-add-button"><Plus size={15} /> Lançar</button>
+      </form>
+      {error && <div className="error" data-testid="daily-form-error">{error}</div>}
+      <div className="table-wrap"><table><thead><tr><th>CLIENTE</th><th>MARCA</th><th>QTD PROG.</th><th>MF</th><th>QTD ENTREGUE</th><th>VALOR ÁGUA</th><th>A PRAZO</th><th>PIX</th><th>DINHEIRO</th><th>TOTAL</th><th /></tr></thead><tbody>
+        {entries.map(e => <tr key={e.id} data-testid={`daily-row-${e.id}`}>
+          <td><b>{e.customer}</b></td><td>{e.brand}</td><td>{e.quantity}</td>
+          <td>{e.mf_quantity ? <span className="tag orange">{e.mf_quantity} un.</span> : '—'}</td>
+          <td>{e.billed_quantity ?? e.quantity}</td><td>{money(e.price)}</td>
+          <td>{e.comp_value ? `${money(e.comp_value)} · ${e.comp_days}d${e.received ? ' · recebido' : ''}` : '—'}</td>
+          <td>{e.pix_value ? money(e.pix_value) : '—'}</td><td>{e.cash_value ? money(e.cash_value) : '—'}</td>
+          <td><b>{money(e.total)}</b></td>
+          <td><button className="action-btn reject" data-testid={`daily-delete-${e.id}`} onClick={() => remove(e.id)}><Trash2 size={13} /></button></td>
+        </tr>)}
+        {entries.length === 0 && <tr><td colSpan={11} className="muted" style={{ padding: 16 }}>Nenhum lançamento nesta data.</td></tr>}
+      </tbody>
+      {entries.length > 0 && <tfoot><tr><td colSpan={4}><b>Totais</b></td><td><b>{totals.qty}</b></td><td /><td /><td>{money(totals.pix)}</td><td>{money(totals.cash)}</td><td><b>{money(totals.total)}</b></td><td /></tr></tfoot>}
+      </table></div>
+    </section></>
+}
 
 function UsersPage({ me }) {
   const [items, setItems] = useState([]);
@@ -471,8 +543,42 @@ function DailyClosing() {
 
 function todayISO(offset = 0) { const d = new Date(); d.setDate(d.getDate() + offset); return d.toISOString().slice(0, 10); }
 
+function Receivables() {
+  const [filter, setFilter] = useState('pending');
+  const [data, setData] = useState({ rows: [], totals: {} });
+  async function load() { const { data: r } = await api.get('/reports/receivables', { ...auth(), params: filter === 'all' ? {} : { status: filter } }); setData(r); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [filter]);
+  async function markReceived(row) { await api.patch(`/daily-entries/${row.id}`, { received: !row.received }, auth()); load(); }
+  const today = todayISO(0);
+  return <><Head eyebrow="CONTAS A RECEBER" title="Provisão de Pagamento" subtitle="Vendas a prazo (COMP), organizadas pela data prevista de recebimento — entrega + 15/30 dias." />
+    <div className="filter-row">
+      <button className={filter === 'pending' ? 'active' : ''} onClick={() => setFilter('pending')} data-testid="receivables-filter-pending">Pendentes</button>
+      <button className={filter === 'received' ? 'active' : ''} onClick={() => setFilter('received')} data-testid="receivables-filter-received">Recebidos</button>
+      <button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')} data-testid="receivables-filter-all">Todos</button>
+    </div>
+    <div className="stats">
+      <Stat label="A receber" value={money(data.totals.pending)} detail="Ainda não recebido" Icon={Clock3} tone="orange" />
+      <Stat label="Já recebido" value={money(data.totals.received)} detail="Confirmado pelo admin" Icon={CircleDollarSign} tone="green" />
+    </div>
+    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CLIENTE</th><th>ENTREGADOR</th><th>DATA DA ENTREGA</th><th>PRAZO</th><th>VENCIMENTO</th><th>VALOR</th><th>SITUAÇÃO</th><th /></tr></thead><tbody>
+      {data.rows.map(r => {
+        const overdue = !r.received && r.due_date && r.due_date < today;
+        return <tr key={r.id} data-testid={`receivable-row-${r.id}`}>
+          <td><b>{r.customer}</b></td><td>{r.driver}</td><td>{r.date}</td><td>{r.comp_days} dias</td>
+          <td>{r.due_date}{overdue && <small className="orange-text">Vencido</small>}</td>
+          <td>{money(r.comp_value)}</td>
+          <td><span className={`tag ${r.received ? 'green' : overdue ? 'red' : 'orange'}`}>{r.received ? 'Recebido' : overdue ? 'Vencido' : 'Aguardando'}</span></td>
+          <td><button className="action-btn ghost" data-testid={`toggle-receivable-${r.id}`} onClick={() => markReceived(r)}>{r.received ? 'Reabrir' : 'Marcar recebido'}</button></td>
+        </tr>
+      })}
+      {data.rows.length === 0 && <tr><td colSpan={8} className="muted" style={{ padding: 16 }}>Nenhuma venda a prazo encontrada.</td></tr>}
+    </tbody></table></div></section></>
+}
+
 function Reports() {
   const [r, setR] = useState(null);
+  const [profit, setProfit] = useState(null);
   const [start, setStart] = useState(todayISO(-30));
   const [end, setEnd] = useState(todayISO(0));
   const [preset, setPreset] = useState('30');
@@ -481,10 +587,13 @@ function Reports() {
   async function load() {
     setLoading(true);
     try {
-      const { data } = await api.get('/reports', { ...auth(), params: { start, end } });
-      setR(data);
+      const [{ data }, { data: p }] = await Promise.all([
+        api.get('/reports', { ...auth(), params: { start, end } }),
+        api.get('/reports/profit-by-customer', { ...auth(), params: { start, end } }),
+      ]);
+      setR(data); setProfit(p);
     } catch {
-      setR({ revenue: 0, expenses: 0, deliveries: 0, low_stock: 0, drivers: [] });
+      setR({ revenue: 0, expenses: 0, deliveries: 0, low_stock: 0, drivers: [] }); setProfit({ rows: [], totals: {} });
     } finally { setLoading(false); }
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -548,7 +657,11 @@ function Reports() {
       </div>
     </div>
     <div className="stats"><Stat label="Receita realizada" value={money(r?.revenue)} detail="Entregas concluídas" Icon={CircleDollarSign} /><Stat label="Despesas" value={money(r?.expenses)} detail="Lançamentos" Icon={WalletCards} tone="orange" /><Stat label="Entregas" value={r?.deliveries || 0} detail="No período" Icon={Truck} tone="green" /><Stat label="Alertas estoque" value={r?.low_stock || 0} detail="Atenção necessária" Icon={AlertTriangle} tone="red" /></div>
-    <section className="panel table-panel"><div className="panel-head"><div><h3>Desempenho por entregador</h3><p className="muted">Volume, receita e conclusão</p></div></div><div className="table-wrap"><table><thead><tr><th>ENTREGADOR</th><th>ENTREGAS</th><th>CONCLUÍDAS</th><th>RECEITA</th><th>EFICIÊNCIA</th></tr></thead><tbody>{(r?.drivers || []).map(d => <tr key={d.driver}><td><b>{d.driver}</b></td><td>{d.deliveries}</td><td>{d.delivered}</td><td>{money(d.revenue)}</td><td><span className="tag green">{d.deliveries ? Math.round(d.delivered / d.deliveries * 100) : 0}%</span></td></tr>)}</tbody></table></div></section></>
+    <section className="panel table-panel"><div className="panel-head"><div><h3>Desempenho por entregador</h3><p className="muted">Volume, receita e conclusão</p></div></div><div className="table-wrap"><table><thead><tr><th>ENTREGADOR</th><th>ENTREGAS</th><th>CONCLUÍDAS</th><th>RECEITA</th><th>EFICIÊNCIA</th></tr></thead><tbody>{(r?.drivers || []).map(d => <tr key={d.driver}><td><b>{d.driver}</b></td><td>{d.deliveries}</td><td>{d.delivered}</td><td>{money(d.revenue)}</td><td><span className="tag green">{d.deliveries ? Math.round(d.delivered / d.deliveries * 100) : 0}%</span></td></tr>)}</tbody></table></div></section>
+    <section className="panel table-panel" data-testid="profit-by-customer-panel"><div className="panel-head"><div><h3>Lucro por cliente</h3><p className="muted">Valor de venda − custo de compra da água, por cliente, no período.</p></div></div><div className="table-wrap"><table><thead><tr><th>CLIENTE</th><th>QTD</th><th>RECEITA</th><th>CUSTO</th><th>LUCRO</th></tr></thead><tbody>
+      {(profit?.rows || []).map(p => <tr key={p.customer} data-testid={`profit-row-${p.customer}`}><td><b>{p.customer}</b></td><td>{p.quantity}</td><td>{money(p.revenue)}</td><td>{money(p.cost)}</td><td><b className={p.profit >= 0 ? 'green-text' : 'orange-text'}>{money(p.profit)}</b></td></tr>)}
+      {(!profit?.rows || profit.rows.length === 0) && <tr><td colSpan={5} className="muted" style={{ padding: 16 }}>Sem lançamentos de controle diário no período.</td></tr>}
+    </tbody>{profit?.rows?.length > 0 && <tfoot><tr><td><b>Totais</b></td><td><b>{profit.totals.quantity}</b></td><td><b>{money(profit.totals.revenue)}</b></td><td><b>{money(profit.totals.cost)}</b></td><td><b>{money(profit.totals.profit)}</b></td></tr></tfoot>}</table></div></section></>
 }
 
 function App() {
@@ -573,8 +686,10 @@ function App() {
       <Route path="/" element={<Dashboard data={data} create={setModal} />} />
       <Route path="/rotas" element={user.role === 'driver' ? <MyRoute data={data} setData={setData} user={user} /> : <RoutesPage data={data} setData={setData} />} />
       <Route path="/entregas" element={<Deliveries data={data} setData={setData} create={setModal} />} />
+      <Route path="/controle-diario" element={<DailyControl user={user} customers={customers} />} />
       <Route path="/estoque" element={<Stock data={data} create={setModal} />} />
       <Route path="/financeiro" element={<Finance data={data} setData={setData} create={setModal} user={user} />} />
+      <Route path="/provisao" element={adminOnly(<Receivables />)} />
       <Route path="/clientes" element={<Customers items={customers} create={setModal} />} />
       <Route path="/usuarios" element={adminOnly(<UsersPage me={user} />)} />
       <Route path="/fechamento" element={adminOnly(<DailyClosing />)} />

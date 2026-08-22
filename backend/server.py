@@ -55,6 +55,17 @@ class ResourceInput(BaseModel):
     received_value: Optional[float] = None
     problem_type: Optional[str] = None
     problem_quantity: Optional[int] = None
+    brand: Optional[str] = None
+    price: Optional[float] = None
+    cost_price: Optional[float] = None
+    date: Optional[str] = None
+    trip_number: Optional[str] = None
+    mf_quantity: Optional[float] = None
+    comp_value: Optional[float] = None
+    comp_days: Optional[int] = None
+    pix_value: Optional[float] = None
+    cash_value: Optional[float] = None
+    received: Optional[bool] = None
 
 def now(): return datetime.now(timezone.utc).isoformat()
 def delivered_value(d): return float(d.get("received_value") if d.get("received_value") is not None else d.get("value", 0))
@@ -180,6 +191,86 @@ async def update_expense(item_id: str, data: ResourceInput, user=Depends(admin_u
 async def customers(user=Depends(current_user)): return await list_resource("customers")
 @api.post("/customers")
 async def add_customer(data: ResourceInput, user=Depends(admin_user)): return await create_resource("customers", data, user)
+@api.patch("/customers/{item_id}")
+async def update_customer(item_id: str, data: ResourceInput, user=Depends(admin_user)):
+    values = data.model_dump(exclude_unset=True); await db.customers.update_one({"id": item_id}, {"$set": values})
+    doc = await db.customers.find_one({"id": item_id}, {"_id": 0}); return doc
+
+@api.get("/daily-entries")
+async def daily_entries(date: Optional[str] = None, driver: Optional[str] = None, user=Depends(current_user)):
+    query = {}
+    if date: query["date"] = date
+    if driver: query["driver"] = driver
+    elif user.get("role") != "admin": query["driver"] = user["name"]
+    return await db.daily_entries.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+
+@api.post("/daily-entries")
+async def add_daily_entry(data: ResourceInput, user=Depends(current_user)):
+    doc = data.model_dump(exclude_none=True)
+    doc["driver"] = doc.get("driver") or user["name"]
+    doc["date"] = doc.get("date") or datetime.now(timezone.utc).date().isoformat()
+    qty = float(doc.get("quantity") or 0)
+    mf = float(doc.get("mf_quantity") or 0)
+    billed_qty = max(0.0, qty - mf)
+    price = float(doc.get("price") or 0)
+    comp_value = float(doc.get("comp_value") or 0)
+    doc["billed_quantity"] = billed_qty
+    doc["total"] = billed_qty * price
+    if comp_value > 0:
+        days = int(doc.get("comp_days") or 15)
+        doc["comp_days"] = days
+        due = datetime.fromisoformat(doc["date"]) + timedelta(days=days)
+        doc["due_date"] = due.date().isoformat()
+        doc["received"] = False
+    doc.update({"id": str(uuid.uuid4()), "created_at": now(), "created_by": user["id"]})
+    await db.daily_entries.insert_one(doc); doc.pop("_id", None); return doc
+
+@api.patch("/daily-entries/{item_id}")
+async def update_daily_entry(item_id: str, data: ResourceInput, user=Depends(admin_user)):
+    values = data.model_dump(exclude_unset=True)
+    await db.daily_entries.update_one({"id": item_id}, {"$set": values})
+    doc = await db.daily_entries.find_one({"id": item_id}, {"_id": 0}); return doc
+
+@api.delete("/daily-entries/{item_id}")
+async def delete_daily_entry(item_id: str, user=Depends(current_user)):
+    target = await db.daily_entries.find_one({"id": item_id}, {"_id": 0})
+    if not target: raise HTTPException(404, "Lançamento não encontrado")
+    if user.get("role") != "admin" and target.get("created_by") != user["id"]: raise HTTPException(403, "Sem permissão")
+    await db.daily_entries.delete_one({"id": item_id})
+    return {"message": "Excluído"}
+
+@api.get("/reports/receivables")
+async def receivables(status: Optional[str] = None, user=Depends(admin_user)):
+    query = {"comp_value": {"$gt": 0}}
+    if status == "pending": query["received"] = False
+    elif status == "received": query["received"] = True
+    entries = await db.daily_entries.find(query, {"_id": 0}).sort("due_date", 1).to_list(2000)
+    totals = {"pending": sum(float(e.get("comp_value") or 0) for e in entries if not e.get("received")), "received": sum(float(e.get("comp_value") or 0) for e in entries if e.get("received"))}
+    return {"rows": entries, "totals": totals}
+
+@api.get("/reports/profit-by-customer")
+async def profit_by_customer(start: Optional[str] = None, end: Optional[str] = None, user=Depends(admin_user)):
+    query = {}
+    if start or end:
+        rng = {}
+        if start: rng["$gte"] = start
+        if end: rng["$lte"] = end
+        query["date"] = rng
+    entries = await db.daily_entries.find(query, {"_id": 0}).to_list(5000)
+    products = await db.products.find({}, {"_id": 0}).to_list(1000)
+    cost_by_brand = {(p.get("brand") or p.get("name") or "").strip().lower(): float(p.get("cost_price") or 0) for p in products}
+    rows = {}
+    for e in entries:
+        customer = e.get("customer") or "Sem cliente"
+        brand = (e.get("brand") or "").strip().lower()
+        qty = float(e.get("billed_quantity") if e.get("billed_quantity") is not None else max(0.0, float(e.get("quantity") or 0) - float(e.get("mf_quantity") or 0)))
+        price = float(e.get("price") or 0)
+        cost = cost_by_brand.get(brand, 0)
+        row = rows.setdefault(customer, {"customer": customer, "quantity": 0.0, "revenue": 0.0, "cost": 0.0, "profit": 0.0})
+        row["quantity"] += qty; row["revenue"] += qty * price; row["cost"] += qty * cost; row["profit"] += qty * (price - cost)
+    result = sorted(rows.values(), key=lambda r: r["profit"], reverse=True)
+    totals = {"quantity": sum(r["quantity"] for r in result), "revenue": sum(r["revenue"] for r in result), "cost": sum(r["cost"] for r in result), "profit": sum(r["profit"] for r in result)}
+    return {"rows": result, "totals": totals, "period": {"start": start, "end": end}}
 
 @api.get("/users")
 async def list_users(user=Depends(admin_user)):

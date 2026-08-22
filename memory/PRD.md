@@ -17,7 +17,13 @@ Perfis Admin/Entregador; entregas com rota e ordem; statuses pendente, em rota, 
 - Relatórios operacionais com receita, despesas, alertas de estoque e desempenho por entregador.
 - Formulários validados para produtos, clientes, entregas e despesas, persistidos via API.
 - Proteção para impedir acesso de entregador ao relatório administrativo.
+## Implementado (2026-08-22)
+- Cadastro de clientes com marca de água preferida e preço combinado por cliente (pode variar de cliente para cliente).
+- Produtos com marca e custo de compra (`cost_price`) para cálculo de margem.
+- Tela "Controle Diário" do entregador (rota `/controle-diario`), nos moldes do controle em planilha: ao selecionar o cliente, marca e preço vêm automaticamente do cadastro (somente leitura); o entregador só preenche quantidade, MF (troca por microfuro/avaria), comp e valores recebidos (Pix/Dinheiro). Coleção `daily_entries` no backend.
+- Relatório "Lucro por cliente" em Relatórios: receita − custo (via `cost_price` do produto/marca) por cliente, no período filtrado.
 ## Backlog priorizado
 - P0: aprovação de despesas e tela mobile dedicada do entregador.
 - P1: filtros de período aplicados às consultas de relatórios.
+- P1: vincular consumo do Controle Diário ao abatimento de estoque por marca.
 - P2: relatórios exportáveis e notificações de estoque.
