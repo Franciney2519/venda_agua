@@ -1131,7 +1131,7 @@ function MobileCaixaTab({ entries, expensesTotal, date, onAddExpense, onCloseDay
       <div className="mob-cash-row"><span className="mob-cash-icon blue"><CircleDollarSign size={16} /></span><div><b>Recebido em Pix</b><small>já na conta da empresa</small></div><b className="blue">{money(pix)}</b></div>
       <div className="mob-cash-row"><span className="mob-cash-icon green"><Wallet size={16} /></span><div><b>Recebido em dinheiro</b><small>entregar na base</small></div><b className="green">{money(cash)}</b></div>
       <div className="mob-cash-row"><span className="mob-cash-icon orange"><Clock3 size={16} /></span><div><b>Vendas a prazo</b><small>COMP lançado hoje</small></div><b className="orange">{money(comp)}</b></div>
-      <div className="mob-cash-row"><span className="mob-cash-icon orange"><WalletCards size={16} /></span><div><b>Despesas do dia</b><small>aguardando aprovação</small></div><b className="orange">{money(expensesTotal)}</b></div>
+      <div className="mob-cash-row"><span className="mob-cash-icon orange"><WalletCards size={16} /></span><div><b>Despesas do dia</b><small>já lançadas</small></div><b className="orange">{money(expensesTotal)}</b></div>
     </div>
     <button type="button" className="mob-outline-btn" data-testid="mob-add-expense-shortcut" onClick={onAddExpense}><Plus size={16} /> Lançar despesa</button>
     <button type="button" className="mob-cta" data-testid="mob-close-day-button" onClick={onCloseDay}>Fechar o dia</button>
@@ -1156,9 +1156,9 @@ function MobileDespesasTab({ user }) {
     setError('');
     if (!amount || Number(amount) <= 0) return setError('Informe um valor válido.');
     try {
-      const { data } = await api.post('/expenses', { type: category, driver: user.name, amount: Number(amount), notes: note, status: 'pending' }, auth());
+      const { data } = await api.post('/expenses', { type: category, driver: user.name, amount: Number(amount), notes: note, status: 'approved' }, auth());
       setItems([data, ...items]); setAmount(''); setNote('');
-      setToast('Despesa enviada para aprovação'); setTimeout(() => setToast(''), 2200);
+      setToast('Despesa lançada'); setTimeout(() => setToast(''), 2200);
     } catch (e) { setError(e.response?.data?.detail || 'Não foi possível lançar.'); }
   }
 
@@ -1171,14 +1171,13 @@ function MobileDespesasTab({ user }) {
     <label className="mob-field-md">OBSERVAÇÃO (OPCIONAL)<input placeholder="ex: posto na saída da cidade" value={note} data-testid="mob-expense-note" onChange={e => setNote(e.target.value)} /></label>
     <button type="button" className="mob-photo-btn" data-testid="mob-expense-photo"><Camera size={20} /> Foto do comprovante</button>
     {error && <div className="error" data-testid="mob-expense-error">{error}</div>}
-    <button type="button" className="mob-cta" data-testid="mob-expense-submit" onClick={submit}>Enviar para aprovação</button>
+    <button type="button" className="mob-cta" data-testid="mob-expense-submit" onClick={submit}>Lançar despesa</button>
     <p className="mob-eyebrow" style={{ marginTop: 22 }}>MINHAS DESPESAS DE HOJE · {money(total)}</p>
     <div className="mob-expense-list">
       {items.length === 0 && <div className="mob-empty-dashed">Nenhuma despesa lançada.</div>}
       {items.map(x => { const CatIcon = (MOBILE_EXPENSE_CATEGORIES.find(c => c[0] === x.type) || [])[1] || MoreHorizontal; return <div className="mob-expense-row" key={x.id} data-testid={`mob-expense-row-${x.id}`}>
         <span className="mob-expense-icon"><CatIcon size={17} /></span>
         <div><b>{x.type}</b><small>{new Date(x.created_at || Date.now()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</small></div>
-        <span className={`mob-status ${x.status === 'approved' ? 'green' : 'orange'}`}>{x.status === 'approved' ? 'Aprovada' : 'Aguardando'}</span>
         <b>{money(x.amount)}</b>
       </div> })}
     </div>
@@ -1234,7 +1233,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
     setTimeout(() => setToast(''), 2200);
   }
 
-  const titles = { clientes: ['Clientes de hoje', 'Selecione o cliente e lance a quantidade'], diario: ['Controle Diário', 'Hoje · viagem 1'], caixa: ['Caixa do dia', 'Fechamento do entregador'], despesas: ['Despesas', 'Lance e envie para aprovação'], ajustes: ['Ajustes', 'Tema, texto e conta'] };
+  const titles = { clientes: ['Clientes de hoje', 'Selecione o cliente e lance a quantidade'], diario: ['Controle Diário', 'Hoje · viagem 1'], caixa: ['Caixa do dia', 'Fechamento do entregador'], despesas: ['Despesas', 'Registre os gastos do dia'], ajustes: ['Ajustes', 'Tema, texto e conta'] };
   const [title, subtitle] = titles[tab];
 
   return <div className={`mobile-app${theme === 'dark' ? ' dark' : ''}`} style={{ '--scale': textScale }} data-testid="mobile-driver-app">
