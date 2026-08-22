@@ -209,6 +209,40 @@ async def update_customer(item_id: str, data: ResourceInput, user=Depends(admin_
     values = data.model_dump(exclude_unset=True); await db.customers.update_one({"id": item_id}, {"$set": values})
     doc = await db.customers.find_one({"id": item_id}, {"_id": 0}); return doc
 
+@api.get("/customers/out-of-catalog-brands")
+async def out_of_catalog_brands(user=Depends(admin_user)):
+    entries = await db.daily_entries.find({"items": {"$elemMatch": {"out_of_catalog": True, "promoted": {"$ne": True}}}}, {"_id": 0}).to_list(2000)
+    customers = await db.customers.find({}, {"_id": 0}).to_list(1000)
+    by_name = {c["name"]: c for c in customers}
+    groups = {}
+    for e in entries:
+        customer_name = e.get("customer")
+        for it in e.get("items", []):
+            if not it.get("out_of_catalog") or it.get("promoted"): continue
+            key = (customer_name, (it.get("brand") or "").strip().lower())
+            row = groups.setdefault(key, {"customer": customer_name, "customer_id": (by_name.get(customer_name) or {}).get("id"), "brand": it.get("brand"), "price": it.get("price"), "count": 0, "last_date": e.get("date")})
+            row["count"] += 1
+            row["price"] = it.get("price")
+            if (e.get("date") or "") > (row["last_date"] or ""): row["last_date"] = e.get("date")
+    return sorted(groups.values(), key=lambda r: r["last_date"] or "", reverse=True)
+
+@api.post("/customers/{item_id}/promote-brand")
+async def promote_brand(item_id: str, data: ResourceInput, user=Depends(admin_user)):
+    customer = await db.customers.find_one({"id": item_id}, {"_id": 0})
+    if not customer: raise HTTPException(404, "Cliente não encontrado")
+    brand, price = data.brand, data.price
+    if not brand: raise HTTPException(400, "Informe a marca")
+    brands = customer.get("brands") or ([{"brand": customer["brand"], "price": customer.get("price")}] if customer.get("brand") else [])
+    if not any((b.get("brand") or "").strip().lower() == brand.strip().lower() for b in brands):
+        brands.append({"brand": brand, "price": price})
+    await db.customers.update_one({"id": item_id}, {"$set": {"brands": brands}})
+    await db.daily_entries.update_many(
+        {"customer": customer["name"], "items.brand": brand, "items.out_of_catalog": True},
+        {"$set": {"items.$[elem].promoted": True}},
+        array_filters=[{"elem.brand": brand, "elem.out_of_catalog": True}],
+    )
+    return await db.customers.find_one({"id": item_id}, {"_id": 0})
+
 @api.get("/daily-entries")
 async def daily_entries(date: Optional[str] = None, driver: Optional[str] = None, user=Depends(current_user)):
     query = {}
@@ -248,6 +282,26 @@ async def add_daily_entry(data: ResourceInput, user=Depends(current_user)):
         doc["due_date"] = due.date().isoformat()
         doc["received"] = False
     doc.update({"id": str(uuid.uuid4()), "created_at": now(), "created_by": user["id"]})
+
+    mf_plan = doc.get("mf_plan")
+    mf_items = [it for it in (items or []) if float(it.get("mf_quantity") or 0) > 0]
+    if mf_plan == "swap" and mf_items:
+        products = await db.products.find({}, {"_id": 0}).to_list(1000)
+        for it in mf_items:
+            brand = (it.get("brand") or "").strip().lower()
+            match = next((p for p in products if (p.get("brand") or p.get("name") or "").strip().lower() == brand), None)
+            if match:
+                await db.products.update_one({"id": match["id"]}, {"$inc": {"quantity": -float(it["mf_quantity"])}})
+    elif mf_plan == "reschedule" and mf_items:
+        redelivery = {
+            "id": str(uuid.uuid4()), "customer": doc.get("customer"), "address": doc.get("address"),
+            "driver": doc["driver"], "product": " + ".join(sorted({it.get("brand", "") for it in mf_items})),
+            "quantity": sum(float(it["mf_quantity"]) for it in mf_items), "value": 0,
+            "status": "pending", "notes": f"Reposição de MF agendada: {doc.get('mf_date') or 'a combinar'}",
+            "created_at": now(), "created_by": user["id"],
+        }
+        await db.deliveries.insert_one(redelivery)
+
     await db.daily_entries.insert_one(doc); doc.pop("_id", None); return doc
 
 @api.patch("/daily-entries/{item_id}")
@@ -265,10 +319,15 @@ async def delete_daily_entry(item_id: str, user=Depends(current_user)):
     return {"message": "Excluído"}
 
 @api.get("/reports/receivables")
-async def receivables(status: Optional[str] = None, user=Depends(admin_user)):
+async def receivables(status: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None, user=Depends(admin_user)):
     query = {"comp_value": {"$gt": 0}}
     if status == "pending": query["received"] = False
     elif status == "received": query["received"] = True
+    if start or end:
+        rng = {}
+        if start: rng["$gte"] = start
+        if end: rng["$lte"] = end
+        query["due_date"] = rng
     entries = await db.daily_entries.find(query, {"_id": 0}).sort("due_date", 1).to_list(2000)
     totals = {"pending": sum(float(e.get("comp_value") or 0) for e in entries if not e.get("received")), "received": sum(float(e.get("comp_value") or 0) for e in entries if e.get("received"))}
     return {"rows": entries, "totals": totals}

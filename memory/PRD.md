@@ -36,9 +36,15 @@ Perfis Admin/Entregador; entregas com rota e ordem; statuses pendente, em rota, 
 - Contadores usam `setState` funcional (`prev => ...`) para não perder toques rápidos.
 - Backend (`server.py`): `daily_entries` aceita `items: [{brand, price, quantity, mf_quantity, out_of_catalog}]` (soma vira `total`/`billed_quantity`/`mf_quantity`), novos campos `mf_plan` (`reschedule|swap|refused`) e `mf_date`, e valida no servidor `pix_value + cash_value + comp_value == total` (erro 400 com mensagem em PT-BR se não bater). `customers.brands[]` (já existia) confirmado como base do painel de marcas.
 - Testado: suíte `backend/tests` rodando contra instância local + banco Mongo Atlas isolado (`DB_NAME` temporário, apagado depois) — 41 passaram; 4 falhas em `test_delivery_signature.py` são pré-existentes (fixture espera `r.json()["user"]`, mas o login retorna o usuário "achatado" na raiz) e não têm relação com esta mudança. Testado manualmente via curl: criação de cliente com múltiplas marcas, lançamento com `items[]`, e rejeição 400 quando Pix+Dinheiro+A prazo não fecha com o total. `craco build` com `CI=true` compilou sem erros/warnings.
+## Implementado (2026-08-22, tela de assinatura + automações de MF/marca extra)
+- Tela de assinatura do app mobile agora é tela cheia dedicada (`SignaturePad` ganhou prop `variant="mobile"`, reaproveitando a mesma lógica de canvas/desenho): fundo opaco, área tracejada ocupando o espaço disponível, "Concluir parada" (verde) e "Voltar" (texto), igual ao protótipo. Versão desktop/admin do `SignaturePad` não mudou.
+- **MF → estoque**: quando o entregador escolhe "Trocar agora no caminhão" (`mf_plan=swap`), o backend abate a quantidade de MF do estoque do produto cuja `brand` bate com a marca do item (`db.products`).
+- **MF → reagendamento**: quando escolhe "Entregar outro dia" (`mf_plan=reschedule`), o backend cria automaticamente uma entrega pendente em `deliveries` com a observação da data combinada (`mf_date`).
+- **Promoção de marca fora do cadastro**: novo endpoint `GET /customers/out-of-catalog-brands` (agrupa itens `out_of_catalog:true` ainda não promovidos, por cliente+marca) e `POST /customers/{id}/promote-brand` (adiciona a marca/preço ao `customers.brands[]` e marca os lançamentos como `promoted`). Nova tela admin "Marcas Extras" (`/marcas-extras`) lista essas pendências com botão "Salvar no cadastro".
+- **Provisão de Pagamento** ganhou filtro de período por data de vencimento (`start`/`end` em `/reports/receivables`), além do filtro de status que já existia.
+- Testado via curl contra Mongo Atlas isolado: abatimento de estoque (100→97 após duas trocas), criação da entrega de reposição, listagem/promoção de marca extra (some da lista após promovida), e filtro de data da Provisão excluindo/incluindo corretamente. `pytest tests` 45/45. `craco build` limpo.
 ## Backlog priorizado
 - P0: aprovação de despesas.
-- P1: filtros de período aplicados às consultas de relatórios.
-- P1: vincular consumo do Controle Diário ao abatimento de estoque por marca; usar `mf_plan`/`mf_date` para reprogramar a próxima rota.
-- P1: revisar/consertar a fixture de login em `test_delivery_signature.py` (espera chave "user" que a API não retorna).
-- P2: relatórios exportáveis e notificações de estoque; admin poder promover marca "fora do cadastro" (`out_of_catalog`) para o cadastro oficial do cliente.
+- P2: relatórios exportáveis e notificações de estoque.
+- P2: variantes 1b (teclado numérico) e 1c (wizard passo a passo) do handoff mobile — não implementadas, só a 1a completa.
+- P2: testar visualmente o app mobile num navegador/celular real (só foi validado por build limpo até agora).

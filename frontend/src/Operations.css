@@ -199,6 +199,17 @@
 .mob-bottom-nav button.active{background:var(--mob-blue-soft);color:var(--mob-blue)}
 
 .mob-toast{position:fixed;left:50%;bottom:100px;transform:translateX(-50%);background:var(--mob-green);color:#fff;padding:16px 22px;border-radius:14px;font:700 calc(14px * var(--scale)) 'DM Sans',sans-serif;box-shadow:0 12px 28px #10253f3d;z-index:60}
+
+.mob-signature-screen{position:fixed;inset:0;z-index:50;background:var(--mob-bg,#f7fafc);color:var(--mob-ink,#10253f);padding:26px 20px;display:flex;flex-direction:column;font-family:'DM Sans',sans-serif}
+.mob-signature-screen .mob-eyebrow{margin:0}
+.mob-sign-title{font:700 calc(26px * var(--scale)) 'Space Grotesk',sans-serif;margin:8px 0 4px}
+.mob-sign-sub{font-size:calc(14px * var(--scale));color:var(--mob-muted,#6e8298);margin:0}
+.mob-sign-area{flex:1;margin:22px 0;border-radius:20px;border:2px dashed var(--mob-line,#e4ebf2);background:var(--mob-surface,#fff);position:relative;overflow:hidden}
+.mob-sign-area canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+.mob-sign-placeholder{position:absolute;inset:0;display:grid;place-items:center;color:var(--mob-muted,#6e8298);font-size:calc(14px * var(--scale));pointer-events:none}
+.mob-cta.green{background:var(--mob-green,#11966d);box-shadow:none}
+.mob-cta.green:disabled{opacity:.45}
+.mob-signature-screen .mob-text-btn{margin-top:6px;text-align:center}
 .mob-toast.orange{background:var(--mob-orange)}
 
 .mob-total-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}

@@ -29,7 +29,7 @@ function useMediaQuery(query) {
   }, [query]);
   return matches;
 }
-const nav = [['/', 'Visão geral', LayoutDashboard], ['/rotas', 'Rotas', Map], ['/entregas', 'Entregas', Truck], ['/controle-diario', 'Controle Diário', CalendarCheck], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/usuarios', 'Usuários', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
+const nav = [['/', 'Visão geral', LayoutDashboard], ['/rotas', 'Rotas', Map], ['/entregas', 'Entregas', Truck], ['/controle-diario', 'Controle Diário', CalendarCheck], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/marcas-extras', 'Marcas Extras', Droplets], ['/usuarios', 'Usuários', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
 
 function Shell({ user, onLogout, notifications, children }) {
   const [open, setOpen] = useState(false);
@@ -157,12 +157,13 @@ function Dashboard({ data, create }) { return <><Head eyebrow="PAINEL DE CONTROL
 
 function Deliveries({ data, setData, create }) { const [filter, setFilter] = useState('all'); const rows = (data?.deliveries || []).filter(x => filter === 'all' || x.status === filter); async function change(d, status) { await api.patch(`/deliveries/${d.id}`, { status }, auth()); setData({ ...data, deliveries: data.deliveries.map(x => x.id === d.id ? { ...x, status } : x) }) } return <><Head eyebrow="LOGÍSTICA" title="Entregas" subtitle="Acompanhe cada entrega e status da rota." action="Lançar entrega" onAction={() => create('delivery')} /><div className="filter-row"><button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')} data-testid="delivery-filter-all">Todas</button><button className={filter === 'pending' ? 'active' : ''} onClick={() => setFilter('pending')} data-testid="delivery-filter-pending">Pendentes</button><button className={filter === 'in_transit' ? 'active' : ''} onClick={() => setFilter('in_transit')} data-testid="delivery-filter-in-transit">Em rota</button></div><section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CLIENTE</th><th>PRODUTO</th><th>ENTREGADOR</th><th>VALOR</th><th>STATUS</th></tr></thead><tbody>{rows.map(d => <tr key={d.id}><td><b>{d.customer}</b><small>{d.address}</small></td><td>{d.product}<small>{d.quantity} unidades</small></td><td>{d.driver}</td><td>{money(d.value)}{d.received_value != null && <small>Recebido: {money(d.received_value)}{d.payment_method ? ` · ${d.payment_method}` : ''}</small>}{d.problem_quantity > 0 && <small className="orange-text">{d.problem_quantity} un. com {d.problem_type?.toLowerCase()}</small>}</td><td><select data-testid={`delivery-status-${d.id}`} value={d.status} onChange={e => change(d, e.target.value)}><option value="pending">Pendente</option><option value="in_transit">Em rota</option><option value="delivered">Entregue</option><option value="failed">Não realizada</option><option value="damaged">Avaria</option></select></td></tr>)}</tbody></table></div></section></> }
 
-function SignaturePad({ onSave, onCancel }) {
+function SignaturePad({ onSave, onCancel, variant = 'desktop', customer, total }) {
   const canvasRef = useRef(null);
   const drawing = useRef(false);
   const [empty, setEmpty] = useState(true);
   useEffect(() => {
     const c = canvasRef.current; if (!c) return;
+    if (variant === 'mobile') { const r = c.parentElement.getBoundingClientRect(); c.width = Math.round(r.width); c.height = Math.round(r.height); }
     const ctx = c.getContext('2d'); ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.strokeStyle = '#10253f';
     const pos = e => { const r = c.getBoundingClientRect(); const t = e.touches?.[0] || e; return [t.clientX - r.left, t.clientY - r.top]; };
     const start = e => { e.preventDefault(); drawing.current = true; const [x, y] = pos(e); ctx.beginPath(); ctx.moveTo(x, y); setEmpty(false); };
@@ -171,9 +172,22 @@ function SignaturePad({ onSave, onCancel }) {
     c.addEventListener('mousedown', start); c.addEventListener('mousemove', move); window.addEventListener('mouseup', end);
     c.addEventListener('touchstart', start, { passive: false }); c.addEventListener('touchmove', move, { passive: false }); window.addEventListener('touchend', end);
     return () => { c.removeEventListener('mousedown', start); c.removeEventListener('mousemove', move); window.removeEventListener('mouseup', end); c.removeEventListener('touchstart', start); c.removeEventListener('touchmove', move); window.removeEventListener('touchend', end); };
-  }, []);
+  }, [variant]);
   function clear() { const c = canvasRef.current; c.getContext('2d').clearRect(0, 0, c.width, c.height); setEmpty(true); }
   function save() { onSave(canvasRef.current.toDataURL('image/png')); }
+
+  if (variant === 'mobile') return <div className="mob-signature-screen" data-testid="mob-signature-screen">
+    <p className="mob-eyebrow">CONFIRMAÇÃO DE ENTREGA</p>
+    <h2 className="mob-sign-title">Assinatura do cliente</h2>
+    <p className="mob-sign-sub">{customer}{customer && total != null ? ' · ' : ''}{total != null ? money(total) : ''}</p>
+    <div className="mob-sign-area">
+      <canvas ref={canvasRef} data-testid="signature-canvas" />
+      {empty && <span className="mob-sign-placeholder">Assine com o dedo</span>}
+    </div>
+    <button type="button" className="mob-cta green" data-testid="signature-save" disabled={empty} onClick={save}>Concluir parada</button>
+    <button type="button" className="mob-text-btn" data-testid="signature-close" onClick={onCancel}>Voltar</button>
+  </div>;
+
   return <div className="modal-backdrop"><div className="quick-modal signature-modal">
     <button type="button" className="modal-close" onClick={onCancel} data-testid="signature-close"><X /></button>
     <p className="eyebrow">CONFIRMAÇÃO DE ENTREGA</p>
@@ -680,13 +694,25 @@ function todayISO(offset = 0) { const d = new Date(); d.setDate(d.getDate() + of
 
 function Receivables() {
   const [filter, setFilter] = useState('pending');
+  const [start, setStart] = useState('');
+  const [end, setEnd] = useState('');
   const [data, setData] = useState({ rows: [], totals: {} });
-  async function load() { const { data: r } = await api.get('/reports/receivables', { ...auth(), params: filter === 'all' ? {} : { status: filter } }); setData(r); }
+  async function load() {
+    const params = {}; if (filter !== 'all') params.status = filter; if (start) params.start = start; if (end) params.end = end;
+    const { data: r } = await api.get('/reports/receivables', { ...auth(), params }); setData(r);
+  }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { load(); }, [filter]);
+  useEffect(() => { load(); }, [filter, start, end]);
   async function markReceived(row) { await api.patch(`/daily-entries/${row.id}`, { received: !row.received }, auth()); load(); }
   const today = todayISO(0);
   return <><Head eyebrow="CONTAS A RECEBER" title="Provisão de Pagamento" subtitle="Vendas a prazo (COMP), organizadas pela data prevista de recebimento — entrega + 15/30 dias." />
+    <div className="report-toolbar">
+      <div className="report-filters">
+        <label>Vencimento de<input type="date" value={start} max={end || undefined} data-testid="receivables-start-date" onChange={e => setStart(e.target.value)} /></label>
+        <label>até<input type="date" value={end} min={start || undefined} data-testid="receivables-end-date" onChange={e => setEnd(e.target.value)} /></label>
+        {(start || end) && <button className="ghost-btn" data-testid="receivables-clear-dates" onClick={() => { setStart(''); setEnd(''); }}>Limpar período</button>}
+      </div>
+    </div>
     <div className="filter-row">
       <button className={filter === 'pending' ? 'active' : ''} onClick={() => setFilter('pending')} data-testid="receivables-filter-pending">Pendentes</button>
       <button className={filter === 'received' ? 'active' : ''} onClick={() => setFilter('received')} data-testid="receivables-filter-received">Recebidos</button>
@@ -708,6 +734,31 @@ function Receivables() {
         </tr>
       })}
       {data.rows.length === 0 && <tr><td colSpan={8} className="muted" style={{ padding: 16 }}>Nenhuma venda a prazo encontrada.</td></tr>}
+    </tbody></table></div></section></>
+}
+
+function OutOfCatalogBrands() {
+  const [rows, setRows] = useState([]);
+  const [busy, setBusy] = useState(null);
+  const [error, setError] = useState('');
+  async function load() { const { data } = await api.get('/customers/out-of-catalog-brands', auth()); setRows(data); }
+  useEffect(() => { load(); }, []);
+  async function promote(row) {
+    if (!row.customer_id) return setError(`"${row.customer}" não é um cliente cadastrado — cadastre-o primeiro em Clientes.`);
+    setBusy(`${row.customer}-${row.brand}`); setError('');
+    try { await api.post(`/customers/${row.customer_id}/promote-brand`, { brand: row.brand, price: row.price }, auth()); await load(); }
+    catch (e) { setError(e.response?.data?.detail || 'Não foi possível salvar.'); }
+    finally { setBusy(null); }
+  }
+  return <><Head eyebrow="CADASTRO" title="Marcas Extras" subtitle="Marcas que os entregadores lançaram fora do cadastro do cliente — revise e salve as que devem virar padrão." />
+    {error && <div className="error" style={{ marginBottom: 16 }} data-testid="out-of-catalog-error">{error}</div>}
+    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CLIENTE</th><th>MARCA</th><th>PREÇO USADO</th><th>Nº DE VEZES</th><th>ÚLTIMO LANÇAMENTO</th><th /></tr></thead><tbody>
+      {rows.map(r => <tr key={`${r.customer}-${r.brand}`} data-testid={`out-of-catalog-row-${r.customer}-${r.brand}`}>
+        <td><b>{r.customer}</b>{!r.customer_id && <small className="orange-text">Cliente sem cadastro</small>}</td>
+        <td>{r.brand}</td><td>{money(r.price)}</td><td>{r.count}</td><td>{r.last_date}</td>
+        <td><button className="action-btn approve" disabled={busy === `${r.customer}-${r.brand}`} data-testid={`promote-brand-${r.customer}-${r.brand}`} onClick={() => promote(r)}><Check size={13} /> Salvar no cadastro</button></td>
+      </tr>)}
+      {rows.length === 0 && <tr><td colSpan={6} className="muted" style={{ padding: 16 }}>Nenhuma marca fora do cadastro pendente de revisão.</td></tr>}
     </tbody></table></div></section></>
 }
 
@@ -942,7 +993,7 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete }) {
     } catch (e) { setError(e.response?.data?.detail || 'Não foi possível concluir.'); setSaving(false); setSigning(false); }
   }
 
-  if (signing) return <SignaturePad onSave={complete} onCancel={() => setSigning(false)} />;
+  if (signing) return <SignaturePad variant="mobile" customer={customerName} total={total} onSave={complete} onCancel={() => setSigning(false)} />;
 
   const canSubmit = lines.some(l => l.qty > 0 || l.mf > 0) && (totalMf === 0 || !!mfPlan) && Math.abs((pix + cash + compValue) - total) < 0.01;
 
@@ -1233,6 +1284,7 @@ function App() {
       <Route path="/estoque" element={<Stock data={data} create={setModal} />} />
       <Route path="/financeiro" element={<Finance data={data} setData={setData} create={setModal} user={user} />} />
       <Route path="/provisao" element={adminOnly(<Receivables />)} />
+      <Route path="/marcas-extras" element={adminOnly(<OutOfCatalogBrands />)} />
       <Route path="/clientes" element={<Customers items={customers} create={setModal} />} />
       <Route path="/usuarios" element={adminOnly(<UsersPage me={user} />)} />
       <Route path="/fechamento" element={adminOnly(<DailyClosing />)} />
