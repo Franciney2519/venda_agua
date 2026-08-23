@@ -280,3 +280,61 @@
 .mob-account-row small{color:var(--mob-muted);font-size:calc(12px * var(--scale))}
 
 @media(min-width:701px){.mobile-app{display:none}}
+
+/* ===================== Tema escuro do painel admin ===================== */
+.theme-toggle{width:36px;height:36px;border-radius:9px;background:#eef4fa;color:#5e748a;display:grid;place-items:center}
+.theme-toggle:hover{color:var(--blue)}
+.app-shell.dark{--ink:#e8eef5;--muted:#93a5b8;--line:#28384a;--pale:#132840;--green:#4fd3a3;--orange:#eab264;--red:#f0857e;--blue:#4fa3e8;
+  background:radial-gradient(circle at 85% 0,#13233a 0,transparent 32%),#0b1622!important;color:var(--ink)}
+.app-shell.dark .sidebar{background:#101f30;border-color:var(--line)}
+.app-shell.dark .brand{color:#dfe9f4}
+.app-shell.dark .workspace{background:#15293c;border-color:var(--line)}
+.app-shell.dark .workspace b span{color:#7c93aa}
+.app-shell.dark nav a{color:#8fa3b8}
+.app-shell.dark nav a:hover,.app-shell.dark nav a.active{background:#132840;color:var(--blue)}
+.app-shell.dark .support{color:#7c93aa;border-color:var(--line)}
+.app-shell.dark .logout{color:#8fa3b8}
+.app-shell.dark .theme-toggle{background:#15293c;color:#cfe0ef}
+.app-shell.dark .notification{color:#9fb2c4}
+.app-shell.dark .avatar,.app-shell.dark .customer-avatar{background:#173049;color:var(--blue)}
+.app-shell.dark .mobile-menu{color:var(--ink)}
+.app-shell.dark .panel,.app-shell.dark .stat,.app-shell.dark .customer-card{background:#101f30;border-color:var(--line);box-shadow:0 5px 22px #00000030}
+.app-shell.dark .panel select,.app-shell.dark .table-wrap select{background:#15293c;border-color:var(--line);color:var(--muted)}
+.app-shell.dark th{background:#0d1b2a;color:#7c93aa;border-color:var(--line)}
+.app-shell.dark td{color:#a9bacb;border-color:var(--line)}
+.app-shell.dark td b{color:var(--ink)}
+.app-shell.dark td small{color:#7c93aa}
+.app-shell.dark .filter-row button{background:#101f30;border-color:var(--line);color:var(--muted)}
+.app-shell.dark .filter-row button.active{background:#132840;color:var(--blue);border-color:#2b5f8d}
+.app-shell.dark .stock-alert{background:#2c2013;border-color:#6b4f22;color:#eab264}
+.app-shell.dark .stock-alert span{color:#c2a377}
+.app-shell.dark .customer-card span{color:var(--muted)}
+.app-shell.dark .customer-card small{color:#7c93aa}
+.app-shell.dark .customer-card>svg{color:#5e748a}
+.app-shell.dark .stat-icon{background:#132840;color:var(--blue)}
+.app-shell.dark .stat-icon.green{background:#0f2b23;color:var(--green)}
+.app-shell.dark .stat-icon.orange{background:#2c2013;color:var(--orange)}
+.app-shell.dark .stat-icon.red{background:#2c1414;color:var(--red)}
+.app-shell.dark .stat small{color:var(--green)}
+.app-shell.dark .green-bg{background:#0f2b23;color:var(--green)}
+.app-shell.dark .blue-bg{background:#132840;color:var(--blue)}
+.app-shell.dark .gray-bg{background:#15293c;color:#93a5b8}
+.app-shell.dark .tag.green{background:#0f2b23;color:var(--green)}
+.app-shell.dark .tag.blue{background:#132840;color:var(--blue)}
+.app-shell.dark .tag.gray{background:#15293c;color:#93a5b8}
+.app-shell.dark .tag.red{background:#2c1414;color:var(--red)}
+.app-shell.dark .tag.orange{background:#2c2013;color:var(--orange)}
+.app-shell.dark .primary{box-shadow:0 6px 14px #0878d140}
+.app-shell.dark .ghost-btn,.app-shell.dark .secondary-btn{background:#132840;border-color:#2b5f8d;color:var(--blue)}
+.app-shell.dark .action-btn.ghost{background:#15293c;color:var(--muted)}
+.app-shell.dark .demo-hint{background:#0d1b2a;color:#7c93aa}
+.app-shell.dark .modal-backdrop{background:#000000a0}
+.app-shell.dark .quick-modal{background:#101f30;color:var(--ink);box-shadow:0 20px 60px #00000060}
+.app-shell.dark .quick-modal label{color:#9fb2c4}
+.app-shell.dark .quick-modal input,.app-shell.dark .quick-modal select{background:#15293c;border-color:var(--line);color:var(--ink)}
+.app-shell.dark .modal-close{color:#9fb2c4}
+.app-shell.dark .brand-price-row input{background:#15293c;border-color:var(--line);color:var(--ink)}
+.app-shell.dark .report-toolbar{background:#101f30;border-color:var(--line)}
+.app-shell.dark .report-filters input[type=date],.app-shell.dark .report-filters select{background:#15293c;border-color:var(--line);color:var(--ink)}
+.app-shell.dark .activity-list li{border-color:var(--line)}
+.app-shell.dark .loading{background:#0b1622}

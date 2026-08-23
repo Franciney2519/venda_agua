@@ -33,10 +33,11 @@ const nav = [['/', 'Visão geral', LayoutDashboard], ['/controle-diario', 'Contr
 
 function Shell({ user, onLogout, notifications, children }) {
   const [open, setOpen] = useState(false);
+  const [theme, setTheme] = useDraft('hydro_theme', 'light');
   const links = user.role === 'driver' ? nav.filter(x => ['/', '/controle-diario', '/financeiro'].includes(x[0])) : nav;
   const badges = { '/usuarios': notifications?.pending_users || 0, '/financeiro': notifications?.pending_expenses || 0 };
   const total = notifications?.total || 0;
-  return <div className="app-shell"><aside className={open ? 'sidebar open' : 'sidebar'}><div className="brand"><span className="brand-mark"><Droplets size={20} /></span><span>Distribuidora <span>Diane</span></span></div><div className="workspace"><small>OPERAÇÃO</small><b>{user.role === 'admin' ? 'Admin · Base Central' : 'Entregador'} <span>⌄</span></b></div>
+  return <div className={`app-shell${theme === 'dark' ? ' dark' : ''}`}><aside className={open ? 'sidebar open' : 'sidebar'}><div className="brand"><span className="brand-mark"><Droplets size={20} /></span><span>Distribuidora <span>Diane</span></span></div><div className="workspace"><small>OPERAÇÃO</small><b>{user.role === 'admin' ? 'Admin · Base Central' : 'Entregador'} <span>⌄</span></b></div>
     <nav>{links.map(([to, label, Icon]) => <NavLink key={to} to={to} end={to === '/'} onClick={() => setOpen(false)} data-testid={`nav-${label.toLowerCase().replaceAll(' ', '-')}`}>
       <Icon size={18} />{label}
       {badges[to] > 0 && <span className="nav-badge" data-testid={`badge-${to.replace('/', '')}`}>{badges[to]}</span>}
@@ -44,6 +45,7 @@ function Shell({ user, onLogout, notifications, children }) {
     <div className="sidebar-bottom"><div className="support"><span className="live-dot" /> Operação normal</div><button className="logout" data-testid="logout-button" onClick={onLogout}><LogOut size={17} /> Sair da conta</button></div></aside>
     <main className="main"><header><button className="mobile-menu" data-testid="mobile-menu-button" onClick={() => setOpen(!open)}>{open ? <X /> : <Menu />}</button><div><p className="eyebrow">{user.role === 'driver' ? 'PORTAL DO ENTREGADOR' : 'PAINEL ADMINISTRATIVO'}</p><h1>Olá, {user.name.split(' ')[0]} <span className="wave">✦</span></h1></div>
       <div className="header-actions">
+        <button type="button" className="theme-toggle" data-testid="admin-theme-toggle" aria-label="Alternar tema" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Moon size={17} /> : <Sun size={17} />}</button>
         <div className="notification" data-testid="notification-indicator" title={total ? `${total} pendências` : 'Sem pendências'}>{total > 0 && <span data-testid="notification-count">{total}</span>}◌</div>
         <div className="avatar">{user.name.split(' ').map(x => x[0]).join('').slice(0, 2)}</div>
       </div></header>{children}</main></div>
