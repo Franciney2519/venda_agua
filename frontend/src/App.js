@@ -97,7 +97,7 @@ function Stat({ label, value, detail, Icon, tone = '' }) { return <div className
 
 function Modal({ title, fields, onClose, onSave }) { const [form, setForm] = useState({}), [error, setError] = useState(''); async function submit(e) { e.preventDefault(); if (fields.some(x => x.required !== false && !String(form[x.key] || '').trim())) return setError('Preencha os campos obrigatórios.'); try { await onSave(form) } catch (e) { setError(e.response?.data?.detail || 'Não foi possível salvar.') } } return <div className="modal-backdrop"><form className="quick-modal" onSubmit={submit}><button type="button" className="modal-close" onClick={onClose} data-testid="modal-close-button"><X /></button><p className="eyebrow">NOVO LANÇAMENTO</p><h3>{title}</h3>{fields.map(f => <label key={f.key}>{f.label}{f.options ? <select required={f.required !== false} data-testid={`modal-${f.key}-input`} onChange={e => setForm({ ...form, [f.key]: e.target.value })}><option value="">Selecione</option>{f.options.map(x => <option key={x}>{x}</option>)}</select> : <input required={f.required !== false} type={f.type || 'text'} data-testid={`modal-${f.key}-input`} onChange={e => setForm({ ...form, [f.key]: e.target.value })} />}</label>)}{error && <div className="error" data-testid="form-validation-error">{error}</div>}<button className="primary full" data-testid="modal-submit-button"><Save size={16} /> Salvar lançamento</button></form></div> }
 
-const fields = { product: [{ key: 'name', label: 'Nome do produto' }, { key: 'brand', label: 'Marca', required: false }, { key: 'category', label: 'Categoria', options: ['Retornável', 'Descartável'] }, { key: 'quantity', label: 'Quantidade', type: 'number' }, { key: 'minimum', label: 'Estoque mínimo', type: 'number' }, { key: 'cost_price', label: 'Custo de compra (R$/un)', type: 'number', required: false }], expense: [{ key: 'type', label: 'Categoria', options: ['Combustível', 'Alimentação', 'Pedágio', 'Manutenção', 'Outros'] }, { key: 'driver', label: 'Entregador' }, { key: 'amount', label: 'Valor', type: 'number' }], customer: [{ key: 'name', label: 'Nome / empresa' }, { key: 'address', label: 'Endereço' }, { key: 'phone', label: 'Telefone', required: false }] };
+const fields = { product: [{ key: 'name', label: 'Nome do produto' }, { key: 'brand', label: 'Marca', required: false }, { key: 'category', label: 'Categoria', options: ['Retornável', 'Descartável'] }, { key: 'quantity', label: 'Quantidade', type: 'number' }, { key: 'minimum', label: 'Estoque mínimo', type: 'number' }, { key: 'cost_price', label: 'Custo de compra (R$/un)', type: 'number', required: false }, { key: 'batch', label: 'Lote', required: false }, { key: 'purchase_date', label: 'Data de compra', type: 'date', required: false }], expense: [{ key: 'type', label: 'Categoria', options: ['Combustível', 'Alimentação', 'Pedágio', 'Manutenção', 'Outros'] }, { key: 'driver', label: 'Entregador' }, { key: 'amount', label: 'Valor', type: 'number' }], customer: [{ key: 'name', label: 'Nome / empresa' }, { key: 'address', label: 'Endereço' }, { key: 'phone', label: 'Telefone', required: false }] };
 
 function CustomerModal({ onClose, onSave }) {
   const [form, setForm] = useState({ name: '', address: '', phone: '' });
@@ -217,7 +217,50 @@ function SignaturePad({ onSave, onCancel, variant = 'desktop', customer, total }
   </div></div>
 }
 
-function Stock({ data, create }) { return <><Head eyebrow="INVENTÁRIO" title="Estoque" subtitle="Produtos, galões retornáveis e níveis mínimos." action="Novo produto" onAction={() => create('product')} /><div className="stock-alert" data-testid="stock-alert"><AlertTriangle size={19} /><div><b>{data?.products?.filter(x => x.quantity < x.minimum).length || 0} produtos precisam de reposição</b><span>Confira os itens antes da próxima rota.</span></div></div><section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>CATEGORIA</th><th>DISPONÍVEL</th><th>MÍNIMO</th><th>SITUAÇÃO</th></tr></thead><tbody>{(data?.products || []).map(p => <tr key={p.id}><td><b>{p.name}</b><small>SKU-{p.id}</small></td><td>{p.category}</td><td>{p.quantity} {p.unit || 'un'}</td><td>{p.minimum}</td><td><span className={`tag ${p.quantity < p.minimum ? 'red' : 'green'}`}>{p.quantity < p.minimum ? 'Repor' : 'Saudável'}</span></td></tr>)}</tbody></table></div></section></> }
+function StockAdjustModal({ product, onClose, onSave }) {
+  const [quantity, setQuantity] = useState(product.quantity);
+  const [reason, setReason] = useState('Recontagem');
+  const [batch, setBatch] = useState(product.batch || '');
+  const [purchaseDate, setPurchaseDate] = useState(product.purchase_date || '');
+  const [error, setError] = useState('');
+  const diff = Number(quantity) - Number(product.quantity || 0);
+  async function submit(e) {
+    e.preventDefault(); setError('');
+    if (quantity === '' || isNaN(Number(quantity))) return setError('Informe uma quantidade válida.');
+    try { await onSave({ quantity: Number(quantity), notes: reason, batch, purchase_date: purchaseDate || null }); }
+    catch (e) { setError(e.response?.data?.detail || 'Não foi possível salvar.'); }
+  }
+  return <div className="modal-backdrop"><form className="quick-modal" onSubmit={submit}>
+    <button type="button" className="modal-close" onClick={onClose} data-testid="stock-adjust-close"><X /></button>
+    <p className="eyebrow">AJUSTE DE ESTOQUE</p>
+    <h3>{product.name}</h3>
+    <p className="muted">Quantidade atual no sistema: <b>{product.quantity} {product.unit || 'un'}</b></p>
+    <label>Quantidade real (após contagem)<input required autoFocus type="number" value={quantity} data-testid="stock-adjust-quantity" onChange={e => setQuantity(e.target.value)} /></label>
+    {quantity !== '' && !isNaN(Number(quantity)) && diff !== 0 && <p className={diff > 0 ? 'muted' : 'orange-text'}>{diff > 0 ? `+${diff}` : diff} {product.unit || 'un'} em relação ao valor atual</p>}
+    <label>Motivo<select value={reason} data-testid="stock-adjust-reason" onChange={e => setReason(e.target.value)}>
+      <option>Recontagem</option>
+      <option>Avaria</option>
+      <option>Perda/roubo</option>
+      <option>Entrada de compra</option>
+      <option>Outro</option>
+    </select></label>
+    <label>Lote<input value={batch} placeholder="ex: L2026-0817" data-testid="stock-adjust-batch" onChange={e => setBatch(e.target.value)} /></label>
+    <label>Data de compra<input type="date" value={purchaseDate} data-testid="stock-adjust-purchase-date" onChange={e => setPurchaseDate(e.target.value)} /></label>
+    {error && <div className="error" data-testid="stock-adjust-error">{error}</div>}
+    <button className="primary full" data-testid="stock-adjust-submit"><Save size={16} /> Salvar ajuste</button>
+  </form></div>
+}
+
+function Stock({ data, setData, create }) {
+  const [adjusting, setAdjusting] = useState(null);
+  async function saveAdjustment(payload) {
+    const { data: updated } = await api.patch(`/products/${adjusting.id}`, payload, auth());
+    setData({ ...data, products: data.products.map(p => p.id === updated.id ? updated : p) });
+    setAdjusting(null);
+  }
+  return <><Head eyebrow="INVENTÁRIO" title="Estoque" subtitle="Produtos, galões retornáveis e níveis mínimos." action="Novo produto" onAction={() => create('product')} /><div className="stock-alert" data-testid="stock-alert"><AlertTriangle size={19} /><div><b>{data?.products?.filter(x => x.quantity < x.minimum).length || 0} produtos precisam de reposição</b><span>Confira os itens antes da próxima rota.</span></div></div><section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>CATEGORIA</th><th>DISPONÍVEL</th><th>MÍNIMO</th><th>SITUAÇÃO</th><th>LOTE / COMPRA</th><th /></tr></thead><tbody>{(data?.products || []).map(p => <tr key={p.id} data-testid={`stock-row-${p.id}`}><td><b>{p.name}</b><small>SKU-{p.id}</small></td><td>{p.category}</td><td>{p.quantity} {p.unit || 'un'}</td><td>{p.minimum}</td><td><span className={`tag ${p.quantity < p.minimum ? 'red' : 'green'}`}>{p.quantity < p.minimum ? 'Repor' : 'Saudável'}</span></td><td><small className="muted">{p.batch ? `Lote ${p.batch}` : '—'}{p.purchase_date ? ` · ${p.purchase_date}` : ''}</small></td><td><button className="action-btn ghost" data-testid={`stock-adjust-${p.id}`} onClick={() => setAdjusting(p)}><Pencil size={13} /> Ajustar</button></td></tr>)}</tbody></table></div></section>
+    {adjusting && <StockAdjustModal product={adjusting} onClose={() => setAdjusting(null)} onSave={saveAdjustment} />}
+  </> }
 
 function Finance({ data, setData, create, user }) {
   const [summary, setSummary] = useState(null);
@@ -1156,7 +1199,7 @@ function App() {
     <Routes>
       <Route path="/" element={<Dashboard data={data} />} />
       <Route path="/controle-diario" element={<DailyControl user={user} customers={customers} />} />
-      <Route path="/estoque" element={<Stock data={data} create={setModal} />} />
+      <Route path="/estoque" element={<Stock data={data} setData={setData} create={setModal} />} />
       <Route path="/financeiro" element={<Finance data={data} setData={setData} create={setModal} user={user} />} />
       <Route path="/provisao" element={adminOnly(<Receivables />)} />
       <Route path="/marcas-extras" element={adminOnly(<OutOfCatalogBrands />)} />

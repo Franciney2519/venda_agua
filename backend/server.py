@@ -64,6 +64,8 @@ class ResourceInput(BaseModel):
     items: Optional[List[dict]] = None
     mf_plan: Optional[str] = None
     mf_date: Optional[str] = None
+    batch: Optional[str] = None
+    purchase_date: Optional[str] = None
 
 def now(): return datetime.now(timezone.utc).isoformat()
 def entry_total(e): return float(e.get("total") or 0)
@@ -168,6 +170,16 @@ async def create_resource(collection, payload, user):
 async def products(user=Depends(current_user)): return await list_resource("products")
 @api.post("/products")
 async def add_product(data: ResourceInput, user=Depends(admin_user)): return await create_resource("products", data, user)
+@api.patch("/products/{item_id}")
+async def update_product(item_id: str, data: ResourceInput, user=Depends(admin_user)):
+    target = await db.products.find_one({"id": item_id}, {"_id": 0})
+    if not target: raise HTTPException(404, "Produto não encontrado")
+    values = data.model_dump(exclude_unset=True)
+    await db.products.update_one({"id": item_id}, {"$set": values})
+    doc = await db.products.find_one({"id": item_id}, {"_id": 0})
+    if "quantity" in values and float(values["quantity"]) != float(target.get("quantity") or 0):
+        await log_activity("stock_adjusted", user, {"id": item_id, "name": doc.get("name")}, {"from": target.get("quantity"), "to": doc.get("quantity"), "reason": values.get("notes")})
+    return doc
 @api.get("/expenses")
 async def expenses(user=Depends(current_user)): return await list_resource("expenses")
 @api.post("/expenses")
