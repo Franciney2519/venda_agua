@@ -14,7 +14,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 client = AsyncIOMotorClient(os.environ["MONGO_URL"])
 db = client[os.environ["DB_NAME"]]
-app = FastAPI(title="HydroSaaS API")
+app = FastAPI(title="Distribuidora Diane API")
 api = APIRouter(prefix="/api")
 JWT_ALGORITHM = "HS256"
 
@@ -98,7 +98,7 @@ def sanitize_user(u):
     return {k: v for k, v in u.items() if k not in ("password_hash", "_id")}
 
 @api.get("/")
-async def root(): return {"message": "HydroSaaS online"}
+async def root(): return {"message": "Distribuidora Diane online"}
 
 @api.post("/auth/signup")
 async def signup(data: SignupInput):
@@ -519,7 +519,7 @@ async def export_reports_csv(start: Optional[str] = None, end: Optional[str] = N
     expenses = await db.expenses.find(exp_query, {"_id": 0}).to_list(1000)
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["HydroFlow - Relatório Operacional"])
+    w.writerow(["Distribuidora Diane - Relatório Operacional"])
     w.writerow(["Período", start or "início", end or "hoje"])
     w.writerow([])
     w.writerow(["LANÇAMENTOS (CONTROLE DIÁRIO)"])

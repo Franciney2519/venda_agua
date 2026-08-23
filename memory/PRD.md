@@ -51,6 +51,11 @@ Perfis Admin/Entregador; entregas com rota e ordem; statuses pendente, em rota, 
 - **Financeiro unificado**: novo endpoint `GET /finance/summary` (Pix+Dinheiro recebidos hoje, despesas de hoje, saldo do dia, total a prazo pendente/recebido — com escopo automático por entregador quando não é admin). O card "Recebido hoje" que estava com `R$486` fixo no código agora usa dado real. A tela ganhou um atalho "Ver Provisão de Pagamento" e um resumo de vendas a prazo, ligando as duas telas que antes não se conversavam.
 - CSV de relatórios (`/reports/export.csv`) trocou a seção "ENTREGAS" por "LANÇAMENTOS (CONTROLE DIÁRIO)", com colunas de marca, Pix, Dinheiro, a prazo e MF.
 - Testes do backend atualizados para reflear o novo modelo: `test_delivery_signature.py` agora testa assinatura via `daily-entries` (o fluxo real usado pelo app mobile), `test_patch_preserve_fields.py` testa PATCH em `daily-entries`, `test_hydroflow_review.py` testa o ciclo de vida de um lançamento em vez de status de entrega. `pytest tests` 44/44. `craco build` com `CI=true` limpo.
+## Implementado (2026-08-23, ajustes pós-remoção de Entregas/Rotas + rebranding)
+- Corrigido bug de texto no app mobile: estado vazio do Diário dizia "Conclua uma parada na aba Rota" (nome interno do protótipo) — agora diz "aba Clientes" (nome real da aba).
+- Simplificado Fechamento do Dia e Relatórios: como todo lançamento do Controle Diário já é uma entrega concluída (não existe mais status pendente/em rota), as colunas "Concluídas"/"Eficiência" e o formato "X/Y" sempre davam 100% — viraram só "Lançamentos" (um número).
+- **Nome da empresa**: app rebatizado de "HydroFlow" para **"Distribuidora Diane"** (nome real do cliente, visto no cabeçalho da planilha original de controle diário). Trocado em: logo da barra lateral, tela de login, títulos de PDF/CSV exportados, nomes de arquivo baixados, título da API FastAPI e mensagem de health-check. Identificadores internos (nome do banco `hydrosaas`, chaves de `localStorage` como `hydro_theme`/`hydro_token`, nomes de função/classe no código) não foram alterados — são detalhes de implementação, não branding visível.
+- `pytest tests` 44/44 (ajustada a asserção do CSV que checava a string "HydroFlow"). `craco build` com `CI=true` limpo.
 ## Backlog priorizado
 - P0: aprovação de despesas.
 - P2: relatórios exportáveis e notificações de estoque.

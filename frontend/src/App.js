@@ -36,7 +36,7 @@ function Shell({ user, onLogout, notifications, children }) {
   const links = user.role === 'driver' ? nav.filter(x => ['/', '/controle-diario', '/financeiro'].includes(x[0])) : nav;
   const badges = { '/usuarios': notifications?.pending_users || 0, '/financeiro': notifications?.pending_expenses || 0 };
   const total = notifications?.total || 0;
-  return <div className="app-shell"><aside className={open ? 'sidebar open' : 'sidebar'}><div className="brand"><span className="brand-mark"><Droplets size={20} /></span><span>hydro<span>flow</span></span></div><div className="workspace"><small>OPERAÇÃO</small><b>{user.role === 'admin' ? 'Admin · Base Central' : 'Entregador'} <span>⌄</span></b></div>
+  return <div className="app-shell"><aside className={open ? 'sidebar open' : 'sidebar'}><div className="brand"><span className="brand-mark"><Droplets size={20} /></span><span>Distribuidora <span>Diane</span></span></div><div className="workspace"><small>OPERAÇÃO</small><b>{user.role === 'admin' ? 'Admin · Base Central' : 'Entregador'} <span>⌄</span></b></div>
     <nav>{links.map(([to, label, Icon]) => <NavLink key={to} to={to} end={to === '/'} onClick={() => setOpen(false)} data-testid={`nav-${label.toLowerCase().replaceAll(' ', '-')}`}>
       <Icon size={18} />{label}
       {badges[to] > 0 && <span className="nav-badge" data-testid={`badge-${to.replace('/', '')}`}>{badges[to]}</span>}
@@ -69,7 +69,7 @@ function Login({ onLogin }) {
     } catch (e) { setError(e.response?.data?.detail || 'Não foi possível concluir a operação'); }
   }
   const isLogin = mode === 'login', isSignup = mode === 'signup', isForgot = mode === 'forgot';
-  return <div className="login-page"><div className="login-art"><div className="login-brand"><Droplets /> hydro<span>flow</span></div><div className="login-quote">Água em movimento.<br /><em>Operação sob controle.</em></div></div>
+  return <div className="login-page"><div className="login-art"><div className="login-brand"><Droplets /> Distribuidora <span>Diane</span></div><div className="login-quote">Água em movimento.<br /><em>Operação sob controle.</em></div></div>
     <form className="login-form" onSubmit={submit}>
       <p className="eyebrow">{isLogin ? 'BEM-VINDO DE VOLTA' : isSignup ? 'CRIAR CONTA' : 'RECUPERAR ACESSO'}</p>
       <h1>{isLogin ? 'Acesse sua operação' : isSignup ? 'Cadastre-se para começar' : 'Esqueceu a senha?'}</h1>
@@ -513,7 +513,7 @@ function DailyClosing() {
   function exportPDF() {
     const doc = new jsPDF();
     doc.setFontSize(18); doc.setTextColor(8, 120, 209);
-    doc.text('HydroFlow · Fechamento do Dia', 14, 20);
+    doc.text('Distribuidora Diane · Fechamento do Dia', 14, 20);
     doc.setFontSize(10); doc.setTextColor(110, 130, 152);
     doc.text(`Data: ${date}`, 14, 28);
     doc.setFontSize(11); doc.setTextColor(16, 37, 63);
@@ -528,7 +528,7 @@ function DailyClosing() {
       body: (data?.drivers || []).map(d => [d.driver, `${d.deliveries_done}/${d.deliveries_total}`, money(d.revenue), money(d.expenses_approved), money(d.expenses_pending), money(d.balance)]),
       headStyles: { fillColor: [8, 120, 209] },
     });
-    doc.save(`hydroflow-fechamento-${date}.pdf`);
+    doc.save(`distribuidora-diane-fechamento-${date}.pdf`);
   }
 
   const totals = data?.totals || {};
@@ -549,14 +549,14 @@ function DailyClosing() {
       <Stat label="Receita bruta" value={money(totals.revenue)} detail="Entregas concluídas" Icon={CircleDollarSign} tone="green" />
       <Stat label="Despesas aprovadas" value={money(totals.expenses_approved)} detail="Descontadas do dia" Icon={Wallet} tone="orange" />
       <Stat label="Saldo líquido" value={money(totals.balance)} detail="Receita − Despesas" Icon={ArrowUpRight} tone="" />
-      <Stat label="Entregas" value={`${totals.deliveries_done || 0}/${totals.deliveries_total || 0}`} detail="Concluídas / Programadas" Icon={Truck} />
+      <Stat label="Lançamentos" value={totals.deliveries_total || 0} detail="Registrados no Controle Diário" Icon={Truck} />
     </div>
     <section className="panel table-panel" data-testid="closing-panel">
       <div className="panel-head"><div><h3>Fechamento por entregador</h3><p className="muted">{rows.length ? `${rows.length} entregador(es) com movimentação no dia` : 'Nenhuma movimentação encontrada para essa data'}</p></div></div>
-      <div className="table-wrap"><table><thead><tr><th>ENTREGADOR</th><th>ENTREGAS</th><th>RECEITA</th><th>DESP. APROVADAS</th><th>DESP. PENDENTES</th><th>SALDO</th></tr></thead><tbody>
+      <div className="table-wrap"><table><thead><tr><th>ENTREGADOR</th><th>LANÇAMENTOS</th><th>RECEITA</th><th>DESP. APROVADAS</th><th>DESP. PENDENTES</th><th>SALDO</th></tr></thead><tbody>
         {rows.map(d => <tr key={d.driver} data-testid={`closing-row-${d.driver}`}>
-          <td><b>{d.driver}</b><small>{d.deliveries_done} de {d.deliveries_total} concluídas</small></td>
-          <td><span className="tag blue">{d.deliveries_done}/{d.deliveries_total}</span></td>
+          <td><b>{d.driver}</b></td>
+          <td><span className="tag blue">{d.deliveries_total}</span></td>
           <td>{money(d.revenue)}</td>
           <td className="green-text">{money(d.expenses_approved)}</td>
           <td className="orange-text">{money(d.expenses_pending)}</td>
@@ -675,28 +675,28 @@ function Reports() {
     const blob = await res.blob();
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `hydroflow-relatorio-${start}-a-${end}.csv`;
+    link.download = `distribuidora-diane-relatorio-${start}-a-${end}.csv`;
     link.click();
   }
 
   function exportPDF() {
     const doc = new jsPDF();
     doc.setFontSize(18); doc.setTextColor(8, 120, 209);
-    doc.text('HydroFlow · Relatório Operacional', 14, 20);
+    doc.text('Distribuidora Diane · Relatório Operacional', 14, 20);
     doc.setFontSize(10); doc.setTextColor(110, 130, 152);
     doc.text(`Período: ${start} a ${end}`, 14, 28);
     doc.setFontSize(11); doc.setTextColor(16, 37, 63);
     doc.text(`Receita: ${money(r?.revenue)}`, 14, 40);
     doc.text(`Despesas: ${money(r?.expenses)}`, 14, 47);
-    doc.text(`Entregas: ${r?.deliveries || 0}`, 14, 54);
+    doc.text(`Lançamentos: ${r?.deliveries || 0}`, 14, 54);
     doc.text(`Alertas de estoque: ${r?.low_stock || 0}`, 14, 61);
     autoTable(doc, {
       startY: 70,
-      head: [['Entregador', 'Entregas', 'Concluídas', 'Receita', 'Eficiência']],
-      body: (r?.drivers || []).map(d => [d.driver, d.deliveries, d.delivered, money(d.revenue), `${d.deliveries ? Math.round(d.delivered / d.deliveries * 100) : 0}%`]),
+      head: [['Entregador', 'Lançamentos', 'Receita']],
+      body: (r?.drivers || []).map(d => [d.driver, d.deliveries, money(d.revenue)]),
       headStyles: { fillColor: [8, 120, 209] },
     });
-    doc.save(`hydroflow-relatorio-${start}-a-${end}.pdf`);
+    doc.save(`distribuidora-diane-relatorio-${start}-a-${end}.pdf`);
   }
 
   return <><Head eyebrow="INTELIGÊNCIA" title="Relatórios" subtitle="Indicadores para decidir melhor a cada período." />
@@ -719,7 +719,7 @@ function Reports() {
       </div>
     </div>
     <div className="stats"><Stat label="Receita realizada" value={money(r?.revenue)} detail="Entregas concluídas" Icon={CircleDollarSign} /><Stat label="Despesas" value={money(r?.expenses)} detail="Lançamentos" Icon={WalletCards} tone="orange" /><Stat label="Entregas" value={r?.deliveries || 0} detail="No período" Icon={Truck} tone="green" /><Stat label="Alertas estoque" value={r?.low_stock || 0} detail="Atenção necessária" Icon={AlertTriangle} tone="red" /></div>
-    <section className="panel table-panel"><div className="panel-head"><div><h3>Desempenho por entregador</h3><p className="muted">Volume, receita e conclusão</p></div></div><div className="table-wrap"><table><thead><tr><th>ENTREGADOR</th><th>ENTREGAS</th><th>CONCLUÍDAS</th><th>RECEITA</th><th>EFICIÊNCIA</th></tr></thead><tbody>{(r?.drivers || []).map(d => <tr key={d.driver}><td><b>{d.driver}</b></td><td>{d.deliveries}</td><td>{d.delivered}</td><td>{money(d.revenue)}</td><td><span className="tag green">{d.deliveries ? Math.round(d.delivered / d.deliveries * 100) : 0}%</span></td></tr>)}</tbody></table></div></section>
+    <section className="panel table-panel"><div className="panel-head"><div><h3>Desempenho por entregador</h3><p className="muted">Volume e receita no período</p></div></div><div className="table-wrap"><table><thead><tr><th>ENTREGADOR</th><th>LANÇAMENTOS</th><th>RECEITA</th></tr></thead><tbody>{(r?.drivers || []).map(d => <tr key={d.driver}><td><b>{d.driver}</b></td><td>{d.deliveries}</td><td>{money(d.revenue)}</td></tr>)}</tbody></table></div></section>
     <section className="panel table-panel" data-testid="profit-by-customer-panel"><div className="panel-head"><div><h3>Lucro por cliente</h3><p className="muted">Valor de venda − custo de compra da água, por cliente, no período.</p></div></div><div className="table-wrap"><table><thead><tr><th>CLIENTE</th><th>QTD</th><th>RECEITA</th><th>CUSTO</th><th>LUCRO</th></tr></thead><tbody>
       {(profit?.rows || []).map(p => <tr key={p.customer} data-testid={`profit-row-${p.customer}`}><td><b>{p.customer}</b></td><td>{p.quantity}</td><td>{money(p.revenue)}</td><td>{money(p.cost)}</td><td><b className={p.profit >= 0 ? 'green-text' : 'orange-text'}>{money(p.profit)}</b></td></tr>)}
       {(!profit?.rows || profit.rows.length === 0) && <tr><td colSpan={5} className="muted" style={{ padding: 16 }}>Sem lançamentos de controle diário no período.</td></tr>}
@@ -973,7 +973,7 @@ function MobileDiarioTab({ entries, date }) {
     </div>
     <p className="mob-eyebrow" style={{ margin: '4px 0 0' }}>LANÇAMENTOS DE HOJE</p>
     <div className="mob-entry-list">
-      {todays.length === 0 && <div className="mob-empty-dashed">Nada lançado ainda. Conclua uma parada na aba Rota.</div>}
+      {todays.length === 0 && <div className="mob-empty-dashed">Nada lançado ainda. Conclua uma parada na aba Clientes.</div>}
       {todays.map(e => {
         const lineItems = e.items?.length ? e.items : (e.brand ? [{ brand: e.brand, quantity: e.billed_quantity ?? e.quantity }] : []);
         const itemsLabel = lineItems.map(it => `${it.quantity} ${it.brand}`).join(' + ') || `${e.billed_quantity ?? e.quantity} galões`;

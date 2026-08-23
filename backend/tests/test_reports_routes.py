@@ -55,7 +55,7 @@ def test_export_csv_admin(admin_token):
     assert r.status_code == 200
     assert 'text/csv' in r.headers.get('content-type','')
     body = r.text
-    assert 'HydroFlow' in body
+    assert 'Distribuidora Diane' in body
     assert 'LANÇAMENTOS' in body
     assert 'DESPESAS' in body
     # header row present
