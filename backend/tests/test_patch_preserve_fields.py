@@ -1,4 +1,4 @@
-"""Regression tests for PATCH /expenses and /deliveries preserving non-sent fields.
+"""Regression tests for PATCH /expenses and /daily-entries preserving non-sent fields.
 
 Bug: prior code used model_dump(exclude_none=True) with numeric defaults (amount=0, value=0),
 which zeroed those fields on partial updates. Fix: switch to exclude_unset=True.
@@ -77,26 +77,26 @@ class TestExpensePatchPreservesAmount:
         assert updated["amount"] == 250.75
 
 
-# --- PATCH /deliveries regression ---
+# --- PATCH /daily-entries regression ---
 
-class TestDeliveryPatchPreservesFields:
-    def test_status_update_preserves_value_qty_customer(self, admin_headers):
-        create = requests.post(f"{BASE_URL}/api/deliveries",
+class TestDailyEntryPatchPreservesFields:
+    def test_receive_update_preserves_total_and_customer(self, admin_headers):
+        create = requests.post(f"{BASE_URL}/api/daily-entries",
                                headers=admin_headers,
-                               json={"customer": "TEST_Cliente", "address": "Rua Teste, 1",
-                                     "driver": "TEST_Motorista", "product": "Galão 20L",
-                                     "quantity": 5, "value": 90.0, "status": "pending"})
+                               json={"customer": "TEST_Cliente", "driver": "TEST_Motorista",
+                                     "items": [{"brand": "Minalar", "price": 6.0, "quantity": 5, "mf_quantity": 0}],
+                                     "pix_value": 0, "cash_value": 0, "comp_value": 30.0, "comp_days": 15})
         assert create.status_code == 200, create.text
-        d_id = create.json()["id"]
+        e_id = create.json()["id"]
+        assert create.json()["total"] == 30.0
 
-        patch = requests.patch(f"{BASE_URL}/api/deliveries/{d_id}",
+        patch = requests.patch(f"{BASE_URL}/api/daily-entries/{e_id}",
                                headers=admin_headers,
-                               json={"status": "delivered"})
+                               json={"received": True})
         assert patch.status_code == 200
         updated = patch.json()
-        assert updated["status"] == "delivered"
-        assert updated["value"] == 90.0, f"value zeroed! got {updated.get('value')}"
-        assert updated["quantity"] == 5
+        assert updated["received"] is True
+        assert updated["total"] == 30.0, f"total zeroed! got {updated.get('total')}"
         assert updated["customer"] == "TEST_Cliente"
         assert updated["driver"] == "TEST_Motorista"
 

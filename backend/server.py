@@ -72,7 +72,7 @@ class ResourceInput(BaseModel):
     mf_date: Optional[str] = None
 
 def now(): return datetime.now(timezone.utc).isoformat()
-def delivered_value(d): return float(d.get("received_value") if d.get("received_value") is not None else d.get("value", 0))
+def entry_total(e): return float(e.get("total") or 0)
 def hash_password(password): return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 def check_password(password, hashed): return bcrypt.checkpw(password.encode(), hashed.encode())
 def token_for(user): return jwt.encode({"sub": user["id"], "email": user["email"], "role": user["role"], "exp": datetime.now(timezone.utc)+timedelta(hours=12)}, os.environ["JWT_SECRET"], algorithm=JWT_ALGORITHM)
@@ -126,11 +126,16 @@ async def me(user=Depends(current_user)): return user
 
 @api.get("/dashboard")
 async def dashboard(user=Depends(current_user)):
-    deliveries = await db.deliveries.find({}, {"_id": 0}).sort("created_at", -1).to_list(20)
+    now_dt = datetime.now(timezone.utc)
+    today = now_dt.date().isoformat()
+    month_start = f"{now_dt.year:04d}-{now_dt.month:02d}-01"
+    entries_today = await db.daily_entries.find({"date": today}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    entries_month = await db.daily_entries.find({"date": {"$gte": month_start}}, {"_id": 0}).to_list(5000)
     products = await db.products.find({}, {"_id": 0}).to_list(100)
-    expenses = await db.expenses.find({}, {"_id": 0}).to_list(100)
-    revenue = sum(delivered_value(d) for d in deliveries if d.get("status") == "delivered")
-    return {"revenue": revenue, "expenses": sum(float(e.get("amount", 0)) for e in expenses), "deliveries": deliveries, "products": products, "expenses_list": expenses, "user": user}
+    expenses = await db.expenses.find({}, {"_id": 0}).to_list(200)
+    revenue = sum(entry_total(e) for e in entries_month)
+    expenses_pending = sum(float(e.get("amount", 0)) for e in expenses if e.get("status") == "pending")
+    return {"revenue": revenue, "expenses": expenses_pending, "deliveries": entries_today, "products": products, "expenses_list": expenses, "user": user}
 
 MONTH_LABELS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
 
@@ -144,21 +149,20 @@ async def dashboard_monthly(months: int = 6, user=Depends(current_user)):
         m -= 1
         if m == 0: m = 12; y -= 1
     keys.reverse()
-    start = f"{keys[0][0]:04d}-{keys[0][1]:02d}-01T00:00:00"
-    deliveries = await db.deliveries.find({"created_at": {"$gte": start}}, {"_id": 0}).to_list(5000)
-    expenses = await db.expenses.find({"created_at": {"$gte": start}}, {"_id": 0}).to_list(5000)
+    start = f"{keys[0][0]:04d}-{keys[0][1]:02d}-01"
+    entries = await db.daily_entries.find({"date": {"$gte": start}}, {"_id": 0}).to_list(5000)
+    expenses = await db.expenses.find({"created_at": {"$gte": start + "T00:00:00"}}, {"_id": 0}).to_list(5000)
     buckets = {f"{y:04d}-{m:02d}": {"month": f"{y:04d}-{m:02d}", "label": MONTH_LABELS[m - 1], "revenue": 0.0, "expenses": 0.0, "deliveries": 0, "delivered": 0} for (y, m) in keys}
-    for d in deliveries:
-        key = (d.get("created_at") or "")[:7]
+    for e in entries:
+        key = (e.get("date") or "")[:7]
         if key not in buckets: continue
         buckets[key]["deliveries"] += 1
-        if d.get("status") == "delivered":
-            buckets[key]["delivered"] += 1
-            buckets[key]["revenue"] += delivered_value(d)
+        buckets[key]["delivered"] += 1
+        buckets[key]["revenue"] += entry_total(e)
     for e in expenses:
         key = (e.get("created_at") or "")[:7]
         if key not in buckets: continue
-        buckets[key]["expenses"] += float(e.get("amount", 0))
+        if e.get("status") != "rejected": buckets[key]["expenses"] += float(e.get("amount", 0))
     return [buckets[f"{y:04d}-{m:02d}"] for (y, m) in keys]
 
 async def list_resource(collection): return await db[collection].find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
@@ -170,16 +174,6 @@ async def create_resource(collection, payload, user):
 async def products(user=Depends(current_user)): return await list_resource("products")
 @api.post("/products")
 async def add_product(data: ResourceInput, user=Depends(admin_user)): return await create_resource("products", data, user)
-@api.get("/deliveries")
-async def deliveries(user=Depends(current_user)): return await list_resource("deliveries")
-@api.post("/deliveries")
-async def add_delivery(data: ResourceInput, user=Depends(current_user)):
-    if user.get("role") != "admin": data.driver = user["name"]
-    return await create_resource("deliveries", data, user)
-@api.patch("/deliveries/{item_id}")
-async def update_delivery(item_id: str, data: ResourceInput, user=Depends(current_user)):
-    values = data.model_dump(exclude_unset=True); await db.deliveries.update_one({"id": item_id}, {"$set": values})
-    doc = await db.deliveries.find_one({"id": item_id}, {"_id": 0}); return doc
 @api.get("/expenses")
 async def expenses(user=Depends(current_user)): return await list_resource("expenses")
 @api.post("/expenses")
@@ -292,16 +286,6 @@ async def add_daily_entry(data: ResourceInput, user=Depends(current_user)):
             match = next((p for p in products if (p.get("brand") or p.get("name") or "").strip().lower() == brand), None)
             if match:
                 await db.products.update_one({"id": match["id"]}, {"$inc": {"quantity": -float(it["mf_quantity"])}})
-    elif mf_plan == "reschedule" and mf_items:
-        redelivery = {
-            "id": str(uuid.uuid4()), "customer": doc.get("customer"), "address": doc.get("address"),
-            "driver": doc["driver"], "product": " + ".join(sorted({it.get("brand", "") for it in mf_items})),
-            "quantity": sum(float(it["mf_quantity"]) for it in mf_items), "value": 0,
-            "status": "pending", "notes": f"Reposição de MF agendada: {doc.get('mf_date') or 'a combinar'}",
-            "created_at": now(), "created_by": user["id"],
-        }
-        await db.deliveries.insert_one(redelivery)
-
     await db.daily_entries.insert_one(doc); doc.pop("_id", None); return doc
 
 @api.patch("/daily-entries/{item_id}")
@@ -317,6 +301,39 @@ async def delete_daily_entry(item_id: str, user=Depends(current_user)):
     if user.get("role") != "admin" and target.get("created_by") != user["id"]: raise HTTPException(403, "Sem permissão")
     await db.daily_entries.delete_one({"id": item_id})
     return {"message": "Excluído"}
+
+@api.get("/finance/summary")
+async def finance_summary(driver: Optional[str] = None, user=Depends(current_user)):
+    scope_driver = driver if user.get("role") == "admin" else user["name"]
+    today = datetime.now(timezone.utc).date().isoformat()
+
+    today_query = {"date": today}
+    if scope_driver: today_query["driver"] = scope_driver
+    todays_entries = await db.daily_entries.find(today_query, {"_id": 0}).to_list(2000)
+    received_today = sum(float(e.get("pix_value") or 0) + float(e.get("cash_value") or 0) for e in todays_entries)
+    comp_today = sum(float(e.get("comp_value") or 0) for e in todays_entries)
+
+    comp_query = {"comp_value": {"$gt": 0}}
+    if scope_driver: comp_query["driver"] = scope_driver
+    all_comp = await db.daily_entries.find(comp_query, {"_id": 0}).to_list(5000)
+    comp_pending_total = sum(float(e.get("comp_value") or 0) for e in all_comp if not e.get("received"))
+    comp_received_total = sum(float(e.get("comp_value") or 0) for e in all_comp if e.get("received"))
+
+    exp_query = {"created_at": {"$gte": today + "T00:00:00", "$lte": today + "T23:59:59"}}
+    if scope_driver: exp_query["driver"] = scope_driver
+    todays_expenses = await db.expenses.find(exp_query, {"_id": 0}).to_list(2000)
+    expenses_today_total = sum(float(e.get("amount") or 0) for e in todays_expenses if e.get("status") != "rejected")
+
+    all_exp_query = {} if not scope_driver else {"driver": scope_driver}
+    all_expenses = await db.expenses.find(all_exp_query, {"_id": 0}).to_list(2000)
+    expenses_pending_total = sum(float(e.get("amount") or 0) for e in all_expenses if e.get("status") == "pending")
+
+    return {
+        "date": today, "received_today": received_today, "comp_today": comp_today,
+        "comp_pending_total": comp_pending_total, "comp_received_total": comp_received_total,
+        "expenses_today_total": expenses_today_total, "expenses_pending_total": expenses_pending_total,
+        "balance_today": received_today - expenses_today_total,
+    }
 
 @api.get("/reports/receivables")
 async def receivables(status: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None, user=Depends(admin_user)):
@@ -438,18 +455,18 @@ async def notifications(user=Depends(current_user)):
 @api.get("/daily-closing")
 async def daily_closing(date: Optional[str] = None, user=Depends(admin_user)):
     day = date or datetime.now(timezone.utc).date().isoformat()
-    start, end = day + "T00:00:00", day + "T23:59:59"
-    deliveries = await db.deliveries.find({"created_at": {"$gte": start, "$lte": end}}, {"_id": 0}).to_list(1000)
-    expenses = await db.expenses.find({"created_at": {"$gte": start, "$lte": end}}, {"_id": 0}).to_list(1000)
+    entries = await db.daily_entries.find({"date": day}, {"_id": 0}).to_list(1000)
+    expenses = await db.expenses.find({"created_at": {"$gte": day + "T00:00:00", "$lte": day + "T23:59:59"}}, {"_id": 0}).to_list(1000)
     drivers = {}
-    for d in deliveries:
-        name = d.get("driver") or "Sem entregador"
-        row = drivers.setdefault(name, {"driver": name, "deliveries_total": 0, "deliveries_done": 0, "revenue": 0, "expenses_approved": 0, "expenses_pending": 0, "expenses_rejected": 0, "balance": 0})
-        row["deliveries_total"] += 1
-        if d.get("status") == "delivered": row["deliveries_done"] += 1; row["revenue"] += delivered_value(d)
+    for e in entries:
+        name = e.get("driver") or "Sem entregador"
+        row = drivers.setdefault(name, {"driver": name, "deliveries_total": 0, "deliveries_done": 0, "revenue": 0, "pix": 0.0, "cash": 0.0, "comp": 0.0, "expenses_approved": 0, "expenses_pending": 0, "expenses_rejected": 0, "balance": 0})
+        row["deliveries_total"] += 1; row["deliveries_done"] += 1
+        row["revenue"] += entry_total(e)
+        row["pix"] += float(e.get("pix_value") or 0); row["cash"] += float(e.get("cash_value") or 0); row["comp"] += float(e.get("comp_value") or 0)
     for e in expenses:
         name = e.get("driver") or "Sem entregador"
-        row = drivers.setdefault(name, {"driver": name, "deliveries_total": 0, "deliveries_done": 0, "revenue": 0, "expenses_approved": 0, "expenses_pending": 0, "expenses_rejected": 0, "balance": 0})
+        row = drivers.setdefault(name, {"driver": name, "deliveries_total": 0, "deliveries_done": 0, "revenue": 0, "pix": 0.0, "cash": 0.0, "comp": 0.0, "expenses_approved": 0, "expenses_pending": 0, "expenses_rejected": 0, "balance": 0})
         amt = float(e.get("amount", 0))
         st = e.get("status", "pending")
         if st == "approved": row["expenses_approved"] += amt
@@ -457,7 +474,7 @@ async def daily_closing(date: Optional[str] = None, user=Depends(admin_user)):
         else: row["expenses_pending"] += amt
     for row in drivers.values(): row["balance"] = row["revenue"] - row["expenses_approved"]
     rows = list(drivers.values())
-    totals = {"revenue": sum(r["revenue"] for r in rows), "expenses_approved": sum(r["expenses_approved"] for r in rows), "expenses_pending": sum(r["expenses_pending"] for r in rows), "deliveries_done": sum(r["deliveries_done"] for r in rows), "deliveries_total": sum(r["deliveries_total"] for r in rows), "balance": sum(r["balance"] for r in rows)}
+    totals = {"revenue": sum(r["revenue"] for r in rows), "pix": sum(r["pix"] for r in rows), "cash": sum(r["cash"] for r in rows), "comp": sum(r["comp"] for r in rows), "expenses_approved": sum(r["expenses_approved"] for r in rows), "expenses_pending": sum(r["expenses_pending"] for r in rows), "deliveries_done": sum(r["deliveries_done"] for r in rows), "deliveries_total": sum(r["deliveries_total"] for r in rows), "balance": sum(r["balance"] for r in rows)}
     return {"date": day, "drivers": rows, "totals": totals}
 
 @api.get("/reports")
@@ -466,18 +483,23 @@ async def reports(start: Optional[str] = None, end: Optional[str] = None, user=D
     if start or end:
         rng = {}
         if start: rng["$gte"] = start
+        if end: rng["$lte"] = end
+        query["date"] = rng
+    entries = await db.daily_entries.find(query, {"_id": 0}).to_list(5000)
+    exp_query = {}
+    if start or end:
+        rng = {}
+        if start: rng["$gte"] = start
         if end: rng["$lte"] = end + "T23:59:59"
-        query["created_at"] = rng
-    deliveries = await db.deliveries.find(query, {"_id": 0}).to_list(1000)
-    expenses = await db.expenses.find(query, {"_id": 0}).to_list(1000)
+        exp_query["created_at"] = rng
+    expenses = await db.expenses.find(exp_query, {"_id": 0}).to_list(1000)
     products = await db.products.find({}, {"_id": 0}).to_list(1000)
     drivers = {}
-    for item in deliveries:
+    for item in entries:
         name = item.get("driver") or "Sem entregador"
         row = drivers.setdefault(name, {"driver": name, "deliveries": 0, "delivered": 0, "revenue": 0})
-        row["deliveries"] += 1; row["revenue"] += delivered_value(item)
-        if item.get("status") == "delivered": row["delivered"] += 1
-    return {"revenue": sum(delivered_value(x) for x in deliveries if x.get("status") == "delivered"), "expenses": sum(float(x.get("amount", 0)) for x in expenses), "deliveries": len(deliveries), "low_stock": sum(1 for x in products if x.get("quantity", 0) < x.get("minimum", 0)), "drivers": list(drivers.values()), "products": products, "period": {"start": start, "end": end}}
+        row["deliveries"] += 1; row["delivered"] += 1; row["revenue"] += entry_total(item)
+    return {"revenue": sum(entry_total(x) for x in entries), "expenses": sum(float(x.get("amount", 0)) for x in expenses if x.get("status") != "rejected"), "deliveries": len(entries), "low_stock": sum(1 for x in products if x.get("quantity", 0) < x.get("minimum", 0)), "drivers": list(drivers.values()), "products": products, "period": {"start": start, "end": end}}
 
 @api.get("/reports/export.csv", response_class=PlainTextResponse)
 async def export_reports_csv(start: Optional[str] = None, end: Optional[str] = None, user=Depends(admin_user)):
@@ -485,19 +507,28 @@ async def export_reports_csv(start: Optional[str] = None, end: Optional[str] = N
     if start or end:
         rng = {}
         if start: rng["$gte"] = start
+        if end: rng["$lte"] = end
+        query["date"] = rng
+    entries = await db.daily_entries.find(query, {"_id": 0}).to_list(5000)
+    exp_query = {}
+    if start or end:
+        rng = {}
+        if start: rng["$gte"] = start
         if end: rng["$lte"] = end + "T23:59:59"
-        query["created_at"] = rng
-    deliveries = await db.deliveries.find(query, {"_id": 0}).to_list(1000)
-    expenses = await db.expenses.find(query, {"_id": 0}).to_list(1000)
+        exp_query["created_at"] = rng
+    expenses = await db.expenses.find(exp_query, {"_id": 0}).to_list(1000)
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["HydroFlow - Relatório Operacional"])
     w.writerow(["Período", start or "início", end or "hoje"])
     w.writerow([])
-    w.writerow(["ENTREGAS"])
-    w.writerow(["Data", "Cliente", "Endereço", "Entregador", "Produto", "Qtd", "Valor", "Valor recebido", "Forma pagto", "Qtd c/ problema", "Tipo problema", "Status"])
-    for d in deliveries:
-        w.writerow([d.get("created_at",""), d.get("customer",""), d.get("address",""), d.get("driver",""), d.get("product",""), d.get("quantity",""), d.get("value",""), d.get("received_value",""), d.get("payment_method",""), d.get("problem_quantity",""), d.get("problem_type",""), d.get("status","")])
+    w.writerow(["LANÇAMENTOS (CONTROLE DIÁRIO)"])
+    w.writerow(["Data", "Cliente", "Entregador", "Marcas", "Qtd", "Total", "Pix", "Dinheiro", "A prazo", "MF", "Status a prazo"])
+    for e in entries:
+        items = e.get("items") or []
+        brands = " + ".join(f"{it.get('quantity')} {it.get('brand')}" for it in items) if items else e.get("brand", "")
+        comp_status = ("Recebido" if e.get("received") else "Pendente") if float(e.get("comp_value") or 0) > 0 else ""
+        w.writerow([e.get("date", ""), e.get("customer", ""), e.get("driver", ""), brands, e.get("billed_quantity", ""), e.get("total", ""), e.get("pix_value", ""), e.get("cash_value", ""), e.get("comp_value", ""), e.get("mf_quantity", ""), comp_status])
     w.writerow([])
     w.writerow(["DESPESAS"])
     w.writerow(["Data", "Tipo", "Entregador", "Valor", "Status"])
@@ -518,8 +549,6 @@ async def seed():
         await db.users.update_many({"status": {"$exists": False}}, {"$set": {"status": "approved", "active": True}})
     if await db.products.count_documents({}) == 0:
         await db.products.insert_many([{"id":"p1","name":"Galão 20L","category":"Retornável","quantity":84,"minimum":30,"unit":"un"},{"id":"p2","name":"Fardo 500ml (12un)","category":"Descartável","quantity":18,"minimum":25,"unit":"fardos"},{"id":"p3","name":"Água mineral 1,5L","category":"Descartável","quantity":42,"minimum":20,"unit":"fardos"}])
-    if await db.deliveries.count_documents({}) == 0:
-        await db.deliveries.insert_many([{ "id":"d1","customer":"Condomínio Vista Verde","address":"Av. das Nações, 440","driver":"Carlos Mendes","product":"Galão 20L","quantity":6,"value":108,"status":"delivered","created_at":now()},{"id":"d2","customer":"Padaria Pão & Prosa","address":"Rua do Comércio, 82","driver":"Carlos Mendes","product":"Galão 20L","quantity":4,"value":72,"status":"in_transit","created_at":now()},{"id":"d3","customer":"Restaurante Quintal","address":"Rua das Flores, 19","driver":"Ana Souza","product":"Fardo 500ml","quantity":8,"value":192,"status":"pending","created_at":now()}])
     if await db.expenses.count_documents({}) == 0: await db.expenses.insert_one({"id":"e1","type":"Combustível","amount":85,"driver":"Carlos Mendes","status":"pending","created_at":now()})
 
 app.include_router(api)

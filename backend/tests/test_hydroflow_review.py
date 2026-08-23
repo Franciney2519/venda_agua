@@ -27,16 +27,19 @@ def test_driver_me(driver):
 
 def test_dashboard(admin):
     r=requests.get(f'{BASE_URL}/api/dashboard',headers={'Authorization':f"Bearer {admin['token']}"})
-    assert r.status_code==200; d=r.json(); assert {'revenue','expenses','deliveries','products','expenses_list'}<=d.keys(); assert len(d['deliveries'])>0
+    assert r.status_code==200; d=r.json(); assert {'revenue','expenses','deliveries','products','expenses_list'}<=d.keys()
 
-def test_delivery_status_update(admin):
-    h={'Authorization':f"Bearer {admin['token']}"}; ds=requests.get(f'{BASE_URL}/api/deliveries',headers=h).json(); item=next(x for x in ds if x['id']=='d2')
-    r=requests.patch(f"{BASE_URL}/api/deliveries/{item['id']}",headers=h,json={'status':'delivered'})
-    assert r.status_code==200 and r.json()['status']=='delivered'
-    # restore seeded state
-    requests.patch(f"{BASE_URL}/api/deliveries/{item['id']}",headers=h,json={'status':'in_transit'})
+def test_daily_entry_lifecycle(admin, driver):
+    h={'Authorization':f"Bearer {driver['token']}"}
+    payload={'customer':'TEST_ReviewCliente','items':[{'brand':'Minalar','price':6.0,'quantity':2,'mf_quantity':0}],'pix_value':12.0,'cash_value':0,'comp_value':0}
+    r=requests.post(f'{BASE_URL}/api/daily-entries',headers=h,json=payload)
+    assert r.status_code==200, r.text
+    entry=r.json(); assert entry['total']==12.0
+    ah={'Authorization':f"Bearer {admin['token']}"}
+    dr=requests.delete(f"{BASE_URL}/api/daily-entries/{entry['id']}",headers=ah)
+    assert dr.status_code==200
 
 def test_resources(admin):
     h={'Authorization':f"Bearer {admin['token']}"}
-    for endpoint,key in [('products','name'),('expenses','amount'),('deliveries','customer')]:
+    for endpoint,key in [('products','name'),('expenses','amount')]:
         r=requests.get(f'{BASE_URL}/api/{endpoint}',headers=h); assert r.status_code==200 and isinstance(r.json(),list) and key in r.json()[0]

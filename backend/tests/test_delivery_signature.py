@@ -1,8 +1,9 @@
-"""Tests for delivery signature + delivered_at flow (driver rota mobile feature).
+"""Tests for signature capture on the daily-entries flow (driver mobile feature).
 
-- PATCH /api/deliveries/{id} accepts signature (base64 data URL) and delivered_at.
-- Driver (non-admin) can perform the PATCH.
-- Partial PATCH still preserves other fields (regression from iteration 6).
+The legacy /deliveries status+signature flow was removed: drivers now record a stop
+(and its signature) in one POST to /daily-entries, produced by the mobile app's
+signature screen. This covers that the signature round-trips and that a partial
+PATCH by the admin doesn't wipe it or other fields.
 """
 import os
 import requests
@@ -33,83 +34,47 @@ def driver_ctx():
     return {"headers": {"Authorization": f"Bearer {tok}"}, "user": user}
 
 
+SAMPLE_SIGNATURE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+
+
 @pytest.fixture
-def new_delivery_id(admin_ctx, driver_ctx):
-    """Create a delivery assigned to the driver, return its id."""
+def new_entry_id(driver_ctx):
+    """Create a daily entry with a signature, return its id."""
     payload = {
         "customer": "TEST_ClienteSig",
-        "address": "Rua Sig, 100",
-        "driver": driver_ctx["user"]["name"],
-        "product": "Galão 20L",
-        "quantity": 3,
-        "value": 54.0,
-        "status": "pending",
+        "items": [{"brand": "Minalar", "price": 6.0, "quantity": 3, "mf_quantity": 0}],
+        "pix_value": 18.0, "cash_value": 0, "comp_value": 0,
+        "signature": SAMPLE_SIGNATURE,
     }
-    r = requests.post(f"{BASE_URL}/api/deliveries", headers=admin_ctx["headers"], json=payload)
+    r = requests.post(f"{BASE_URL}/api/daily-entries", headers=driver_ctx["headers"], json=payload)
     assert r.status_code == 200, r.text
     return r.json()["id"]
 
 
-SAMPLE_SIGNATURE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
-
-
-class TestDeliverySignature:
-    def test_driver_can_patch_signature_and_delivered_at(self, driver_ctx, admin_ctx, new_delivery_id):
-        delivered_at = "2026-01-15T12:34:56.000Z"
-        r = requests.patch(
-            f"{BASE_URL}/api/deliveries/{new_delivery_id}",
-            headers=driver_ctx["headers"],
-            json={"status": "delivered", "signature": SAMPLE_SIGNATURE, "delivered_at": delivered_at},
-        )
-        assert r.status_code == 200, r.text
-        data = r.json()
-        assert data["status"] == "delivered"
-        assert data.get("signature") == SAMPLE_SIGNATURE
-        assert data.get("delivered_at") == delivered_at
-        # regression: other fields preserved
-        assert data["customer"] == "TEST_ClienteSig"
-        assert data["value"] == 54.0
-        assert data["quantity"] == 3
-        assert data["driver"] == driver_ctx["user"]["name"]
-
-        # GET via admin to confirm persistence
-        list_r = requests.get(f"{BASE_URL}/api/deliveries", headers=admin_ctx["headers"])
+class TestDailyEntrySignature:
+    def test_signature_persisted_on_create(self, driver_ctx, admin_ctx, new_entry_id):
+        list_r = requests.get(f"{BASE_URL}/api/daily-entries", headers=admin_ctx["headers"])
         assert list_r.status_code == 200
-        found = next((x for x in list_r.json() if x["id"] == new_delivery_id), None)
+        found = next((x for x in list_r.json() if x["id"] == new_entry_id), None)
         assert found is not None
         assert found["signature"] == SAMPLE_SIGNATURE
-        assert found["delivered_at"] == delivered_at
-        assert found["value"] == 54.0
+        assert found["total"] == 18.0
+        assert found["customer"] == "TEST_ClienteSig"
+        assert found["driver"] == driver_ctx["user"]["name"]
 
-    def test_driver_can_start_stop_in_transit(self, driver_ctx, new_delivery_id):
+    def test_partial_patch_preserves_signature_and_total(self, admin_ctx, new_entry_id):
         r = requests.patch(
-            f"{BASE_URL}/api/deliveries/{new_delivery_id}",
-            headers=driver_ctx["headers"],
-            json={"status": "in_transit"},
-        )
-        assert r.status_code == 200
-        assert r.json()["status"] == "in_transit"
-
-    def test_driver_can_mark_failed(self, driver_ctx, new_delivery_id):
-        r = requests.patch(
-            f"{BASE_URL}/api/deliveries/{new_delivery_id}",
-            headers=driver_ctx["headers"],
-            json={"status": "failed"},
-        )
-        assert r.status_code == 200
-        assert r.json()["status"] == "failed"
-
-    def test_partial_patch_preserves_other_fields(self, driver_ctx, admin_ctx, new_delivery_id):
-        # send only signature - shouldn't wipe value/customer/quantity/driver
-        r = requests.patch(
-            f"{BASE_URL}/api/deliveries/{new_delivery_id}",
-            headers=driver_ctx["headers"],
-            json={"signature": SAMPLE_SIGNATURE},
+            f"{BASE_URL}/api/daily-entries/{new_entry_id}",
+            headers=admin_ctx["headers"],
+            json={"notes": "revisado"},
         )
         assert r.status_code == 200, r.text
         d = r.json()
-        assert d["customer"] == "TEST_ClienteSig"
-        assert d["value"] == 54.0
-        assert d["quantity"] == 3
-        assert d["driver"] == driver_ctx["user"]["name"]
         assert d["signature"] == SAMPLE_SIGNATURE
+        assert d["total"] == 18.0
+        assert d["customer"] == "TEST_ClienteSig"
+        assert d["notes"] == "revisado"
+
+    def test_driver_can_delete_own_entry(self, driver_ctx, new_entry_id):
+        r = requests.delete(f"{BASE_URL}/api/daily-entries/{new_entry_id}", headers=driver_ctx["headers"])
+        assert r.status_code == 200, r.text

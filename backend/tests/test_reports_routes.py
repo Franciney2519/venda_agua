@@ -56,10 +56,10 @@ def test_export_csv_admin(admin_token):
     assert 'text/csv' in r.headers.get('content-type','')
     body = r.text
     assert 'HydroFlow' in body
-    assert 'ENTREGAS' in body
+    assert 'LANÇAMENTOS' in body
     assert 'DESPESAS' in body
     # header row present
-    assert 'Cliente' in body and 'Endereço' in body
+    assert 'Cliente' in body and 'Marcas' in body
 
 def test_export_csv_driver_forbidden(driver_token):
     r = requests.get(f'{BASE_URL}/api/reports/export.csv', headers=H(driver_token), timeout=20)

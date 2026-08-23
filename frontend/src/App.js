@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import axios from "axios";
-import { BrowserRouter, Routes, Route, NavLink, Navigate } from "react-router-dom";
-import { LayoutDashboard, Truck, Package, WalletCards, Users, Map, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, CheckCircle2, Clock3, CircleDollarSign, BarChart3, GripVertical, Save, MapPin, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle, CalendarCheck, Wallet, Eye, EyeOff, Minus, Sun, Moon, Camera, Search, MoreHorizontal, Fuel, Utensils, Wrench, Receipt, ChevronRight } from "lucide-react";
+import { BrowserRouter, Routes, Route, NavLink, Navigate, Link } from "react-router-dom";
+import { LayoutDashboard, Truck, Package, WalletCards, Users, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, Clock3, CircleDollarSign, BarChart3, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle, CalendarCheck, Wallet, Eye, EyeOff, Minus, Sun, Moon, Camera, Search, MoreHorizontal, Fuel, Utensils, Wrench, Receipt, ChevronRight } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import "@/App.css";
@@ -29,11 +29,11 @@ function useMediaQuery(query) {
   }, [query]);
   return matches;
 }
-const nav = [['/', 'Visão geral', LayoutDashboard], ['/rotas', 'Rotas', Map], ['/entregas', 'Entregas', Truck], ['/controle-diario', 'Controle Diário', CalendarCheck], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/marcas-extras', 'Marcas Extras', Droplets], ['/usuarios', 'Usuários', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
+const nav = [['/', 'Visão geral', LayoutDashboard], ['/controle-diario', 'Controle Diário', CalendarCheck], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/marcas-extras', 'Marcas Extras', Droplets], ['/usuarios', 'Usuários', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
 
 function Shell({ user, onLogout, notifications, children }) {
   const [open, setOpen] = useState(false);
-  const links = user.role === 'driver' ? nav.filter(x => ['/', '/rotas', '/entregas', '/controle-diario', '/financeiro'].includes(x[0])) : nav;
+  const links = user.role === 'driver' ? nav.filter(x => ['/', '/controle-diario', '/financeiro'].includes(x[0])) : nav;
   const badges = { '/usuarios': notifications?.pending_users || 0, '/financeiro': notifications?.pending_expenses || 0 };
   const total = notifications?.total || 0;
   return <div className="app-shell"><aside className={open ? 'sidebar open' : 'sidebar'}><div className="brand"><span className="brand-mark"><Droplets size={20} /></span><span>hydro<span>flow</span></span></div><div className="workspace"><small>OPERAÇÃO</small><b>{user.role === 'admin' ? 'Admin · Base Central' : 'Entregador'} <span>⌄</span></b></div>
@@ -95,7 +95,7 @@ function Stat({ label, value, detail, Icon, tone = '' }) { return <div className
 
 function Modal({ title, fields, onClose, onSave }) { const [form, setForm] = useState({}), [error, setError] = useState(''); async function submit(e) { e.preventDefault(); if (fields.some(x => x.required !== false && !String(form[x.key] || '').trim())) return setError('Preencha os campos obrigatórios.'); try { await onSave(form) } catch (e) { setError(e.response?.data?.detail || 'Não foi possível salvar.') } } return <div className="modal-backdrop"><form className="quick-modal" onSubmit={submit}><button type="button" className="modal-close" onClick={onClose} data-testid="modal-close-button"><X /></button><p className="eyebrow">NOVO LANÇAMENTO</p><h3>{title}</h3>{fields.map(f => <label key={f.key}>{f.label}{f.options ? <select required={f.required !== false} data-testid={`modal-${f.key}-input`} onChange={e => setForm({ ...form, [f.key]: e.target.value })}><option value="">Selecione</option>{f.options.map(x => <option key={x}>{x}</option>)}</select> : <input required={f.required !== false} type={f.type || 'text'} data-testid={`modal-${f.key}-input`} onChange={e => setForm({ ...form, [f.key]: e.target.value })} />}</label>)}{error && <div className="error" data-testid="form-validation-error">{error}</div>}<button className="primary full" data-testid="modal-submit-button"><Save size={16} /> Salvar lançamento</button></form></div> }
 
-const fields = { product: [{ key: 'name', label: 'Nome do produto' }, { key: 'brand', label: 'Marca', required: false }, { key: 'category', label: 'Categoria', options: ['Retornável', 'Descartável'] }, { key: 'quantity', label: 'Quantidade', type: 'number' }, { key: 'minimum', label: 'Estoque mínimo', type: 'number' }, { key: 'cost_price', label: 'Custo de compra (R$/un)', type: 'number', required: false }], delivery: [{ key: 'customer', label: 'Cliente' }, { key: 'address', label: 'Endereço' }, { key: 'driver', label: 'Entregador' }, { key: 'product', label: 'Produto' }, { key: 'quantity', label: 'Quantidade', type: 'number' }, { key: 'value', label: 'Valor', type: 'number' }], expense: [{ key: 'type', label: 'Categoria', options: ['Combustível', 'Alimentação', 'Pedágio', 'Manutenção', 'Outros'] }, { key: 'driver', label: 'Entregador' }, { key: 'amount', label: 'Valor', type: 'number' }], customer: [{ key: 'name', label: 'Nome / empresa' }, { key: 'address', label: 'Endereço' }, { key: 'phone', label: 'Telefone', required: false }] };
+const fields = { product: [{ key: 'name', label: 'Nome do produto' }, { key: 'brand', label: 'Marca', required: false }, { key: 'category', label: 'Categoria', options: ['Retornável', 'Descartável'] }, { key: 'quantity', label: 'Quantidade', type: 'number' }, { key: 'minimum', label: 'Estoque mínimo', type: 'number' }, { key: 'cost_price', label: 'Custo de compra (R$/un)', type: 'number', required: false }], expense: [{ key: 'type', label: 'Categoria', options: ['Combustível', 'Alimentação', 'Pedágio', 'Manutenção', 'Outros'] }, { key: 'driver', label: 'Entregador' }, { key: 'amount', label: 'Valor', type: 'number' }], customer: [{ key: 'name', label: 'Nome / empresa' }, { key: 'address', label: 'Endereço' }, { key: 'phone', label: 'Telefone', required: false }] };
 
 function CustomerModal({ onClose, onSave }) {
   const [form, setForm] = useState({ name: '', address: '', phone: '' });
@@ -153,9 +153,23 @@ function PerformanceChart() {
   </div></div>
 }
 
-function Dashboard({ data, create }) { return <><Head eyebrow="PAINEL DE CONTROLE" title="Visão geral" subtitle="Acompanhe a saúde da sua operação em um só lugar." action="Nova entrega" onAction={() => create('delivery')} /><div className="stats"><Stat label="Receita no mês" value={money(data?.revenue)} detail="Receitas concluídas" Icon={CircleDollarSign} /><Stat label="Despesas pendentes" value={money(data?.expenses)} detail="Aguardando aprovação" Icon={WalletCards} tone="orange" /><Stat label="Entregas hoje" value={data?.deliveries?.length || 0} detail="Rotas em acompanhamento" Icon={Truck} tone="green" /><Stat label="Alertas de estoque" value={data?.products?.filter(x => x.quantity < x.minimum).length || 0} detail="Itens abaixo do mínimo" Icon={AlertTriangle} tone="red" /></div><div className="dashboard-grid"><section className="panel performance"><div className="panel-head"><div><h3>Desempenho financeiro</h3><p className="muted">Últimos 6 meses · passe o mouse para ver os detalhes</p></div><BarChart3 className="blue-text" /></div><PerformanceChart /></section><section className="panel route-panel"><div className="panel-head"><div><h3>Rotas de hoje</h3><p className="muted">Status da operação</p></div><Map size={20} className="blue-text" /></div>{['Rota Norte · Carlos Mendes', 'Rota Centro · Ana Souza', 'Rota Sul · João Lima'].map((x, i) => <div className="route" key={x}><div className={`route-icon ${i === 0 ? 'green-bg' : i === 1 ? 'blue-bg' : 'gray-bg'}`}>{i === 0 ? <CheckCircle2 size={18} /> : i === 1 ? <Truck size={18} /> : <Clock3 size={18} />}</div><div><b>{x}</b><small>{i === 0 ? '8 de 8 paradas concluídas' : i === 1 ? '4 de 7 paradas concluídas' : '6 paradas programadas'}</small></div><span className={`tag ${i === 0 ? 'green' : i === 1 ? 'blue' : 'gray'}`}>{i === 0 ? 'Concluída' : i === 1 ? 'Em rota' : 'Pendente'}</span></div>)}</section></div></> }
-
-function Deliveries({ data, setData, create }) { const [filter, setFilter] = useState('all'); const rows = (data?.deliveries || []).filter(x => filter === 'all' || x.status === filter); async function change(d, status) { await api.patch(`/deliveries/${d.id}`, { status }, auth()); setData({ ...data, deliveries: data.deliveries.map(x => x.id === d.id ? { ...x, status } : x) }) } return <><Head eyebrow="LOGÍSTICA" title="Entregas" subtitle="Acompanhe cada entrega e status da rota." action="Lançar entrega" onAction={() => create('delivery')} /><div className="filter-row"><button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')} data-testid="delivery-filter-all">Todas</button><button className={filter === 'pending' ? 'active' : ''} onClick={() => setFilter('pending')} data-testid="delivery-filter-pending">Pendentes</button><button className={filter === 'in_transit' ? 'active' : ''} onClick={() => setFilter('in_transit')} data-testid="delivery-filter-in-transit">Em rota</button></div><section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CLIENTE</th><th>PRODUTO</th><th>ENTREGADOR</th><th>VALOR</th><th>STATUS</th></tr></thead><tbody>{rows.map(d => <tr key={d.id}><td><b>{d.customer}</b><small>{d.address}</small></td><td>{d.product}<small>{d.quantity} unidades</small></td><td>{d.driver}</td><td>{money(d.value)}{d.received_value != null && <small>Recebido: {money(d.received_value)}{d.payment_method ? ` · ${d.payment_method}` : ''}</small>}{d.problem_quantity > 0 && <small className="orange-text">{d.problem_quantity} un. com {d.problem_type?.toLowerCase()}</small>}</td><td><select data-testid={`delivery-status-${d.id}`} value={d.status} onChange={e => change(d, e.target.value)}><option value="pending">Pendente</option><option value="in_transit">Em rota</option><option value="delivered">Entregue</option><option value="failed">Não realizada</option><option value="damaged">Avaria</option></select></td></tr>)}</tbody></table></div></section></> }
+function Dashboard({ data }) {
+  const today = (data?.deliveries || []);
+  return <><Head eyebrow="PAINEL DE CONTROLE" title="Visão geral" subtitle="Acompanhe a saúde da sua operação em um só lugar." />
+    <div className="stats">
+      <Stat label="Receita no mês" value={money(data?.revenue)} detail="Lançamentos do Controle Diário" Icon={CircleDollarSign} />
+      <Stat label="Despesas pendentes" value={money(data?.expenses)} detail="Aguardando aprovação" Icon={WalletCards} tone="orange" />
+      <Stat label="Lançamentos hoje" value={today.length} detail="Registrados pelos entregadores" Icon={Truck} tone="green" />
+      <Stat label="Alertas de estoque" value={data?.products?.filter(x => x.quantity < x.minimum).length || 0} detail="Itens abaixo do mínimo" Icon={AlertTriangle} tone="red" />
+    </div>
+    <div className="dashboard-grid">
+      <section className="panel performance"><div className="panel-head"><div><h3>Desempenho financeiro</h3><p className="muted">Últimos 6 meses · passe o mouse para ver os detalhes</p></div><BarChart3 className="blue-text" /></div><PerformanceChart /></section>
+      <section className="panel route-panel">
+        <div className="panel-head"><div><h3>Últimos lançamentos</h3><p className="muted">Controle Diário de hoje</p></div><CalendarCheck size={20} className="blue-text" /></div>
+        {today.length === 0 && <p className="muted" style={{ padding: '8px 0' }}>Nenhum lançamento ainda hoje.</p>}
+        {today.slice(0, 5).map(e => <div className="route" key={e.id}><div className="route-icon blue-bg"><CircleDollarSign size={18} /></div><div><b>{e.customer}</b><small>{e.driver} · {(e.items?.length ? e.items : [{ brand: e.brand, quantity: e.billed_quantity ?? e.quantity }]).map(it => `${it.quantity} ${it.brand}`).join(' + ')}</small></div><span className="tag green">{money(e.total)}</span></div>)}
+      </section>
+    </div></> }
 
 function SignaturePad({ onSave, onCancel, variant = 'desktop', customer, total }) {
   const canvasRef = useRef(null);
@@ -201,170 +215,32 @@ function SignaturePad({ onSave, onCancel, variant = 'desktop', customer, total }
   </div></div>
 }
 
-const PAYMENT_METHODS = ['Dinheiro', 'Pix', 'Cartão', 'Boleto'];
-const PROBLEM_TYPES = ['Vazamento', 'Microfuros', 'Outro'];
-
-function CompleteDeliveryModal({ delivery, onNext, onCancel }) {
-  const unitValue = delivery.quantity ? Number(delivery.value || 0) / delivery.quantity : 0;
-  const [problemQty, setProblemQty] = useState(0);
-  const [problemType, setProblemType] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState(PAYMENT_METHODS[0]);
-  const [receivedValue, setReceivedValue] = useState(delivery.value);
-  const [error, setError] = useState('');
-
-  function onProblemQtyChange(v) {
-    const qty = Math.max(0, Math.min(delivery.quantity || 0, Number(v) || 0));
-    setProblemQty(qty);
-    const okQty = (delivery.quantity || 0) - qty;
-    setReceivedValue(Number((okQty * unitValue).toFixed(2)));
-  }
-
-  function submit(e) {
-    e.preventDefault();
-    if (problemQty > 0 && !problemType) return setError('Selecione o tipo de problema identificado.');
-    onNext({
-      payment_method: paymentMethod,
-      received_value: Number(receivedValue) || 0,
-      problem_quantity: Number(problemQty) || 0,
-      problem_type: problemQty > 0 ? problemType : null,
-    });
-  }
-
-  return <div className="modal-backdrop"><form className="quick-modal" onSubmit={submit}>
-    <button type="button" className="modal-close" onClick={onCancel} data-testid="complete-delivery-close"><X /></button>
-    <p className="eyebrow">CONFIRMAÇÃO DE ENTREGA</p>
-    <h3>{delivery.customer}</h3>
-    <p className="muted">{delivery.quantity} {delivery.product} · pedido de {money(delivery.value)}</p>
-    <label>Itens com problema (vazamento / microfuros)
-      <input type="number" min="0" max={delivery.quantity} value={problemQty} data-testid="problem-quantity-input" onChange={e => onProblemQtyChange(e.target.value)} />
-    </label>
-    {problemQty > 0 && <label>Tipo de problema
-      <select required value={problemType} data-testid="problem-type-input" onChange={e => setProblemType(e.target.value)}>
-        <option value="">Selecione</option>
-        {PROBLEM_TYPES.map(x => <option key={x}>{x}</option>)}
-      </select>
-    </label>}
-    {problemQty > 0 && <p className="muted" data-testid="problem-return-note">{problemQty} un. serão devolvidas ao estoque por avaria.</p>}
-    <label>Valor recebido
-      <input type="number" step="0.01" min="0" value={receivedValue} data-testid="received-value-input" onChange={e => setReceivedValue(e.target.value)} />
-    </label>
-    <label>Forma de pagamento
-      <select value={paymentMethod} data-testid="payment-method-input" onChange={e => setPaymentMethod(e.target.value)}>
-        {PAYMENT_METHODS.map(x => <option key={x}>{x}</option>)}
-      </select>
-    </label>
-    {error && <div className="error" data-testid="complete-delivery-error">{error}</div>}
-    <button className="primary full" data-testid="complete-delivery-continue"><Check size={16} /> Continuar para assinatura</button>
-  </form></div>
-}
-
-function MyRoute({ data, setData, user }) {
-  const [completing, setCompleting] = useState(null);
-  const [pendingExtra, setPendingExtra] = useState(null);
-  const [signing, setSigning] = useState(null);
-  const [busy, setBusy] = useState(null);
-  const stops = (data?.deliveries || []).filter(d => d.driver === user.name);
-  const done = stops.filter(x => x.status === 'delivered').length;
-
-  async function updateStatus(d, status, extra = {}) {
-    setBusy(d.id);
-    const patch = { status, ...extra };
-    const { data: updated } = await api.patch(`/deliveries/${d.id}`, patch, auth());
-    setData({ ...data, deliveries: data.deliveries.map(x => x.id === d.id ? { ...x, ...updated } : x) });
-    setBusy(null);
-  }
-  function proceedToSignature(extra) {
-    setPendingExtra(extra);
-    setSigning(completing);
-    setCompleting(null);
-  }
-  async function completeWithSignature(signature) {
-    const d = signing; setSigning(null);
-    const extra = pendingExtra; setPendingExtra(null);
-    await updateStatus(d, 'delivered', { signature, delivered_at: new Date().toISOString(), ...extra });
-  }
-
-  const tag = { pending: ['gray', 'Aguardando'], in_transit: ['blue', 'Em rota'], delivered: ['green', 'Entregue'], failed: ['red', 'Não realizada'], damaged: ['orange', 'Avaria'] };
-  return <><Head eyebrow="MINHA JORNADA" title="Rota do dia" subtitle={`${done} de ${stops.length} paradas concluídas`} />
-    <div className="progress-track" data-testid="route-progress"><div className="progress-fill" style={{ width: stops.length ? `${(done / stops.length) * 100}%` : '0%' }} /></div>
-    {stops.length === 0 && <div className="empty-state" data-testid="no-stops">Nenhuma parada atribuída para você hoje. Fale com o administrador.</div>}
-    <div className="mobile-stops">
-      {stops.map((d, i) => {
-        const [tone, label] = tag[d.status] || ['gray', d.status];
-        const isDone = d.status === 'delivered';
-        return <article className={`stop-card ${isDone ? 'done' : ''}`} key={d.id} data-testid={`mobile-stop-${d.id}`}>
-          <div className="stop-card-head">
-            <span className="stop-index">{i + 1}</span>
-            <div>
-              <b>{d.customer}</b>
-              <small><MapPin size={11} /> {d.address}</small>
-            </div>
-            <span className={`tag ${tone}`}>{label}</span>
-          </div>
-          <div className="stop-card-body">
-            <span><Package size={13} /> {d.product} · {d.quantity} un</span>
-            <span><CircleDollarSign size={13} /> {money(d.value)}</span>
-          </div>
-          {d.signature && <div className="stop-signature-preview"><img src={d.signature} alt="Assinatura" data-testid={`signature-preview-${d.id}`} /><small>Recebido{d.delivered_at ? ` em ${new Date(d.delivered_at).toLocaleString('pt-BR')}` : ''}</small></div>}
-          {isDone && (d.payment_method || d.received_value != null || d.problem_quantity > 0) && <div className="stop-card-body" data-testid={`stop-summary-${d.id}`}>
-            {d.payment_method && <span><Wallet size={13} /> {d.payment_method}</span>}
-            {d.received_value != null && <span><CircleDollarSign size={13} /> Recebido: {money(d.received_value)}</span>}
-            {d.problem_quantity > 0 && <span className="tag orange"><AlertTriangle size={13} /> {d.problem_quantity} un. com {d.problem_type?.toLowerCase()}</span>}
-          </div>}
-          {!isDone && <div className="stop-card-actions">
-            {d.status === 'pending' && <button className="ghost-btn" data-testid={`start-stop-${d.id}`} disabled={busy === d.id} onClick={() => updateStatus(d, 'in_transit')}><Truck size={14} /> Iniciar</button>}
-            <button className="primary" data-testid={`complete-stop-${d.id}`} disabled={busy === d.id} onClick={() => setCompleting(d)}><Check size={14} /> Concluir parada</button>
-            <button className="action-btn reject" data-testid={`fail-stop-${d.id}`} disabled={busy === d.id} onClick={() => updateStatus(d, 'failed')}><XCircle size={13} /> Não realizada</button>
-          </div>}
-        </article>
-      })}
-    </div>
-    {completing && <CompleteDeliveryModal delivery={completing} onNext={proceedToSignature} onCancel={() => setCompleting(null)} />}
-    {signing && <SignaturePad onSave={completeWithSignature} onCancel={() => setSigning(null)} />}
-  </>
-}
-
-function RoutesPage({ data, setData }) {
-  const [stops, setStops] = useState(data?.deliveries || []);
-  useEffect(() => setStops(data?.deliveries || []), [data]);
-
-  function move(i, d) { const a = [...stops], j = i + d; if (j >= 0 && j < a.length)[a[i], a[j]] = [a[j], a[i]]; setStops(a) }
-
-  return <><Head eyebrow="PLANEJAMENTO" title="Rotas" subtitle="Defina manualmente a sequência das entregas do dia." />
-    <div className="manual-route">
-      <section className="panel stop-list" data-testid="stop-list-panel">
-        <div className="panel-head"><div><h3>Rota Centro · 18 junho</h3><p className="muted">Sequência de paradas</p></div><span className="tag blue" data-testid="stop-count-tag">{stops.length} paradas</span></div>
-        {stops.length === 0 && <div className="empty-state" data-testid="no-route-stops">Nenhuma entrega disponível para organizar.</div>}
-        {stops.map((s, i) => <div className="stop-row" key={s.id} data-testid={`stop-row-${s.id}`}>
-            <GripVertical size={18} className="grip" />
-            <span className="stop-number">{i + 1}</span>
-            <div>
-              <b>{s.customer}</b>
-              <small>{s.address}</small>
-            </div>
-            <div className="stop-actions">
-              <button aria-label={`Mover ${s.customer} para cima`} disabled={i === 0} data-testid={`route-up-${s.id}`} onClick={() => move(i, -1)}>↑</button>
-              <button aria-label={`Mover ${s.customer} para baixo`} disabled={i === stops.length - 1} data-testid={`route-down-${s.id}`} onClick={() => move(i, 1)}>↓</button>
-            </div>
-          </div>)}
-        {stops.length > 0 && <button className="secondary-btn" data-testid="save-order-button" onClick={() => setData({ ...data, deliveries: stops })}><Save size={14} /> Salvar sequência</button>}
-      </section>
-    </div>
-  </>
-}
-
 function Stock({ data, create }) { return <><Head eyebrow="INVENTÁRIO" title="Estoque" subtitle="Produtos, galões retornáveis e níveis mínimos." action="Novo produto" onAction={() => create('product')} /><div className="stock-alert" data-testid="stock-alert"><AlertTriangle size={19} /><div><b>{data?.products?.filter(x => x.quantity < x.minimum).length || 0} produtos precisam de reposição</b><span>Confira os itens antes da próxima rota.</span></div></div><section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>CATEGORIA</th><th>DISPONÍVEL</th><th>MÍNIMO</th><th>SITUAÇÃO</th></tr></thead><tbody>{(data?.products || []).map(p => <tr key={p.id}><td><b>{p.name}</b><small>SKU-{p.id}</small></td><td>{p.category}</td><td>{p.quantity} {p.unit || 'un'}</td><td>{p.minimum}</td><td><span className={`tag ${p.quantity < p.minimum ? 'red' : 'green'}`}>{p.quantity < p.minimum ? 'Repor' : 'Saudável'}</span></td></tr>)}</tbody></table></div></section></> }
 
 function Finance({ data, setData, create, user }) {
+  const [summary, setSummary] = useState(null);
+  async function loadSummary() { const { data: s } = await api.get('/finance/summary', auth()); setSummary(s); }
+  useEffect(() => { loadSummary(); }, [data]);
   async function reviewExpense(e, status) {
     const { data: updated } = await api.patch(`/expenses/${e.id}`, { status }, auth());
     setData({ ...data, expenses_list: data.expenses_list.map(x => x.id === e.id ? updated : x) });
-    window.hydroRefreshNotifications?.();
+    window.hydroRefreshNotifications?.(); loadSummary();
   }
   const isAdmin = user?.role === 'admin';
-  return <><Head eyebrow="CONTROLE FINANCEIRO" title="Financeiro" subtitle="Recebimentos e despesas lançados pela equipe." action="Lançar despesa" onAction={() => create('expense')} />
-    <div className="stats"><Stat label="Recebido hoje" value={money(486)} detail="Entregas confirmadas" Icon={CircleDollarSign} /><Stat label="A aprovar" value={money((data?.expenses_list || []).filter(x => x.status === 'pending').reduce((s, x) => s + Number(x.amount || 0), 0))} detail="Despesas pendentes" Icon={Clock3} tone="orange" /><Stat label="Saldo líquido" value={money((data?.revenue || 0) - (data?.expenses || 0))} detail="Período atual" Icon={ArrowUpRight} tone="green" /></div>
-    <section className="panel table-panel"><div className="panel-head"><div><h3>Movimentações recentes</h3><p className="muted">{isAdmin ? 'Aprove ou reprove os lançamentos' : 'Seus lançamentos'}</p></div></div>
+  return <><Head eyebrow="CONTROLE FINANCEIRO" title="Financeiro" subtitle="Recebimentos e despesas lançados pela equipe, direto do Controle Diário." action="Lançar despesa" onAction={() => create('expense')} />
+    <div className="stats">
+      <Stat label="Recebido hoje" value={money(summary?.received_today)} detail="Pix + Dinheiro do Controle Diário" Icon={CircleDollarSign} tone="green" />
+      <Stat label="Despesas hoje" value={money(summary?.expenses_today_total)} detail="Já lançadas pelos entregadores" Icon={WalletCards} tone="orange" />
+      <Stat label="Saldo do dia" value={money(summary?.balance_today)} detail="Recebido − despesas de hoje" Icon={ArrowUpRight} />
+      <Stat label="A prazo pendente" value={money(summary?.comp_pending_total)} detail="Vendas ainda não recebidas" Icon={Clock3} tone="orange" />
+    </div>
+    {isAdmin && <section className="panel table-panel" style={{ marginBottom: 22 }}>
+      <div className="panel-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 23px' }}>
+        <div><h3>Vendas a prazo (COMP)</h3><p className="muted">{money(summary?.comp_pending_total)} pendentes · {money(summary?.comp_received_total)} já recebidos</p></div>
+        <Link to="/provisao" className="ghost-btn" data-testid="finance-provisao-link"><Wallet size={15} /> Ver Provisão de Pagamento</Link>
+      </div>
+    </section>}
+    <section className="panel table-panel"><div className="panel-head"><div><h3>Despesas</h3><p className="muted">{isAdmin ? 'Aprove ou reprove os lançamentos feitos fora do Controle Diário' : 'Seus lançamentos'}</p></div></div>
       <div className="table-wrap"><table><thead><tr><th>TIPO</th><th>ENTREGADOR</th><th>VALOR</th><th>STATUS</th>{isAdmin && <th>AÇÕES</th>}</tr></thead><tbody>
         {(data?.expenses_list || []).map(e => {
           const st = e.status || 'pending';
@@ -1271,14 +1147,12 @@ function App() {
   if (!user) return <Login onLogin={setUser} />;
   const logout = () => { localStorage.removeItem('hydro_token'); setUser(null) };
   if (user.role === 'driver' && isMobile) return <DriverMobileApp user={user} customers={customers} onLogout={logout} />;
-  async function save(kind, form) { const endpoints = { product: '/products', delivery: '/deliveries', expense: '/expenses', customer: '/customers' }; const payload = { ...form };['quantity', 'minimum', 'value', 'amount'].forEach(k => { if (payload[k] !== undefined) payload[k] = Number(payload[k]) }); if (kind === 'delivery') { payload.status = 'pending'; if (user.role !== 'admin') payload.driver = user.name; } if (kind === 'expense') { payload.status = 'pending'; if (!payload.driver) payload.driver = user.name; } const { data: x } = await api.post(endpoints[kind], payload, auth()); if (kind === 'customer') setCustomers([...customers, x]); else { const key = kind === 'product' ? 'products' : kind === 'delivery' ? 'deliveries' : 'expenses_list'; setData({ ...data, [key]: [...(data?.[key] || []), x] }) } setModal(null) }
-  const modalFields = modal === 'delivery' && user.role !== 'admin' ? fields.delivery.filter(f => f.key !== 'driver') : fields[modal];
+  async function save(kind, form) { const endpoints = { product: '/products', expense: '/expenses', customer: '/customers' }; const payload = { ...form };['quantity', 'minimum', 'value', 'amount'].forEach(k => { if (payload[k] !== undefined) payload[k] = Number(payload[k]) }); if (kind === 'expense') { payload.status = 'pending'; if (!payload.driver) payload.driver = user.name; } const { data: x } = await api.post(endpoints[kind], payload, auth()); if (kind === 'customer') setCustomers([...customers, x]); else { const key = kind === 'product' ? 'products' : 'expenses_list'; setData({ ...data, [key]: [...(data?.[key] || []), x] }) } setModal(null) }
+  const modalFields = fields[modal];
   const adminOnly = el => user.role === 'admin' ? el : <Navigate to="/" replace />;
   return <Shell user={user} onLogout={logout} notifications={notifications}>
     <Routes>
-      <Route path="/" element={<Dashboard data={data} create={setModal} />} />
-      <Route path="/rotas" element={user.role === 'driver' ? <MyRoute data={data} setData={setData} user={user} /> : <RoutesPage data={data} setData={setData} />} />
-      <Route path="/entregas" element={<Deliveries data={data} setData={setData} create={setModal} />} />
+      <Route path="/" element={<Dashboard data={data} />} />
       <Route path="/controle-diario" element={<DailyControl user={user} customers={customers} />} />
       <Route path="/estoque" element={<Stock data={data} create={setModal} />} />
       <Route path="/financeiro" element={<Finance data={data} setData={setData} create={setModal} user={user} />} />
@@ -1291,7 +1165,7 @@ function App() {
       <Route path="/relatorios" element={adminOnly(<Reports />)} />
     </Routes>
     {modal === 'customer' && <CustomerModal onClose={() => setModal(null)} onSave={x => save('customer', x)} />}
-    {modal && modal !== 'customer' && <Modal title={{ product: 'Cadastrar produto', delivery: 'Programar entrega', expense: 'Lançar despesa' }[modal]} fields={modalFields} onClose={() => setModal(null)} onSave={x => save(modal, x)} />}
+    {modal && modal !== 'customer' && <Modal title={{ product: 'Cadastrar produto', expense: 'Lançar despesa' }[modal]} fields={modalFields} onClose={() => setModal(null)} onSave={x => save(modal, x)} />}
   </Shell>
 }
 export default () => <BrowserRouter><App /></BrowserRouter>;
