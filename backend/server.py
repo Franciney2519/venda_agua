@@ -40,7 +40,6 @@ class ResourceInput(BaseModel):
     customer: Optional[str] = None
     address: Optional[str] = None
     driver: Optional[str] = None
-    product: Optional[str] = None
     quantity: Optional[int] = 1
     value: Optional[float] = 0
     type: Optional[str] = None
@@ -49,12 +48,7 @@ class ResourceInput(BaseModel):
     minimum: Optional[int] = 10
     status: Optional[str] = "pending"
     signature: Optional[str] = None
-    delivered_at: Optional[str] = None
     notes: Optional[str] = None
-    payment_method: Optional[str] = None
-    received_value: Optional[float] = None
-    problem_type: Optional[str] = None
-    problem_quantity: Optional[int] = None
     brand: Optional[str] = None
     price: Optional[float] = None
     brands: Optional[List[dict]] = None
@@ -534,7 +528,7 @@ async def export_reports_csv(start: Optional[str] = None, end: Optional[str] = N
     w.writerow(["Data", "Tipo", "Entregador", "Valor", "Status"])
     for e in expenses:
         w.writerow([e.get("created_at",""), e.get("type",""), e.get("driver",""), e.get("amount",""), e.get("status","")])
-    return Response(content=buf.getvalue(), media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="hydroflow-relatorio.csv"'})
+    return Response(content=buf.getvalue(), media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="distribuidora-diane-relatorio.csv"'})
 
 @app.on_event("startup")
 async def seed():
