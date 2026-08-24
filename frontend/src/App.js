@@ -29,12 +29,13 @@ function useMediaQuery(query) {
   }, [query]);
   return matches;
 }
-const nav = [['/', 'Visão geral', LayoutDashboard], ['/controle-diario', 'Controle Diário', CalendarCheck], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/marcas-extras', 'Marcas Extras', Droplets], ['/usuarios', 'Usuários', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
+const nav = [['/', 'Visão geral', LayoutDashboard], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/marcas-extras', 'Marcas Extras', Droplets], ['/usuarios', 'Usuários', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
+const driverNav = [['/', 'Visão geral', LayoutDashboard], ['/controle-diario', 'Controle Diário', CalendarCheck], ['/financeiro', 'Financeiro', WalletCards]];
 
 function Shell({ user, onLogout, notifications, children }) {
   const [open, setOpen] = useState(false);
   const [theme, setTheme] = useDraft('hydro_theme', 'light');
-  const links = user.role === 'driver' ? nav.filter(x => ['/', '/controle-diario', '/financeiro'].includes(x[0])) : nav;
+  const links = user.role === 'driver' ? driverNav : nav;
   const badges = { '/usuarios': notifications?.pending_users || 0, '/financeiro': notifications?.pending_expenses || 0 };
   const total = notifications?.total || 0;
   return <div className={`app-shell${theme === 'dark' ? ' dark' : ''}`}><aside className={open ? 'sidebar open' : 'sidebar'}><div className="brand"><span className="brand-mark"><Droplets size={20} /></span><span>Distribuidora <span>Diane</span></span></div><div className="workspace"><small>OPERAÇÃO</small><b>{user.role === 'admin' ? 'Admin · Base Central' : 'Entregador'} <span>⌄</span></b></div>
@@ -101,17 +102,17 @@ const fields = { product: [{ key: 'name', label: 'Nome do produto' }, { key: 'br
 
 function CustomerModal({ onClose, onSave }) {
   const [form, setForm] = useState({ name: '', address: '', phone: '' });
-  const [brands, setBrands] = useState([{ brand: '', price: '' }]);
+  const [brands, setBrands] = useState([{ brand: '', price: '', price_full: '' }]);
   const [error, setError] = useState('');
 
   function updateBrand(i, key, value) { const next = [...brands]; next[i] = { ...next[i], [key]: value }; setBrands(next); }
-  function addBrand() { setBrands([...brands, { brand: '', price: '' }]); }
+  function addBrand() { setBrands([...brands, { brand: '', price: '', price_full: '' }]); }
   function removeBrand(i) { setBrands(brands.filter((_, idx) => idx !== i)); }
 
   async function submit(e) {
     e.preventDefault(); setError('');
     if (!form.name.trim() || !form.address.trim()) return setError('Preencha os campos obrigatórios.');
-    const cleanBrands = brands.filter(b => b.brand.trim()).map(b => ({ brand: b.brand.trim(), price: Number(b.price) || 0 }));
+    const cleanBrands = brands.filter(b => b.brand.trim()).map(b => ({ brand: b.brand.trim(), price: Number(b.price) || 0, price_full: b.price_full !== '' ? Number(b.price_full) || 0 : undefined }));
     try { await onSave({ ...form, brands: cleanBrands, brand: cleanBrands[0]?.brand, price: cleanBrands[0]?.price }); }
     catch (e) { setError(e.response?.data?.detail || 'Não foi possível salvar.'); }
   }
@@ -123,13 +124,14 @@ function CustomerModal({ onClose, onSave }) {
     <label>Nome / empresa<input required value={form.name} data-testid="modal-name-input" onChange={e => setForm({ ...form, name: e.target.value })} /></label>
     <label>Endereço<input required value={form.address} data-testid="modal-address-input" onChange={e => setForm({ ...form, address: e.target.value })} /></label>
     <label>Telefone<input value={form.phone} data-testid="modal-phone-input" onChange={e => setForm({ ...form, phone: e.target.value })} /></label>
-    <label>Marcas de água que este cliente pede (com preço combinado de cada uma)</label>
+    <label>Produtos que este cliente compra (água, gás, etc.) — preço com troca de vasilhame e, se for diferente, preço do vasilhame completo (novo)</label>
     {brands.map((b, i) => <div className="brand-price-row" key={i}>
-      <input placeholder="Marca (ex: Minalar)" value={b.brand} data-testid={`modal-brand-input-${i}`} onChange={e => updateBrand(i, 'brand', e.target.value)} />
-      <input type="number" step="0.01" placeholder="Preço R$/un" value={b.price} data-testid={`modal-brand-price-${i}`} onChange={e => updateBrand(i, 'price', e.target.value)} />
+      <input placeholder="Produto (ex: Minalar 20L, Gás P13)" value={b.brand} data-testid={`modal-brand-input-${i}`} onChange={e => updateBrand(i, 'brand', e.target.value)} />
+      <input type="number" step="0.01" placeholder="Preço c/ troca" value={b.price} data-testid={`modal-brand-price-${i}`} onChange={e => updateBrand(i, 'price', e.target.value)} />
+      <input type="number" step="0.01" placeholder="Preço completo (opcional)" value={b.price_full} data-testid={`modal-brand-price-full-${i}`} onChange={e => updateBrand(i, 'price_full', e.target.value)} />
       {brands.length > 1 && <button type="button" className="action-btn reject" onClick={() => removeBrand(i)}><Trash2 size={13} /></button>}
     </div>)}
-    <button type="button" className="ghost-btn" data-testid="modal-add-brand" onClick={addBrand}><Plus size={14} /> Adicionar outra marca</button>
+    <button type="button" className="ghost-btn" data-testid="modal-add-brand" onClick={addBrand}><Plus size={14} /> Adicionar outro produto</button>
     {error && <div className="error" data-testid="form-validation-error">{error}</div>}
     <button className="primary full" data-testid="modal-submit-button"><Save size={16} /> Salvar lançamento</button>
   </form></div>
@@ -160,7 +162,7 @@ function Dashboard({ data }) {
   return <><Head eyebrow="PAINEL DE CONTROLE" title="Visão geral" subtitle="Acompanhe a saúde da sua operação em um só lugar." />
     <div className="stats">
       <Stat label="Receita no mês" value={money(data?.revenue)} detail="Lançamentos do Controle Diário" Icon={CircleDollarSign} />
-      <Stat label="Despesas pendentes" value={money(data?.expenses)} detail="Aguardando aprovação" Icon={WalletCards} tone="orange" />
+      <Stat label="Despesas no mês" value={money(data?.expenses)} detail="Lançadas pelos entregadores" Icon={WalletCards} tone="orange" />
       <Stat label="Lançamentos hoje" value={today.length} detail="Registrados pelos entregadores" Icon={Truck} tone="green" />
       <Stat label="Alertas de estoque" value={data?.products?.filter(x => x.quantity < x.minimum).length || 0} detail="Itens abaixo do mínimo" Icon={AlertTriangle} tone="red" />
     </div>
@@ -686,6 +688,7 @@ function OutOfCatalogBrands() {
 function Reports() {
   const [r, setR] = useState(null);
   const [profit, setProfit] = useState(null);
+  const [profitByBrand, setProfitByBrand] = useState(null);
   const [start, setStart] = useState(todayISO(-30));
   const [end, setEnd] = useState(todayISO(0));
   const [preset, setPreset] = useState('30');
@@ -694,13 +697,14 @@ function Reports() {
   async function load() {
     setLoading(true);
     try {
-      const [{ data }, { data: p }] = await Promise.all([
+      const [{ data }, { data: p }, { data: pb }] = await Promise.all([
         api.get('/reports', { ...auth(), params: { start, end } }),
         api.get('/reports/profit-by-customer', { ...auth(), params: { start, end } }),
+        api.get('/reports/profit-by-brand', { ...auth(), params: { start, end } }),
       ]);
-      setR(data); setProfit(p);
+      setR(data); setProfit(p); setProfitByBrand(pb);
     } catch {
-      setR({ revenue: 0, expenses: 0, deliveries: 0, low_stock: 0, drivers: [] }); setProfit({ rows: [], totals: {} });
+      setR({ revenue: 0, expenses: 0, deliveries: 0, low_stock: 0, drivers: [] }); setProfit({ rows: [], totals: {} }); setProfitByBrand({ rows: [], totals: {} });
     } finally { setLoading(false); }
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -734,11 +738,17 @@ function Reports() {
     doc.text(`Receita: ${money(r?.revenue)}`, 14, 40);
     doc.text(`Despesas: ${money(r?.expenses)}`, 14, 47);
     doc.text(`Lançamentos: ${r?.deliveries || 0}`, 14, 54);
-    doc.text(`Alertas de estoque: ${r?.low_stock || 0}`, 14, 61);
+    doc.text(`Lucro total: ${money(profit?.totals?.profit)}`, 14, 61);
+    doc.text(`Alertas de estoque: ${r?.low_stock || 0}`, 14, 68);
     autoTable(doc, {
-      startY: 70,
+      startY: 76,
       head: [['Entregador', 'Lançamentos', 'Receita']],
       body: (r?.drivers || []).map(d => [d.driver, d.deliveries, money(d.revenue)]),
+      headStyles: { fillColor: [8, 120, 209] },
+    });
+    autoTable(doc, {
+      head: [['Marca / Produto', 'Qtd', 'Receita', 'Custo', 'Lucro']],
+      body: (profitByBrand?.rows || []).map(p => [p.brand, p.quantity, money(p.revenue), money(p.cost), money(p.profit)]),
       headStyles: { fillColor: [8, 120, 209] },
     });
     doc.save(`distribuidora-diane-relatorio-${start}-a-${end}.pdf`);
@@ -763,12 +773,16 @@ function Reports() {
         <button data-testid="export-pdf-button" className="primary" onClick={exportPDF}><FileText size={15} /> Exportar PDF</button>
       </div>
     </div>
-    <div className="stats"><Stat label="Receita realizada" value={money(r?.revenue)} detail="Entregas concluídas" Icon={CircleDollarSign} /><Stat label="Despesas" value={money(r?.expenses)} detail="Lançamentos" Icon={WalletCards} tone="orange" /><Stat label="Entregas" value={r?.deliveries || 0} detail="No período" Icon={Truck} tone="green" /><Stat label="Alertas estoque" value={r?.low_stock || 0} detail="Atenção necessária" Icon={AlertTriangle} tone="red" /></div>
+    <div className="stats"><Stat label="Receita realizada" value={money(r?.revenue)} detail="Entregas concluídas" Icon={CircleDollarSign} /><Stat label="Despesas" value={money(r?.expenses)} detail="Lançamentos" Icon={WalletCards} tone="orange" /><Stat label="Lucro total" value={money(profit?.totals?.profit)} detail="Receita − custo de compra" Icon={ArrowUpRight} tone="green" /><Stat label="Alertas estoque" value={r?.low_stock || 0} detail="Atenção necessária" Icon={AlertTriangle} tone="red" /></div>
     <section className="panel table-panel"><div className="panel-head"><div><h3>Desempenho por entregador</h3><p className="muted">Volume e receita no período</p></div></div><div className="table-wrap"><table><thead><tr><th>ENTREGADOR</th><th>LANÇAMENTOS</th><th>RECEITA</th></tr></thead><tbody>{(r?.drivers || []).map(d => <tr key={d.driver}><td><b>{d.driver}</b></td><td>{d.deliveries}</td><td>{money(d.revenue)}</td></tr>)}</tbody></table></div></section>
     <section className="panel table-panel" data-testid="profit-by-customer-panel"><div className="panel-head"><div><h3>Lucro por cliente</h3><p className="muted">Valor de venda − custo de compra da água, por cliente, no período.</p></div></div><div className="table-wrap"><table><thead><tr><th>CLIENTE</th><th>QTD</th><th>RECEITA</th><th>CUSTO</th><th>LUCRO</th></tr></thead><tbody>
       {(profit?.rows || []).map(p => <tr key={p.customer} data-testid={`profit-row-${p.customer}`}><td><b>{p.customer}</b></td><td>{p.quantity}</td><td>{money(p.revenue)}</td><td>{money(p.cost)}</td><td><b className={p.profit >= 0 ? 'green-text' : 'orange-text'}>{money(p.profit)}</b></td></tr>)}
       {(!profit?.rows || profit.rows.length === 0) && <tr><td colSpan={5} className="muted" style={{ padding: 16 }}>Sem lançamentos de controle diário no período.</td></tr>}
-    </tbody>{profit?.rows?.length > 0 && <tfoot><tr><td><b>Totais</b></td><td><b>{profit.totals.quantity}</b></td><td><b>{money(profit.totals.revenue)}</b></td><td><b>{money(profit.totals.cost)}</b></td><td><b>{money(profit.totals.profit)}</b></td></tr></tfoot>}</table></div></section></>
+    </tbody>{profit?.rows?.length > 0 && <tfoot><tr><td><b>Totais</b></td><td><b>{profit.totals.quantity}</b></td><td><b>{money(profit.totals.revenue)}</b></td><td><b>{money(profit.totals.cost)}</b></td><td><b>{money(profit.totals.profit)}</b></td></tr></tfoot>}</table></div></section>
+    <section className="panel table-panel" data-testid="profit-by-brand-panel"><div className="panel-head"><div><h3>Lucro por marca</h3><p className="muted">Valor de venda − custo de compra, por marca/produto, no período.</p></div></div><div className="table-wrap"><table><thead><tr><th>MARCA / PRODUTO</th><th>QTD</th><th>RECEITA</th><th>CUSTO</th><th>LUCRO</th></tr></thead><tbody>
+      {(profitByBrand?.rows || []).map(p => <tr key={p.brand} data-testid={`profit-brand-row-${p.brand}`}><td><b>{p.brand}</b></td><td>{p.quantity}</td><td>{money(p.revenue)}</td><td>{money(p.cost)}</td><td><b className={p.profit >= 0 ? 'green-text' : 'orange-text'}>{money(p.profit)}</b></td></tr>)}
+      {(!profitByBrand?.rows || profitByBrand.rows.length === 0) && <tr><td colSpan={5} className="muted" style={{ padding: 16 }}>Sem lançamentos de controle diário no período.</td></tr>}
+    </tbody>{profitByBrand?.rows?.length > 0 && <tfoot><tr><td><b>Totais</b></td><td><b>{profitByBrand.totals.quantity}</b></td><td><b>{money(profitByBrand.totals.revenue)}</b></td><td><b>{money(profitByBrand.totals.cost)}</b></td><td><b>{money(profitByBrand.totals.profit)}</b></td></tr></tfoot>}</table></div></section></>
 }
 
 /* ===================== App mobile do entregador ===================== */
@@ -857,7 +871,7 @@ function MobilePickerSheet({ customers, onClose, onPick, onNewCustomer }) {
 
 function MobileLaunchPanel({ customer, user, date, onClose, onComplete }) {
   const [customerName, setCustomerName] = useState(customer.name || '');
-  const [lines, setLines] = useState(() => brandListOf(customer).map(b => ({ brand: b.brand, price: Number(b.price) || 0, qty: 0, mf: 0 })));
+  const [lines, setLines] = useState(() => brandListOf(customer).map(b => ({ brand: b.brand, priceExchange: Number(b.price) || 0, priceFull: b.price_full != null ? Number(b.price_full) || 0 : null, saleType: 'exchange', qty: 0, mf: 0 })));
   const [adding, setAdding] = useState(false);
   const [newBrand, setNewBrand] = useState('');
   const [newPrice, setNewPrice] = useState('');
@@ -872,7 +886,8 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const total = lines.reduce((s, l) => s + l.qty * l.price, 0);
+  const linePrice = l => (l.saleType === 'full' && l.priceFull != null) ? l.priceFull : l.priceExchange;
+  const total = lines.reduce((s, l) => s + l.qty * linePrice(l), 0);
   const compValue = compOn ? (Number(comp) || 0) : 0;
   const remaining = Math.max(0, Math.round((total - compValue) * 100) / 100);
   const totalMf = lines.reduce((s, l) => s + l.mf, 0);
@@ -884,12 +899,14 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete }) {
 
   function incQty(i) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qty: l.qty + 1 } : l)); }
   function decQty(i) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qty: Math.max(0, l.qty - 1) } : l)); }
+  function setQty(i, raw) { const v = Math.max(0, parseInt(raw, 10) || 0); setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qty: v } : l)); }
   function incMf(i) { setLines(prev => prev.map((l, idx) => idx === i && l.qty > 0 ? { ...l, qty: l.qty - 1, mf: l.mf + 1 } : l)); }
   function decMf(i) { setLines(prev => prev.map((l, idx) => idx === i && l.mf > 0 ? { ...l, qty: l.qty + 1, mf: l.mf - 1 } : l)); }
+  function setSaleType(i, type) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, saleType: type } : l)); }
 
   function addBrandLine() {
     if (!newBrand.trim()) return;
-    setLines(prev => [...prev, { brand: newBrand.trim(), price: Number(newPrice) || 0, qty: 0, mf: 0, extra: true }]);
+    setLines(prev => [...prev, { brand: newBrand.trim(), priceExchange: Number(newPrice) || 0, priceFull: null, saleType: 'exchange', qty: 0, mf: 0, extra: true }]);
     setNewBrand(''); setNewPrice(''); setAdding(false);
   }
 
@@ -900,7 +917,7 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete }) {
 
   async function complete(signature) {
     setSaving(true); setError('');
-    const items = lines.filter(l => l.qty > 0 || l.mf > 0).map(l => ({ brand: l.brand, price: l.price, quantity: l.qty, mf_quantity: l.mf, out_of_catalog: !!l.extra }));
+    const items = lines.filter(l => l.qty > 0 || l.mf > 0).map(l => ({ brand: l.brand, price: linePrice(l), sale_type: l.saleType, quantity: l.qty, mf_quantity: l.mf, out_of_catalog: !!l.extra }));
     const payload = {
       customer: customerName, driver: user.name, date, items,
       pix_value: Math.round(pix * 100) / 100, cash_value: Math.round(cash * 100) / 100,
@@ -929,14 +946,18 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete }) {
         <button type="button" className="mob-close" data-testid="mob-panel-close" onClick={onClose}><X size={18} /></button>
       </div>
 
-      <p className="mob-eyebrow">MARCAS DO CADASTRO · TOQUE + PARA CADA GALÃO</p>
+      <p className="mob-eyebrow">PRODUTOS DO CADASTRO · TOQUE + OU DIGITE A QUANTIDADE</p>
       <div className="mob-lines">
         {lines.map((l, i) => <div className={`mob-line${l.qty > 0 ? ' active' : ''}`} key={i} data-testid={`mob-line-${i}`}>
+          {l.priceFull != null && <div className="mob-sale-type">
+            <button type="button" className={l.saleType !== 'full' ? 'active' : ''} data-testid={`mob-sale-exchange-${i}`} onClick={() => setSaleType(i, 'exchange')}>Troca de vasilhame</button>
+            <button type="button" className={l.saleType === 'full' ? 'active' : ''} data-testid={`mob-sale-full-${i}`} onClick={() => setSaleType(i, 'full')}>Completo (vasilhame novo)</button>
+          </div>}
           <div className="mob-line-top">
-            <div className="mob-line-info"><b>{l.brand}{l.extra && <span className="mob-tag orange" style={{ marginLeft: 6 }}>nova</span>}</b><small>R$ {l.price.toFixed(2)} por galão</small><span className="mob-line-subtotal">{money(l.qty * l.price)}</span></div>
+            <div className="mob-line-info"><b>{l.brand}{l.extra && <span className="mob-tag orange" style={{ marginLeft: 6 }}>nova</span>}</b><small>R$ {linePrice(l).toFixed(2)} por galão</small><span className="mob-line-subtotal">{money(l.qty * linePrice(l))}</span></div>
             <div className="mob-counter">
               <button type="button" data-testid={`mob-qty-minus-${i}`} onClick={() => decQty(i)}><Minus size={18} /></button>
-              <span>{l.qty}</span>
+              <input type="number" inputMode="numeric" min="0" value={l.qty} data-testid={`mob-qty-input-${i}`} onChange={e => setQty(i, e.target.value)} onFocus={e => e.target.select()} />
               <button type="button" className="fill" data-testid={`mob-qty-plus-${i}`} onClick={() => incQty(i)}><Plus size={20} /></button>
             </div>
           </div>
@@ -1192,13 +1213,13 @@ function App() {
   if (!user) return <Login onLogin={setUser} />;
   const logout = () => { localStorage.removeItem('hydro_token'); setUser(null) };
   if (user.role === 'driver' && isMobile) return <DriverMobileApp user={user} customers={customers} onLogout={logout} />;
-  async function save(kind, form) { const endpoints = { product: '/products', expense: '/expenses', customer: '/customers' }; const payload = { ...form };['quantity', 'minimum', 'value', 'amount'].forEach(k => { if (payload[k] !== undefined) payload[k] = Number(payload[k]) }); if (kind === 'expense') { payload.status = 'pending'; if (!payload.driver) payload.driver = user.name; } const { data: x } = await api.post(endpoints[kind], payload, auth()); if (kind === 'customer') setCustomers([...customers, x]); else { const key = kind === 'product' ? 'products' : 'expenses_list'; setData({ ...data, [key]: [...(data?.[key] || []), x] }) } setModal(null) }
+  async function save(kind, form) { const endpoints = { product: '/products', expense: '/expenses', customer: '/customers' }; const payload = { ...form };['quantity', 'minimum', 'value', 'amount'].forEach(k => { if (payload[k] !== undefined) payload[k] = Number(payload[k]) }); if (kind === 'expense') { payload.status = 'approved'; if (!payload.driver) payload.driver = user.name; } const { data: x } = await api.post(endpoints[kind], payload, auth()); if (kind === 'customer') setCustomers([...customers, x]); else { const key = kind === 'product' ? 'products' : 'expenses_list'; setData({ ...data, [key]: [...(data?.[key] || []), x] }) } setModal(null) }
   const modalFields = fields[modal];
   const adminOnly = el => user.role === 'admin' ? el : <Navigate to="/" replace />;
   return <Shell user={user} onLogout={logout} notifications={notifications}>
     <Routes>
       <Route path="/" element={<Dashboard data={data} />} />
-      <Route path="/controle-diario" element={<DailyControl user={user} customers={customers} />} />
+      <Route path="/controle-diario" element={user.role === 'driver' ? <DailyControl user={user} customers={customers} /> : <Navigate to="/" replace />} />
       <Route path="/estoque" element={<Stock data={data} setData={setData} create={setModal} />} />
       <Route path="/financeiro" element={<Finance data={data} setData={setData} create={setModal} user={user} />} />
       <Route path="/provisao" element={adminOnly(<Receivables />)} />

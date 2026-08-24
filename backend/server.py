@@ -130,8 +130,8 @@ async def dashboard(user=Depends(current_user)):
     products = await db.products.find({}, {"_id": 0}).to_list(100)
     expenses = await db.expenses.find({}, {"_id": 0}).to_list(200)
     revenue = sum(entry_total(e) for e in entries_month)
-    expenses_pending = sum(float(e.get("amount", 0)) for e in expenses if e.get("status") == "pending")
-    return {"revenue": revenue, "expenses": expenses_pending, "deliveries": entries_today, "products": products, "expenses_list": expenses, "user": user}
+    expenses_month = sum(float(e.get("amount", 0)) for e in expenses if (e.get("created_at") or "") >= month_start and e.get("status") != "rejected")
+    return {"revenue": revenue, "expenses": expenses_month, "deliveries": entries_today, "products": products, "expenses_list": expenses, "user": user}
 
 MONTH_LABELS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
 
@@ -355,8 +355,21 @@ async def receivables(status: Optional[str] = None, start: Optional[str] = None,
     totals = {"pending": sum(float(e.get("comp_value") or 0) for e in entries if not e.get("received")), "received": sum(float(e.get("comp_value") or 0) for e in entries if e.get("received"))}
     return {"rows": entries, "totals": totals}
 
-@api.get("/reports/profit-by-customer")
-async def profit_by_customer(start: Optional[str] = None, end: Optional[str] = None, user=Depends(admin_user)):
+def entry_item_rows(e):
+    """Yield (brand, quantity, price) for each product line of a daily entry, whether it used
+    the multi-brand items[] shape (desktop/mobile current) or the older single-brand shape."""
+    items = e.get("items")
+    if items:
+        for it in items:
+            qty = float(it.get("quantity") or 0)
+            if qty <= 0: continue
+            yield (it.get("brand") or "", qty, float(it.get("price") or 0))
+    else:
+        qty = float(e.get("billed_quantity") if e.get("billed_quantity") is not None else max(0.0, float(e.get("quantity") or 0) - float(e.get("mf_quantity") or 0)))
+        if qty > 0:
+            yield (e.get("brand") or "", qty, float(e.get("price") or 0))
+
+async def _profit_rows(start, end, group_by):
     query = {}
     if start or end:
         rng = {}
@@ -369,15 +382,22 @@ async def profit_by_customer(start: Optional[str] = None, end: Optional[str] = N
     rows = {}
     for e in entries:
         customer = e.get("customer") or "Sem cliente"
-        brand = (e.get("brand") or "").strip().lower()
-        qty = float(e.get("billed_quantity") if e.get("billed_quantity") is not None else max(0.0, float(e.get("quantity") or 0) - float(e.get("mf_quantity") or 0)))
-        price = float(e.get("price") or 0)
-        cost = cost_by_brand.get(brand, 0)
-        row = rows.setdefault(customer, {"customer": customer, "quantity": 0.0, "revenue": 0.0, "cost": 0.0, "profit": 0.0})
-        row["quantity"] += qty; row["revenue"] += qty * price; row["cost"] += qty * cost; row["profit"] += qty * (price - cost)
+        for brand, qty, price in entry_item_rows(e):
+            key = customer if group_by == "customer" else (brand.strip() or "Sem marca")
+            cost = cost_by_brand.get(brand.strip().lower(), 0)
+            row = rows.setdefault(key, {group_by: key, "quantity": 0.0, "revenue": 0.0, "cost": 0.0, "profit": 0.0})
+            row["quantity"] += qty; row["revenue"] += qty * price; row["cost"] += qty * cost; row["profit"] += qty * (price - cost)
     result = sorted(rows.values(), key=lambda r: r["profit"], reverse=True)
     totals = {"quantity": sum(r["quantity"] for r in result), "revenue": sum(r["revenue"] for r in result), "cost": sum(r["cost"] for r in result), "profit": sum(r["profit"] for r in result)}
     return {"rows": result, "totals": totals, "period": {"start": start, "end": end}}
+
+@api.get("/reports/profit-by-customer")
+async def profit_by_customer(start: Optional[str] = None, end: Optional[str] = None, user=Depends(admin_user)):
+    return await _profit_rows(start, end, "customer")
+
+@api.get("/reports/profit-by-brand")
+async def profit_by_brand(start: Optional[str] = None, end: Optional[str] = None, user=Depends(admin_user)):
+    return await _profit_rows(start, end, "brand")
 
 @api.get("/users")
 async def list_users(user=Depends(admin_user)):
