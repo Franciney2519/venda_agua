@@ -29,7 +29,7 @@ function useMediaQuery(query) {
   }, [query]);
   return matches;
 }
-const nav = [['/', 'Visão geral', LayoutDashboard], ['/ordens-servico', 'Ordens de Serviço', Truck], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/marcas-extras', 'Marcas Extras', Droplets], ['/usuarios', 'Usuários', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
+const nav = [['/', 'Visão geral', LayoutDashboard], ['/ordens-servico', 'Ordens de Serviço', Truck], ['/comprovantes', 'Comprovantes', FileText], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/marcas-extras', 'Marcas Extras', Droplets], ['/usuarios', 'Usuários', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
 const driverNav = [['/', 'Visão geral', LayoutDashboard], ['/controle-diario', 'Controle Diário', CalendarCheck], ['/financeiro', 'Financeiro', WalletCards]];
 
 function Shell({ user, onLogout, notifications, children }) {
@@ -175,16 +175,21 @@ function Dashboard({ data }) {
       </section>
     </div></> }
 
+const SIGNATURE_COLORS = [['#10253f', 'Preto'], ['#0878d1', 'Azul'], ['#d54e4e', 'Vermelho']];
+
 function SignaturePad({ onSave, onCancel, variant = 'desktop', customer, total }) {
   const canvasRef = useRef(null);
   const drawing = useRef(false);
   const [empty, setEmpty] = useState(true);
+  const [penColor, setPenColor] = useState(SIGNATURE_COLORS[0][0]);
+  const penColorRef = useRef(penColor);
+  useEffect(() => { penColorRef.current = penColor; }, [penColor]);
   useEffect(() => {
     const c = canvasRef.current; if (!c) return;
     if (variant === 'mobile') { const r = c.parentElement.getBoundingClientRect(); c.width = Math.round(r.width); c.height = Math.round(r.height); }
-    const ctx = c.getContext('2d'); ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.strokeStyle = '#10253f';
+    const ctx = c.getContext('2d'); ctx.lineWidth = 2.4; ctx.lineCap = 'round';
     const pos = e => { const r = c.getBoundingClientRect(); const t = e.touches?.[0] || e; return [t.clientX - r.left, t.clientY - r.top]; };
-    const start = e => { e.preventDefault(); drawing.current = true; const [x, y] = pos(e); ctx.beginPath(); ctx.moveTo(x, y); setEmpty(false); };
+    const start = e => { e.preventDefault(); drawing.current = true; ctx.strokeStyle = penColorRef.current; const [x, y] = pos(e); ctx.beginPath(); ctx.moveTo(x, y); setEmpty(false); };
     const move = e => { if (!drawing.current) return; e.preventDefault(); const [x, y] = pos(e); ctx.lineTo(x, y); ctx.stroke(); };
     const end = () => { drawing.current = false; };
     c.addEventListener('mousedown', start); c.addEventListener('mousemove', move); window.addEventListener('mouseup', end);
@@ -198,6 +203,10 @@ function SignaturePad({ onSave, onCancel, variant = 'desktop', customer, total }
     <p className="mob-eyebrow">CONFIRMAÇÃO DE ENTREGA</p>
     <h2 className="mob-sign-title">Assinatura do cliente</h2>
     <p className="mob-sign-sub">{customer}{customer && total != null ? ' · ' : ''}{total != null ? money(total) : ''}</p>
+    <div className="mob-sign-colors">
+      <span>Cor da caneta</span>
+      {SIGNATURE_COLORS.map(([hex, label]) => <button type="button" key={hex} aria-label={label} title={label} className={penColor === hex ? 'active' : ''} style={{ background: hex }} data-testid={`mob-sign-color-${hex}`} onClick={() => setPenColor(hex)} />)}
+    </div>
     <div className="mob-sign-area">
       <canvas ref={canvasRef} data-testid="signature-canvas" />
       {empty && <span className="mob-sign-placeholder">Assine com o dedo</span>}
@@ -781,6 +790,67 @@ function ServiceOrders({ customers }) {
     </tbody></table></div></section></>
 }
 
+function SignatureViewModal({ entry, onClose }) {
+  const items = entry.items?.length ? entry.items : (entry.brand ? [{ brand: entry.brand, quantity: entry.billed_quantity ?? entry.quantity }] : []);
+  return <div className="modal-backdrop" onClick={onClose}>
+    <div className="quick-modal" onClick={e => e.stopPropagation()}>
+      <button type="button" className="modal-close" onClick={onClose} data-testid="signature-view-close"><X /></button>
+      <p className="eyebrow">COMPROVANTE DE ENTREGA</p>
+      <h3>{entry.customer}</h3>
+      <p className="muted">{entry.date} · {entry.driver} · {items.map(it => `${it.quantity} ${it.brand}`).join(' + ')} · {money(entry.total)}</p>
+      {entry.signature ? <img src={entry.signature} alt="Assinatura do cliente" style={{ width: '100%', border: '1px solid var(--line)', borderRadius: 8, background: '#fff' }} data-testid="signature-view-image" /> : <p className="muted" data-testid="signature-view-missing">Este lançamento não tem assinatura registrada.</p>}
+    </div>
+  </div>
+}
+
+function Receipts() {
+  const [entries, setEntries] = useState([]);
+  const [start, setStart] = useState(todayISO(-7));
+  const [end, setEnd] = useState(todayISO(0));
+  const [customer, setCustomer] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [viewing, setViewing] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const params = { start, end }; if (customer.trim()) params.customer = customer.trim();
+      const { data } = await api.get('/daily-entries', { ...auth(), params });
+      setEntries(data);
+    } finally { setLoading(false); }
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [start, end]);
+
+  return <><Head eyebrow="AUDITORIA" title="Comprovantes de Entrega" subtitle="Busque um lançamento por cliente e período para conferir a assinatura, caso o cliente reclame que não recebeu." />
+    <div className="report-toolbar">
+      <div className="report-filters">
+        <label>De<input type="date" value={start} max={end} data-testid="receipts-start-date" onChange={e => setStart(e.target.value)} /></label>
+        <label>Até<input type="date" value={end} min={start} data-testid="receipts-end-date" onChange={e => setEnd(e.target.value)} /></label>
+        <label>Cliente<input value={customer} placeholder="Buscar por nome" data-testid="receipts-customer-input" onChange={e => setCustomer(e.target.value)} onKeyDown={e => e.key === 'Enter' && load()} /></label>
+        <button type="button" className="ghost-btn" data-testid="receipts-search-button" onClick={load}><Search size={14} /> Buscar</button>
+      </div>
+      {loading && <Loader2 size={16} className="spin blue-text" />}
+    </div>
+    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>DATA</th><th>CLIENTE</th><th>ENTREGADOR</th><th>PRODUTO</th><th>TOTAL</th><th>ASSINATURA</th><th /></tr></thead><tbody>
+      {entries.map(e => {
+        const items = e.items?.length ? e.items : (e.brand ? [{ brand: e.brand, quantity: e.billed_quantity ?? e.quantity }] : []);
+        return <tr key={e.id} data-testid={`receipt-row-${e.id}`}>
+          <td>{e.date}</td>
+          <td><b>{e.customer}</b></td>
+          <td>{e.driver}</td>
+          <td>{items.map(it => `${it.quantity} ${it.brand}`).join(' + ')}</td>
+          <td>{money(e.total)}</td>
+          <td>{e.signature ? <span className="tag green">Assinado</span> : <span className="tag gray">Sem assinatura</span>}</td>
+          <td><button className="action-btn ghost" data-testid={`receipt-view-${e.id}`} onClick={() => setViewing(e)}><FileText size={13} /> Ver</button></td>
+        </tr>
+      })}
+      {entries.length === 0 && <tr><td colSpan={7} className="muted" style={{ padding: 16 }}>Nenhum lançamento encontrado no período/busca.</td></tr>}
+    </tbody></table></div></section>
+    {viewing && <SignatureViewModal entry={viewing} onClose={() => setViewing(null)} />}
+  </>
+}
+
 function Reports() {
   const [r, setR] = useState(null);
   const [profit, setProfit] = useState(null);
@@ -1347,6 +1417,7 @@ function App() {
       <Route path="/financeiro" element={<Finance data={data} setData={setData} create={setModal} user={user} />} />
       <Route path="/provisao" element={adminOnly(<Receivables />)} />
       <Route path="/ordens-servico" element={adminOnly(<ServiceOrders customers={customers} />)} />
+      <Route path="/comprovantes" element={adminOnly(<Receipts />)} />
       <Route path="/marcas-extras" element={adminOnly(<OutOfCatalogBrands />)} />
       <Route path="/clientes" element={<Customers items={customers} create={setModal} />} />
       <Route path="/usuarios" element={adminOnly(<UsersPage me={user} />)} />

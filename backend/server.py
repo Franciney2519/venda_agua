@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 from pathlib import Path
-import os, uuid, logging, bcrypt, jwt
+import os, uuid, logging, bcrypt, jwt, re
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends, Response
@@ -245,11 +245,17 @@ async def promote_brand(item_id: str, data: ResourceInput, user=Depends(admin_us
     return await db.customers.find_one({"id": item_id}, {"_id": 0})
 
 @api.get("/daily-entries")
-async def daily_entries(date: Optional[str] = None, driver: Optional[str] = None, user=Depends(current_user)):
+async def daily_entries(date: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None, driver: Optional[str] = None, customer: Optional[str] = None, user=Depends(current_user)):
     query = {}
     if date: query["date"] = date
+    elif start or end:
+        rng = {}
+        if start: rng["$gte"] = start
+        if end: rng["$lte"] = end
+        query["date"] = rng
     if driver: query["driver"] = driver
     elif user.get("role") != "admin": query["driver"] = user["name"]
+    if customer: query["customer"] = {"$regex": re.escape(customer), "$options": "i"}
     return await db.daily_entries.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
 
 @api.post("/daily-entries")

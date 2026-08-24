@@ -216,8 +216,12 @@
 .mob-signature-screen .mob-eyebrow{margin:0}
 .mob-sign-title{font:700 calc(26px * var(--scale)) 'Space Grotesk',sans-serif;margin:8px 0 4px}
 .mob-sign-sub{font-size:calc(14px * var(--scale));color:var(--mob-muted,#6e8298);margin:0}
-.mob-sign-area{flex:1;margin:22px 0;border-radius:20px;border:2px dashed var(--mob-line,#e4ebf2);background:var(--mob-surface,#fff);position:relative;overflow:hidden}
+.mob-sign-area{flex:1;margin:14px 0;border-radius:20px;border:2px dashed var(--mob-line,#e4ebf2);background:#ffffff;position:relative;overflow:hidden}
 .mob-sign-area canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+.mob-sign-colors{display:flex;gap:10px;align-items:center;margin-bottom:8px}
+.mob-sign-colors span{font-size:calc(11.5px * var(--scale));font-weight:700;color:var(--mob-muted);text-transform:uppercase;letter-spacing:.5px}
+.mob-sign-colors button{width:30px;height:30px;border-radius:50%;border:2px solid transparent;box-shadow:0 0 0 1px var(--mob-line,#e4ebf2) inset}
+.mob-sign-colors button.active{border-color:var(--mob-blue,#0878d1)}
 .mob-sign-placeholder{position:absolute;inset:0;display:grid;place-items:center;color:var(--mob-muted,#6e8298);font-size:calc(14px * var(--scale));pointer-events:none}
 .mob-cta.green{background:var(--mob-green,#11966d);box-shadow:none}
 .mob-cta.green:disabled{opacity:.45}
