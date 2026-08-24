@@ -808,18 +808,16 @@ function ServiceOrders({ customers }) {
 
   return <><Head eyebrow="LOGÍSTICA" title="Ordens de Serviço" subtitle="Solicitações de entrega recebidas pelo admin, direcionadas para o entregador." />
     <section className="panel table-panel" style={{ marginBottom: 22 }}>
-      <form className="daily-entry-form" style={{ gridTemplateColumns: '1.3fr 1fr .8fr .6fr 1fr auto' }} onSubmit={submit}>
+      <form className="os-form" onSubmit={submit}>
         <label>Cliente<input list="os-customers" required value={form.customer} data-testid="os-customer-input" onChange={e => pickCustomer(e.target.value)} /><datalist id="os-customers">{customers.map(c => <option key={c.id} value={c.name} />)}</datalist></label>
         <label>Endereço<input value={form.address} data-testid="os-address-input" onChange={e => setForm({ ...form, address: e.target.value })} /></label>
         <label>Produto<input placeholder="ex: Minalar 20L" value={form.brand} data-testid="os-product-input" onChange={e => setForm({ ...form, brand: e.target.value })} /></label>
-        <label>Qtd<input type="number" value={form.quantity} data-testid="os-quantity-input" onChange={e => setForm({ ...form, quantity: e.target.value })} /></label>
+        <label className="os-field-narrow">Qtd<input type="number" value={form.quantity} data-testid="os-quantity-input" onChange={e => setForm({ ...form, quantity: e.target.value })} /></label>
         <label>Entregador<select required value={form.driver} data-testid="os-driver-select" onChange={e => setForm({ ...form, driver: e.target.value })}><option value="">Selecione</option>{drivers.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}</select></label>
-        <button className="primary" data-testid="os-submit-button"><Plus size={15} /> Criar OS</button>
+        <label>Observações<input value={form.notes} data-testid="os-notes-input" onChange={e => setForm({ ...form, notes: e.target.value })} /></label>
+        {error && <div className="error" data-testid="os-form-error">{error}</div>}
+        <button className="primary os-submit" data-testid="os-submit-button"><Plus size={15} /> Criar ordem de serviço</button>
       </form>
-      <div style={{ padding: '0 23px 20px' }}>
-        <label className="muted" style={{ display: 'grid', gap: 6, fontSize: 12, fontWeight: 700 }}>Observações<input value={form.notes} data-testid="os-notes-input" onChange={e => setForm({ ...form, notes: e.target.value })} style={{ padding: 11, border: '1px solid var(--line)', borderRadius: 5 }} /></label>
-      </div>
-      {error && <div className="error" style={{ margin: '0 23px 16px' }} data-testid="os-form-error">{error}</div>}
     </section>
 
     <div className="filter-row">

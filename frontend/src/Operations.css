@@ -354,3 +354,14 @@
 .app-shell.dark .report-filters input[type=date],.app-shell.dark .report-filters select{background:#15293c;border-color:var(--line);color:var(--ink)}
 .app-shell.dark .activity-list li{border-color:var(--line)}
 .app-shell.dark .loading{background:#0b1622}
+
+/* ===================== Formulário de Ordem de Serviço (responsivo) ===================== */
+.os-form{display:flex;flex-wrap:wrap;gap:14px;padding:20px 23px;align-items:flex-end}
+.os-form label{display:grid;gap:6px;font-size:11px;font-weight:700;color:#8b9cad;flex:1 1 170px;min-width:150px}
+.os-form .os-field-narrow{flex:0 1 90px;min-width:80px}
+.os-form input,.os-form select{padding:11px;border:1px solid var(--line);border-radius:5px;font-size:13px;width:100%}
+.os-form .error{flex:1 1 100%;margin:0}
+.os-submit{flex:1 1 100%;justify-content:center;height:44px}
+@media(min-width:640px){.os-submit{flex:0 0 auto;justify-content:flex-start}}
+.app-shell.dark .os-form input,.app-shell.dark .os-form select{background:#15293c;border-color:var(--line);color:var(--ink)}
+@media(max-width:700px){.os-form{padding:16px}.os-form label{flex:1 1 100%;min-width:0}.os-form .os-field-narrow{flex:1 1 100%}}
