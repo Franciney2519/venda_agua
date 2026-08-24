@@ -34,6 +34,7 @@ class UserInput(BaseModel):
     role: Optional[str] = None
     active: Optional[bool] = None
     status: Optional[str] = None
+    phone: Optional[str] = None
 
 class ResourceInput(BaseModel):
     name: Optional[str] = None
@@ -308,6 +309,40 @@ async def delete_daily_entry(item_id: str, user=Depends(current_user)):
     await db.daily_entries.delete_one({"id": item_id})
     return {"message": "Excluído"}
 
+@api.get("/service-orders")
+async def service_orders(user=Depends(current_user)):
+    query = {} if user.get("role") == "admin" else {"driver": user["name"]}
+    return await db.service_orders.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+
+@api.post("/service-orders")
+async def add_service_order(data: ResourceInput, user=Depends(admin_user)):
+    if not data.customer or not data.driver: raise HTTPException(400, "Informe o cliente e o entregador")
+    doc = data.model_dump(exclude_none=True)
+    doc["status"] = "pending"
+    doc.update({"id": str(uuid.uuid4()), "created_at": now(), "created_by": user["id"]})
+    await db.service_orders.insert_one(doc); doc.pop("_id", None)
+    await log_activity("service_order_created", user, {"id": doc["id"], "name": doc.get("customer")}, {"driver": doc.get("driver")})
+    return doc
+
+@api.patch("/service-orders/{item_id}")
+async def update_service_order(item_id: str, data: ResourceInput, user=Depends(current_user)):
+    target = await db.service_orders.find_one({"id": item_id}, {"_id": 0})
+    if not target: raise HTTPException(404, "Ordem de serviço não encontrada")
+    if user.get("role") != "admin" and target.get("driver") != user["name"]: raise HTTPException(403, "Sem permissão")
+    values = data.model_dump(exclude_unset=True)
+    await db.service_orders.update_one({"id": item_id}, {"$set": values})
+    doc = await db.service_orders.find_one({"id": item_id}, {"_id": 0})
+    if values.get("status") == "done":
+        await log_activity("service_order_done", user, {"id": item_id, "name": doc.get("customer")})
+    return doc
+
+@api.delete("/service-orders/{item_id}")
+async def delete_service_order(item_id: str, user=Depends(admin_user)):
+    target = await db.service_orders.find_one({"id": item_id}, {"_id": 0})
+    if not target: raise HTTPException(404, "Ordem de serviço não encontrada")
+    await db.service_orders.delete_one({"id": item_id})
+    return {"message": "Excluída"}
+
 @api.get("/finance/summary")
 async def finance_summary(driver: Optional[str] = None, user=Depends(current_user)):
     scope_driver = driver if user.get("role") == "admin" else user["name"]
@@ -409,7 +444,7 @@ async def create_user(data: UserInput, user=Depends(admin_user)):
     if not data.email or not data.password or not data.name: raise HTTPException(400, "Nome, e-mail e senha são obrigatórios")
     email = data.email.lower().strip()
     if await db.users.find_one({"email": email}): raise HTTPException(409, "Este e-mail já está cadastrado")
-    doc = {"id": str(uuid.uuid4()), "email": email, "name": data.name.strip(), "role": data.role or "driver", "status": "approved", "active": True, "password_hash": hash_password(data.password), "created_at": now()}
+    doc = {"id": str(uuid.uuid4()), "email": email, "name": data.name.strip(), "phone": data.phone, "role": data.role or "driver", "status": "approved", "active": True, "password_hash": hash_password(data.password), "created_at": now()}
     await db.users.insert_one(doc)
     await log_activity("user_created", user, doc, {"role": doc["role"]})
     return sanitize_user(doc)
@@ -425,6 +460,7 @@ async def update_user(user_id: str, data: UserInput, user=Depends(admin_user)):
         if email != target["email"] and await db.users.find_one({"email": email}): raise HTTPException(409, "E-mail já usado por outro usuário")
         updates["email"] = email
     if data.role is not None and data.role in ("admin", "driver"): updates["role"] = data.role
+    if data.phone is not None: updates["phone"] = data.phone.strip()
     if data.active is not None: updates["active"] = bool(data.active)
     if data.status is not None and data.status in ("pending", "approved", "rejected"): updates["status"] = data.status
     if updates:

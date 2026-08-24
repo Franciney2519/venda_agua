@@ -89,6 +89,12 @@
 .mob-screen{display:flex;flex-direction:column;gap:14px}
 
 .mob-summary-card{background:var(--mob-surface);border:1px solid var(--mob-line);border-radius:16px;padding:16px;box-shadow:0 4px 14px #10253f0f}
+.mob-orders-card{background:var(--mob-orange-soft);border:1.5px solid var(--mob-orange-border);border-radius:16px;padding:14px 16px;display:grid;gap:10px}
+.mob-orders-card .mob-eyebrow{color:var(--mob-orange)}
+.mob-order-row{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--mob-surface);border-radius:12px;padding:12px 14px}
+.mob-order-row b{display:block;font-size:calc(14px * var(--scale))}
+.mob-order-row small{display:block;color:var(--mob-muted);font-size:calc(12px * var(--scale));margin-top:2px}
+.mob-order-row .mob-outline-btn{width:auto;height:36px;padding:0 14px;margin:0;font-size:calc(12px * var(--scale));flex:none}
 .mob-summary-row{display:flex;justify-content:space-between;align-items:center;font-size:calc(13px * var(--scale));color:var(--mob-muted)}
 .mob-summary-row b{font:700 calc(20px * var(--scale)) 'Space Grotesk',sans-serif;color:var(--mob-blue)}
 .mob-progress{margin-top:10px;height:10px;border-radius:6px;background:var(--mob-surface2);overflow:hidden}

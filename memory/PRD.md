@@ -72,3 +72,13 @@ Perfis Admin/Entregador; entregas com rota e ordem; statuses pendente, em rota, 
 - P2: relatórios exportáveis e notificações de estoque.
 - P2: variantes 1b (teclado numérico) e 1c (wizard passo a passo) do handoff mobile — não implementadas, só a 1a completa.
 - P2: testar visualmente o app mobile num navegador/celular real (só foi validado por build limpo até agora).
+## Implementado (2026-08-24, Ordens de Serviço de entrega)
+- Novo fluxo: admin recebe pedido de entrega (por telefone, etc.) enquanto o entregador está na rua, e cria uma **Ordem de Serviço** — cliente, endereço, produto, quantidade, entregador responsável, observações. Não é lançamento de venda (isso continua acontecendo só quando o entregador realmente entrega, via Controle Diário) — é só a solicitação/tarefa.
+- Backend: coleção `service_orders` reaproveitando o `ResourceInput` genérico. `GET/POST /service-orders` (admin vê todas, entregador só as suas), `PATCH` (entregador ou admin podem mudar status pending/done/cancelled), `DELETE` (admin).
+- Tela admin `/ordens-servico`: formulário de criação (cliente com autocomplete do cadastro, endereço, produto, quantidade, entregador — select dos usuários com perfil Entregador ativos, observações), lista filtrável (Pendentes/Concluídas/Todas) com ações Concluir/Cancelar/Excluir.
+- **Botão WhatsApp por ordem**: gera um link `wa.me/<telefone>?text=<mensagem>` com os dados da ordem já preenchidos, usando o telefone cadastrado no perfil do entregador — abre o WhatsApp Web/app já com a mensagem pronta pra enviar. Sem integração paga, é só o link padrão do WhatsApp.
+- Cadastro de usuário (`UserInput`) ganhou campo `phone`, editável no modal de usuário ("WhatsApp / Telefone").
+- **App mobile do entregador**: aba Clientes agora mostra um card laranja no topo com as ordens de serviço pendentes atribuídas a ele (cliente, produto, quantidade, endereço, observação) e botão "Concluir" por ordem.
+- Testado via curl: telefone salvo no usuário, OS criada pelo admin aparece só pro entregador certo, entregador conclui a própria OS. `pytest tests` 44/44. `craco build` limpo.
+## Backlog priorizado (continuação)
+- P2: a Ordem de Serviço concluída não vira automaticamente um lançamento no Controle Diário — o entregador ainda lança a venda separadamente. Poderia pré-preencher o painel de lançamento a partir da OS.

@@ -29,7 +29,7 @@ function useMediaQuery(query) {
   }, [query]);
   return matches;
 }
-const nav = [['/', 'Visão geral', LayoutDashboard], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/marcas-extras', 'Marcas Extras', Droplets], ['/usuarios', 'Usuários', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
+const nav = [['/', 'Visão geral', LayoutDashboard], ['/ordens-servico', 'Ordens de Serviço', Truck], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/marcas-extras', 'Marcas Extras', Droplets], ['/usuarios', 'Usuários', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
 const driverNav = [['/', 'Visão geral', LayoutDashboard], ['/controle-diario', 'Controle Diário', CalendarCheck], ['/financeiro', 'Financeiro', WalletCards]];
 
 function Shell({ user, onLogout, notifications, children }) {
@@ -503,13 +503,13 @@ function UsersPage({ me }) {
 }
 
 function UserModal({ modal, onClose, onDone }) {
-  const [form, setForm] = useState(modal.user ? { name: modal.user.name, email: modal.user.email, role: modal.user.role } : { role: 'driver' });
+  const [form, setForm] = useState(modal.user ? { name: modal.user.name, email: modal.user.email, role: modal.user.role, phone: modal.user.phone || '' } : { role: 'driver', phone: '' });
   const [error, setError] = useState('');
   async function submit(e) {
     e.preventDefault(); setError('');
     try {
       if (modal.mode === 'create') { await api.post('/users', form, auth()); }
-      else if (modal.mode === 'edit') { await api.patch(`/users/${modal.user.id}`, { name: form.name, email: form.email, role: form.role }, auth()); }
+      else if (modal.mode === 'edit') { await api.patch(`/users/${modal.user.id}`, { name: form.name, email: form.email, role: form.role, phone: form.phone }, auth()); }
       else if (modal.mode === 'reset') {
         if (!form.password || form.password.length < 6) return setError('Nova senha precisa ter ao menos 6 caracteres.');
         await api.post(`/users/${modal.user.id}/reset-password`, { password: form.password }, auth());
@@ -524,7 +524,8 @@ function UserModal({ modal, onClose, onDone }) {
     <h3>{isReset ? modal.user.name : modal.mode === 'edit' ? 'Atualizar dados' : 'Cadastrar novo usuário'}</h3>
     {!isReset && <><label>Nome<input required value={form.name || ''} data-testid="user-form-name" onChange={e => setForm({ ...form, name: e.target.value })} /></label>
       <label>E-mail<input required type="email" value={form.email || ''} data-testid="user-form-email" onChange={e => setForm({ ...form, email: e.target.value })} /></label>
-      <label>Perfil<select value={form.role} data-testid="user-form-role" onChange={e => setForm({ ...form, role: e.target.value })}><option value="driver">Entregador</option><option value="admin">Administrador</option></select></label></>}
+      <label>Perfil<select value={form.role} data-testid="user-form-role" onChange={e => setForm({ ...form, role: e.target.value })}><option value="driver">Entregador</option><option value="admin">Administrador</option></select></label>
+      <label>WhatsApp / Telefone<input value={form.phone || ''} placeholder="ex: 5592999999999" data-testid="user-form-phone" onChange={e => setForm({ ...form, phone: e.target.value })} /></label></>}
     {(modal.mode === 'create' || isReset) && <label>{isReset ? 'Nova senha' : 'Senha inicial'}<input required type="password" data-testid="user-form-password" onChange={e => setForm({ ...form, password: e.target.value })} /></label>}
     {error && <div className="error" data-testid="user-form-error">{error}</div>}
     <button className="primary full" data-testid="user-form-submit"><Save size={16} /> {isReset ? 'Redefinir senha' : 'Salvar'}</button>
@@ -685,6 +686,101 @@ function OutOfCatalogBrands() {
     </tbody></table></div></section></>
 }
 
+function whatsappLinkFor(order, driverUser) {
+  const phone = (driverUser?.phone || '').replace(/\D/g, '');
+  if (!phone) return null;
+  const lines = [
+    'Nova ordem de serviço de entrega:',
+    `Cliente: ${order.customer}`,
+    order.address ? `Endereço: ${order.address}` : null,
+    `Produto: ${order.brand || '—'}`,
+    order.quantity ? `Quantidade: ${order.quantity}` : null,
+    order.notes ? `Obs: ${order.notes}` : null,
+  ].filter(Boolean);
+  return `https://wa.me/${phone}?text=${encodeURIComponent(lines.join('\n'))}`;
+}
+
+function ServiceOrders({ customers }) {
+  const [orders, setOrders] = useState([]);
+  const [drivers, setDrivers] = useState([]);
+  const [form, setForm] = useState({ customer: '', address: '', brand: '', quantity: '', driver: '', notes: '' });
+  const [error, setError] = useState('');
+  const [filter, setFilter] = useState('pending');
+
+  async function load() { const { data } = await api.get('/service-orders', auth()); setOrders(data); }
+  useEffect(() => {
+    load();
+    api.get('/users', auth()).then(({ data }) => setDrivers(data.filter(u => u.role === 'driver' && u.active !== false)));
+  }, []);
+
+  function pickCustomer(name) {
+    const c = customers.find(x => x.name === name);
+    setForm({ ...form, customer: name, address: c?.address || form.address });
+  }
+
+  async function submit(e) {
+    e.preventDefault(); setError('');
+    if (!form.customer.trim() || !form.driver) return setError('Selecione o cliente e o entregador.');
+    try {
+      const payload = { ...form, quantity: form.quantity ? Number(form.quantity) : undefined };
+      const { data } = await api.post('/service-orders', payload, auth());
+      setOrders([data, ...orders]);
+      setForm({ customer: '', address: '', brand: '', quantity: '', driver: form.driver, notes: '' });
+    } catch (e) { setError(e.response?.data?.detail || 'Não foi possível criar a ordem.'); }
+  }
+
+  async function setStatus(o, status) { const { data } = await api.patch(`/service-orders/${o.id}`, { status }, auth()); setOrders(orders.map(x => x.id === o.id ? data : x)); }
+  async function remove(o) { if (!window.confirm(`Excluir a ordem de serviço de ${o.customer}?`)) return; await api.delete(`/service-orders/${o.id}`, auth()); setOrders(orders.filter(x => x.id !== o.id)); }
+
+  const filtered = orders.filter(o => filter === 'all' || (o.status || 'pending') === filter);
+  const statusLabel = { pending: 'Pendente', done: 'Concluída', cancelled: 'Cancelada' };
+  const statusTag = { pending: 'orange', done: 'green', cancelled: 'gray' };
+
+  return <><Head eyebrow="LOGÍSTICA" title="Ordens de Serviço" subtitle="Solicitações de entrega recebidas pelo admin, direcionadas para o entregador." />
+    <section className="panel table-panel" style={{ marginBottom: 22 }}>
+      <form className="daily-entry-form" style={{ gridTemplateColumns: '1.3fr 1fr .8fr .6fr 1fr auto' }} onSubmit={submit}>
+        <label>Cliente<input list="os-customers" required value={form.customer} data-testid="os-customer-input" onChange={e => pickCustomer(e.target.value)} /><datalist id="os-customers">{customers.map(c => <option key={c.id} value={c.name} />)}</datalist></label>
+        <label>Endereço<input value={form.address} data-testid="os-address-input" onChange={e => setForm({ ...form, address: e.target.value })} /></label>
+        <label>Produto<input placeholder="ex: Minalar 20L" value={form.brand} data-testid="os-product-input" onChange={e => setForm({ ...form, brand: e.target.value })} /></label>
+        <label>Qtd<input type="number" value={form.quantity} data-testid="os-quantity-input" onChange={e => setForm({ ...form, quantity: e.target.value })} /></label>
+        <label>Entregador<select required value={form.driver} data-testid="os-driver-select" onChange={e => setForm({ ...form, driver: e.target.value })}><option value="">Selecione</option>{drivers.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}</select></label>
+        <button className="primary" data-testid="os-submit-button"><Plus size={15} /> Criar OS</button>
+      </form>
+      <div style={{ padding: '0 23px 20px' }}>
+        <label className="muted" style={{ display: 'grid', gap: 6, fontSize: 12, fontWeight: 700 }}>Observações<input value={form.notes} data-testid="os-notes-input" onChange={e => setForm({ ...form, notes: e.target.value })} style={{ padding: 11, border: '1px solid var(--line)', borderRadius: 5 }} /></label>
+      </div>
+      {error && <div className="error" style={{ margin: '0 23px 16px' }} data-testid="os-form-error">{error}</div>}
+    </section>
+
+    <div className="filter-row">
+      <button className={filter === 'pending' ? 'active' : ''} onClick={() => setFilter('pending')} data-testid="os-filter-pending">Pendentes</button>
+      <button className={filter === 'done' ? 'active' : ''} onClick={() => setFilter('done')} data-testid="os-filter-done">Concluídas</button>
+      <button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')} data-testid="os-filter-all">Todas</button>
+    </div>
+
+    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CLIENTE</th><th>PRODUTO</th><th>QTD</th><th>ENTREGADOR</th><th>SITUAÇÃO</th><th /></tr></thead><tbody>
+      {filtered.map(o => {
+        const driverUser = drivers.find(d => d.name === o.driver);
+        const link = whatsappLinkFor(o, driverUser);
+        const status = o.status || 'pending';
+        return <tr key={o.id} data-testid={`os-row-${o.id}`}>
+          <td><b>{o.customer}</b>{o.address && <small>{o.address}</small>}{o.notes && <small className="muted">{o.notes}</small>}</td>
+          <td>{o.brand || '—'}</td>
+          <td>{o.quantity || '—'}</td>
+          <td>{o.driver}</td>
+          <td><span className={`tag ${statusTag[status]}`}>{statusLabel[status]}</span></td>
+          <td><div className="row-actions">
+            {link ? <a className="action-btn approve" href={link} target="_blank" rel="noreferrer" data-testid={`os-whatsapp-${o.id}`}>WhatsApp</a> : <span className="muted" style={{ fontSize: 11 }} title="Cadastre o telefone do entregador em Usuários">Sem telefone</span>}
+            {status === 'pending' && <button className="action-btn ghost" data-testid={`os-done-${o.id}`} onClick={() => setStatus(o, 'done')}><Check size={13} /> Concluir</button>}
+            {status !== 'cancelled' && status !== 'done' && <button className="action-btn reject" data-testid={`os-cancel-${o.id}`} onClick={() => setStatus(o, 'cancelled')}><XCircle size={13} /> Cancelar</button>}
+            <button className="action-btn reject" data-testid={`os-delete-${o.id}`} onClick={() => remove(o)}><Trash2 size={13} /></button>
+          </div></td>
+        </tr>
+      })}
+      {filtered.length === 0 && <tr><td colSpan={6} className="muted" style={{ padding: 16 }}>Nenhuma ordem de serviço encontrada.</td></tr>}
+    </tbody></table></div></section></>
+}
+
 function Reports() {
   const [r, setR] = useState(null);
   const [profit, setProfit] = useState(null);
@@ -828,7 +924,7 @@ function MobilePickerRow({ c, onClick }) {
   </button>
 }
 
-function MobileClientesTab({ customers, entries, date, onOpenPicker, onOpenCustomer, search, setSearch }) {
+function MobileClientesTab({ customers, entries, orders, onCompleteOrder, date, onOpenPicker, onOpenCustomer, search, setSearch }) {
   const todaysEntries = entries.filter(e => e.date === date);
   const doneNames = new Set(todaysEntries.map(e => e.customer));
   const receivedToday = todaysEntries.reduce((s, e) => s + Number(e.pix_value || 0) + Number(e.cash_value || 0), 0);
@@ -836,6 +932,13 @@ function MobileClientesTab({ customers, entries, date, onOpenPicker, onOpenCusto
   const goal = customers.length || 1;
   const progress = Math.min(100, (doneNames.size / goal) * 100);
   return <div className="mob-screen">
+    {orders?.length > 0 && <div className="mob-orders-card" data-testid="mob-pending-orders">
+      <p className="mob-eyebrow">ORDENS DE SERVIÇO · {orders.length} PENDENTE{orders.length > 1 ? 'S' : ''}</p>
+      {orders.map(o => <div className="mob-order-row" key={o.id} data-testid={`mob-order-${o.id}`}>
+        <div><b>{o.customer}</b><small>{o.brand || 'Produto a combinar'}{o.quantity ? ` · ${o.quantity} un` : ''}</small>{o.address && <small>{o.address}</small>}{o.notes && <small>{o.notes}</small>}</div>
+        <button type="button" className="mob-outline-btn" data-testid={`mob-order-done-${o.id}`} onClick={() => onCompleteOrder(o)}>Concluir</button>
+      </div>)}
+    </div>}
     <div className="mob-summary-card">
       <div className="mob-summary-row"><span>{doneNames.size} cliente{doneNames.size !== 1 ? 's' : ''} lançado{doneNames.size !== 1 ? 's' : ''} hoje</span><b data-testid="mob-received-today">{money(receivedToday)}</b></div>
       <div className="mob-progress"><div style={{ width: `${progress}%` }} /></div>
@@ -1157,12 +1260,15 @@ function DriverMobileApp({ user, customers, onLogout }) {
   const [search, setSearch] = useState('');
   const [entries, setEntries] = useState([]);
   const [expensesTotal, setExpensesTotal] = useState(0);
+  const [orders, setOrders] = useState([]);
   const [toast, setToast] = useState('');
   const date = todayISO(0);
 
   async function loadEntries() { const { data } = await api.get('/daily-entries', { ...auth(), params: { driver: user.name } }); setEntries(data); }
+  async function loadOrders() { const { data } = await api.get('/service-orders', auth()); setOrders(data.filter(o => (o.status || 'pending') === 'pending')); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { loadEntries(); }, []);
+  useEffect(() => { loadEntries(); loadOrders(); }, []);
+  async function completeOrder(o) { await api.patch(`/service-orders/${o.id}`, { status: 'done' }, auth()); setOrders(orders.filter(x => x.id !== o.id)); }
   useEffect(() => { api.get('/expenses', auth()).then(({ data }) => setExpensesTotal(data.filter(x => (x.driver || '') === user.name && (x.created_at || '').slice(0, 10) === date && x.status !== 'rejected').reduce((s, x) => s + Number(x.amount || 0), 0))); }, [date, tab, user.name]);
 
   function pickCustomer(c) { setPicker(false); setSheetCustomer(c); }
@@ -1181,7 +1287,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
   return <div className={`mobile-app${theme === 'dark' ? ' dark' : ''}`} style={{ '--scale': textScale }} data-testid="mobile-driver-app">
     <MobileHeader user={user} title={title} subtitle={subtitle} theme={theme} onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />
     <main className="mob-main">
-      {tab === 'clientes' && <MobileClientesTab customers={customers} entries={entries} date={date} onOpenPicker={() => setPicker(true)} onOpenCustomer={c => setSheetCustomer(c)} search={search} setSearch={setSearch} />}
+      {tab === 'clientes' && <MobileClientesTab customers={customers} entries={entries} orders={orders} onCompleteOrder={completeOrder} date={date} onOpenPicker={() => setPicker(true)} onOpenCustomer={c => setSheetCustomer(c)} search={search} setSearch={setSearch} />}
       {tab === 'diario' && <MobileDiarioTab entries={entries} date={date} />}
       {tab === 'caixa' && <MobileCaixaTab entries={entries} expensesTotal={expensesTotal} date={date} onAddExpense={() => setTab('despesas')} onCloseDay={() => { setToast('Dia fechado!'); setTimeout(() => setToast(''), 2200); }} />}
       {tab === 'despesas' && <MobileDespesasTab user={user} date={date} />}
@@ -1223,6 +1329,7 @@ function App() {
       <Route path="/estoque" element={<Stock data={data} setData={setData} create={setModal} />} />
       <Route path="/financeiro" element={<Finance data={data} setData={setData} create={setModal} user={user} />} />
       <Route path="/provisao" element={adminOnly(<Receivables />)} />
+      <Route path="/ordens-servico" element={adminOnly(<ServiceOrders customers={customers} />)} />
       <Route path="/marcas-extras" element={adminOnly(<OutOfCatalogBrands />)} />
       <Route path="/clientes" element={<Customers items={customers} create={setModal} />} />
       <Route path="/usuarios" element={adminOnly(<UsersPage me={user} />)} />
