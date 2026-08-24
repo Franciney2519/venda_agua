@@ -924,7 +924,7 @@ function MobilePickerRow({ c, onClick }) {
   </button>
 }
 
-function MobileClientesTab({ customers, entries, orders, onCompleteOrder, date, onOpenPicker, onOpenCustomer, search, setSearch }) {
+function MobileClientesTab({ customers, entries, orders, onStartOrder, date, onOpenPicker, onOpenCustomer, search, setSearch }) {
   const todaysEntries = entries.filter(e => e.date === date);
   const doneNames = new Set(todaysEntries.map(e => e.customer));
   const receivedToday = todaysEntries.reduce((s, e) => s + Number(e.pix_value || 0) + Number(e.cash_value || 0), 0);
@@ -936,7 +936,7 @@ function MobileClientesTab({ customers, entries, orders, onCompleteOrder, date, 
       <p className="mob-eyebrow">ORDENS DE SERVIÇO · {orders.length} PENDENTE{orders.length > 1 ? 'S' : ''}</p>
       {orders.map(o => <div className="mob-order-row" key={o.id} data-testid={`mob-order-${o.id}`}>
         <div><b>{o.customer}</b><small>{o.brand || 'Produto a combinar'}{o.quantity ? ` · ${o.quantity} un` : ''}</small>{o.address && <small>{o.address}</small>}{o.notes && <small>{o.notes}</small>}</div>
-        <button type="button" className="mob-outline-btn" data-testid={`mob-order-done-${o.id}`} onClick={() => onCompleteOrder(o)}>Concluir</button>
+        <button type="button" className="mob-outline-btn" data-testid={`mob-order-launch-${o.id}`} onClick={() => onStartOrder(o)}>Lançar entrega</button>
       </div>)}
     </div>}
     <div className="mob-summary-card">
@@ -972,9 +972,17 @@ function MobilePickerSheet({ customers, onClose, onPick, onNewCustomer }) {
   </div>
 }
 
-function MobileLaunchPanel({ customer, user, date, onClose, onComplete }) {
+function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillOrder }) {
   const [customerName, setCustomerName] = useState(customer.name || '');
-  const [lines, setLines] = useState(() => brandListOf(customer).map(b => ({ brand: b.brand, priceExchange: Number(b.price) || 0, priceFull: b.price_full != null ? Number(b.price_full) || 0 : null, saleType: 'exchange', qty: 0, mf: 0 })));
+  const [lines, setLines] = useState(() => {
+    const base = brandListOf(customer).map(b => ({ brand: b.brand, priceExchange: Number(b.price) || 0, priceFull: b.price_full != null ? Number(b.price_full) || 0 : null, saleType: 'exchange', qty: 0, mf: 0 }));
+    if (prefillOrder?.brand) {
+      const idx = base.findIndex(l => l.brand.toLowerCase() === prefillOrder.brand.toLowerCase());
+      if (idx >= 0) base[idx] = { ...base[idx], qty: Number(prefillOrder.quantity) || base[idx].qty };
+      else base.push({ brand: prefillOrder.brand, priceExchange: 0, priceFull: null, saleType: 'exchange', qty: Number(prefillOrder.quantity) || 0, mf: 0, extra: true });
+    }
+    return base;
+  });
   const [adding, setAdding] = useState(false);
   const [newBrand, setNewBrand] = useState('');
   const [newPrice, setNewPrice] = useState('');
@@ -1049,6 +1057,7 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete }) {
         <button type="button" className="mob-close" data-testid="mob-panel-close" onClick={onClose}><X size={18} /></button>
       </div>
 
+      {prefillOrder && <div className="mob-order-banner" data-testid="mob-order-banner">Vindo da ordem de serviço{prefillOrder.notes ? ` · ${prefillOrder.notes}` : ''}{lines.some(l => l.extra && l.brand.toLowerCase() === (prefillOrder.brand || '').toLowerCase()) ? ' · confira o preço, esse produto não está no cadastro do cliente' : ''}</div>}
       <p className="mob-eyebrow">PRODUTOS DO CADASTRO · TOQUE + OU DIGITE A QUANTIDADE</p>
       <div className="mob-lines">
         {lines.map((l, i) => <div className={`mob-line${l.qty > 0 ? ' active' : ''}`} key={i} data-testid={`mob-line-${i}`}>
@@ -1257,6 +1266,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
   const [tab, setTab] = useState('clientes');
   const [picker, setPicker] = useState(false);
   const [sheetCustomer, setSheetCustomer] = useState(null);
+  const [sheetOrder, setSheetOrder] = useState(null);
   const [search, setSearch] = useState('');
   const [entries, setEntries] = useState([]);
   const [expensesTotal, setExpensesTotal] = useState(0);
@@ -1269,13 +1279,20 @@ function DriverMobileApp({ user, customers, onLogout }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadEntries(); loadOrders(); }, []);
   async function completeOrder(o) { await api.patch(`/service-orders/${o.id}`, { status: 'done' }, auth()); setOrders(orders.filter(x => x.id !== o.id)); }
+
+  function startOrder(o) {
+    const existing = customers.find(c => c.name.toLowerCase() === (o.customer || '').toLowerCase());
+    setSheetCustomer(existing || { id: null, name: o.customer, address: o.address || '', brands: [] });
+    setSheetOrder(o);
+  }
   useEffect(() => { api.get('/expenses', auth()).then(({ data }) => setExpensesTotal(data.filter(x => (x.driver || '') === user.name && (x.created_at || '').slice(0, 10) === date && x.status !== 'rejected').reduce((s, x) => s + Number(x.amount || 0), 0))); }, [date, tab, user.name]);
 
-  function pickCustomer(c) { setPicker(false); setSheetCustomer(c); }
-  function newCustomer() { setPicker(false); setSheetCustomer({ id: null, name: '', address: '', brands: [] }); }
+  function pickCustomer(c) { setPicker(false); setSheetOrder(null); setSheetCustomer(c); }
+  function newCustomer() { setPicker(false); setSheetOrder(null); setSheetCustomer({ id: null, name: '', address: '', brands: [] }); }
 
   function onEntryComplete(entry) {
     setEntries([entry, ...entries]);
+    if (sheetOrder) { completeOrder(sheetOrder); setSheetOrder(null); }
     setSheetCustomer(null);
     setToast('Entrega registrada!');
     setTimeout(() => setToast(''), 2200);
@@ -1287,7 +1304,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
   return <div className={`mobile-app${theme === 'dark' ? ' dark' : ''}`} style={{ '--scale': textScale }} data-testid="mobile-driver-app">
     <MobileHeader user={user} title={title} subtitle={subtitle} theme={theme} onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />
     <main className="mob-main">
-      {tab === 'clientes' && <MobileClientesTab customers={customers} entries={entries} orders={orders} onCompleteOrder={completeOrder} date={date} onOpenPicker={() => setPicker(true)} onOpenCustomer={c => setSheetCustomer(c)} search={search} setSearch={setSearch} />}
+      {tab === 'clientes' && <MobileClientesTab customers={customers} entries={entries} orders={orders} onStartOrder={startOrder} date={date} onOpenPicker={() => setPicker(true)} onOpenCustomer={c => { setSheetOrder(null); setSheetCustomer(c); }} search={search} setSearch={setSearch} />}
       {tab === 'diario' && <MobileDiarioTab entries={entries} date={date} />}
       {tab === 'caixa' && <MobileCaixaTab entries={entries} expensesTotal={expensesTotal} date={date} onAddExpense={() => setTab('despesas')} onCloseDay={() => { setToast('Dia fechado!'); setTimeout(() => setToast(''), 2200); }} />}
       {tab === 'despesas' && <MobileDespesasTab user={user} date={date} />}
@@ -1295,7 +1312,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
     </main>
     <MobileBottomNav tab={tab} setTab={setTab} />
     {picker && <MobilePickerSheet customers={customers} onClose={() => setPicker(false)} onPick={pickCustomer} onNewCustomer={newCustomer} />}
-    {sheetCustomer && <MobileLaunchPanel customer={sheetCustomer} user={user} date={date} onClose={() => setSheetCustomer(null)} onComplete={onEntryComplete} />}
+    {sheetCustomer && <MobileLaunchPanel customer={sheetCustomer} prefillOrder={sheetOrder} user={user} date={date} onClose={() => { setSheetCustomer(null); setSheetOrder(null); }} onComplete={onEntryComplete} />}
     <MobileToast text={toast} />
   </div>
 }

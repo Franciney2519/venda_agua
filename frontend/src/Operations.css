@@ -141,6 +141,7 @@
 .mob-sheet-list{display:flex;flex-direction:column;gap:10px;margin:14px 0}
 
 .mob-eyebrow{font-size:calc(12.5px * var(--scale));font-weight:700;letter-spacing:.6px;color:var(--mob-muted);text-transform:uppercase;margin:10px 0 8px}
+.mob-order-banner{background:var(--mob-orange-soft);border:1px solid var(--mob-orange-border);color:var(--mob-orange);border-radius:10px;padding:9px 12px;font-size:calc(12.5px * var(--scale));font-weight:600;margin-bottom:4px}
 .mob-lines{display:grid;gap:10px}
 .mob-line{background:var(--mob-surface2);border-radius:16px;padding:14px;border:1.5px solid var(--mob-line)}
 .mob-line.active{border-color:var(--mob-blue)}
