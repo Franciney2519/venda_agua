@@ -4,6 +4,8 @@ import { BrowserRouter, Routes, Route, NavLink, Navigate, Link } from "react-rou
 import { LayoutDashboard, Truck, Package, WalletCards, Users, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, Clock3, CircleDollarSign, BarChart3, Save, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle, CalendarCheck, Wallet, Eye, EyeOff, Minus, Sun, Moon, Camera, Search, MoreHorizontal, Fuel, Utensils, Wrench, Receipt, ChevronRight } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import logoImg from "./assets/logo.png";
+import { LOGO_PNG_BASE64 } from "./logoBase64";
 import "@/App.css";
 import "@/Operations.css";
 
@@ -24,12 +26,13 @@ function entryItemsList(entry) {
 function buildReceiptDoc(entry) {
   const doc = new jsPDF();
   const dt = formatDateTimeManaus(entry.created_at);
+  try { doc.addImage(LOGO_PNG_BASE64, 'PNG', 14, 10, 18, 17.6); } catch (err) { /* logo indisponível, ignora */ }
   doc.setFontSize(17); doc.setTextColor(8, 120, 209);
-  doc.text('Distribuidora Diane', 14, 18);
+  doc.text('Distribuidora Diane', 36, 18);
   doc.setFontSize(12); doc.setTextColor(16, 37, 63);
-  doc.text('Comprovante de Entrega / Recibo de Pagamento', 14, 26);
+  doc.text('Comprovante de Entrega / Recibo de Pagamento', 36, 26);
   doc.setFontSize(9); doc.setTextColor(110, 130, 152);
-  doc.text(`${entry.entry_number ? `Nº ${entry.entry_number} · ` : ''}${dt}`, 14, 32);
+  doc.text(`${entry.entry_number ? `Nº ${entry.entry_number} · ` : ''}${dt}`, 36, 32);
   doc.setFontSize(10); doc.setTextColor(16, 37, 63);
   let y = 42;
   doc.text(`Cliente: ${entry.customer || '-'}`, 14, y); y += 6;
@@ -112,7 +115,7 @@ function Shell({ user, onLogout, notifications, children }) {
   const links = user.role === 'driver' ? driverNav : nav;
   const badges = { '/usuarios': notifications?.pending_users || 0, '/financeiro': notifications?.pending_expenses || 0 };
   const total = notifications?.total || 0;
-  return <div className={`app-shell${theme === 'dark' ? ' dark' : ''}`}><aside className={open ? 'sidebar open' : 'sidebar'}><div className="brand"><span className="brand-mark"><Droplets size={20} /></span><span>Distribuidora <span>Diane</span></span></div><div className="workspace"><small>OPERAÇÃO</small><b>{user.role === 'admin' ? 'Admin · Base Central' : 'Entregador'} <span>⌄</span></b></div>
+  return <div className={`app-shell${theme === 'dark' ? ' dark' : ''}`}><aside className={open ? 'sidebar open' : 'sidebar'}><div className="brand"><img src={logoImg} alt="Distribuidora Diane" className="brand-logo" /><span>Distribuidora <span>Diane</span></span></div><div className="workspace"><small>OPERAÇÃO</small><b>{user.role === 'admin' ? 'Admin · Base Central' : 'Entregador'} <span>⌄</span></b></div>
     <nav>{links.map(([to, label, Icon]) => <NavLink key={to} to={to} end={to === '/'} onClick={() => setOpen(false)} data-testid={`nav-${label.toLowerCase().replaceAll(' ', '-')}`}>
       <Icon size={18} />{label}
       {badges[to] > 0 && <span className="nav-badge" data-testid={`badge-${to.replace('/', '')}`}>{badges[to]}</span>}
@@ -146,7 +149,7 @@ function Login({ onLogin }) {
     } catch (e) { setError(e.response?.data?.detail || 'Não foi possível concluir a operação'); }
   }
   const isLogin = mode === 'login', isSignup = mode === 'signup', isForgot = mode === 'forgot';
-  return <div className="login-page"><div className="login-art"><div className="login-brand"><Droplets /> Distribuidora <span>Diane</span></div><div className="login-quote">Água em movimento.<br /><em>Operação sob controle.</em></div></div>
+  return <div className="login-page"><div className="login-art"><div className="login-brand"><img src={logoImg} alt="Distribuidora Diane" className="login-logo" /> Distribuidora <span>Diane</span></div><div className="login-quote">Água em movimento.<br /><em>Operação sob controle.</em></div></div>
     <form className="login-form" onSubmit={submit}>
       <p className="eyebrow">{isLogin ? 'BEM-VINDO DE VOLTA' : isSignup ? 'CRIAR CONTA' : 'RECUPERAR ACESSO'}</p>
       <h1>{isLogin ? 'Acesse sua operação' : isSignup ? 'Cadastre-se para começar' : 'Esqueceu a senha?'}</h1>
