@@ -188,7 +188,9 @@ async def update_product(item_id: str, data: ResourceInput, user=Depends(admin_u
 @api.get("/expenses")
 async def expenses(user=Depends(current_user)): return await list_resource("expenses")
 @api.post("/expenses")
-async def add_expense(data: ResourceInput, user=Depends(current_user)): return await create_resource("expenses", data, user)
+async def add_expense(data: ResourceInput, user=Depends(current_user)):
+    if user.get("role") != "admin": data.driver = user["name"]
+    return await create_resource("expenses", data, user)
 @api.patch("/expenses/{item_id}")
 async def update_expense(item_id: str, data: ResourceInput, user=Depends(admin_user)):
     target = await db.expenses.find_one({"id": item_id}, {"_id": 0})
@@ -278,7 +280,7 @@ async def daily_entries(date: Optional[str] = None, start: Optional[str] = None,
 @api.post("/daily-entries")
 async def add_daily_entry(data: ResourceInput, user=Depends(current_user)):
     doc = data.model_dump(exclude_none=True)
-    doc["driver"] = doc.get("driver") or user["name"]
+    doc["driver"] = user["name"] if user.get("role") != "admin" else (doc.get("driver") or user["name"])
     doc["date"] = doc.get("date") or datetime.now(timezone.utc).date().isoformat()
     items = doc.get("items")
     if items:
@@ -353,6 +355,7 @@ async def update_service_order(item_id: str, data: ResourceInput, user=Depends(c
     if not target: raise HTTPException(404, "Ordem de serviço não encontrada")
     if user.get("role") != "admin" and target.get("driver") != user["name"]: raise HTTPException(403, "Sem permissão")
     values = data.model_dump(exclude_unset=True)
+    if user.get("role") != "admin": values = {k: v for k, v in values.items() if k == "status"}
     await db.service_orders.update_one({"id": item_id}, {"$set": values})
     doc = await db.service_orders.find_one({"id": item_id}, {"_id": 0})
     if values.get("status") == "done":
