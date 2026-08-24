@@ -8,6 +8,7 @@ from fastapi.responses import PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import ReturnDocument
 import csv, io
 
 ROOT_DIR = Path(__file__).parent
@@ -79,6 +80,9 @@ def today_local(): return now_local().date().isoformat()
 def local_day_start_utc(day_str): return datetime.fromisoformat(day_str).replace(tzinfo=MANAUS_TZ).astimezone(timezone.utc).isoformat()
 def local_day_end_utc(day_str): return (datetime.fromisoformat(day_str).replace(tzinfo=MANAUS_TZ) + timedelta(days=1) - timedelta(microseconds=1)).astimezone(timezone.utc).isoformat()
 def entry_total(e): return float(e.get("total") or 0)
+async def next_sequence(name):
+    doc = await db.counters.find_one_and_update({"_id": name}, {"$inc": {"seq": 1}}, upsert=True, return_document=ReturnDocument.AFTER)
+    return doc["seq"]
 def hash_password(password): return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 def check_password(password, hashed): return bcrypt.checkpw(password.encode(), hashed.encode())
 def token_for(user): return jwt.encode({"sub": user["id"], "email": user["email"], "role": user["role"], "exp": datetime.now(timezone.utc)+timedelta(hours=12)}, os.environ["JWT_SECRET"], algorithm=JWT_ALGORITHM)
@@ -314,6 +318,7 @@ async def add_daily_entry(data: ResourceInput, user=Depends(current_user)):
         due = datetime.fromisoformat(doc["date"]) + timedelta(days=days)
         doc["due_date"] = due.date().isoformat()
         doc["received"] = False
+    doc["entry_number"] = await next_sequence("daily_entries")
     doc.update({"id": str(uuid.uuid4()), "created_at": now(), "created_by": user["id"]})
 
     mf_plan = doc.get("mf_plan")

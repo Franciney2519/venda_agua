@@ -785,8 +785,11 @@ function ServiceOrders({ customers }) {
 
   function pickCustomer(name) {
     const c = customers.find(x => x.name === name);
-    setForm({ ...form, customer: name, address: c?.address || form.address });
+    const brandOpts = brandListOf(c);
+    setForm({ ...form, customer: name, address: c?.address || form.address, brand: brandOpts[0]?.brand || '' });
   }
+  const selectedCustomer = customers.find(x => x.name === form.customer);
+  const brandOptions = brandListOf(selectedCustomer);
 
   async function submit(e) {
     e.preventDefault(); setError('');
@@ -811,7 +814,10 @@ function ServiceOrders({ customers }) {
       <form className="os-form" onSubmit={submit}>
         <label>Cliente<input list="os-customers" required value={form.customer} data-testid="os-customer-input" onChange={e => pickCustomer(e.target.value)} /><datalist id="os-customers">{customers.map(c => <option key={c.id} value={c.name} />)}</datalist></label>
         <label>Endereço<input value={form.address} data-testid="os-address-input" onChange={e => setForm({ ...form, address: e.target.value })} /></label>
-        <label>Produto<input placeholder="ex: Minalar 20L" value={form.brand} data-testid="os-product-input" onChange={e => setForm({ ...form, brand: e.target.value })} /></label>
+        <label>Produto{brandOptions.length > 0
+          ? <select value={form.brand} data-testid="os-product-select" onChange={e => setForm({ ...form, brand: e.target.value })}>{brandOptions.map(b => <option key={b.brand} value={b.brand}>{b.brand} · {money(b.price)}</option>)}</select>
+          : <input placeholder="ex: Minalar 20L" value={form.brand} data-testid="os-product-input" onChange={e => setForm({ ...form, brand: e.target.value })} />}
+        </label>
         <label className="os-field-narrow">Qtd<input type="number" value={form.quantity} data-testid="os-quantity-input" onChange={e => setForm({ ...form, quantity: e.target.value })} /></label>
         <label>Entregador<select required value={form.driver} data-testid="os-driver-select" onChange={e => setForm({ ...form, driver: e.target.value })}><option value="">Selecione</option>{drivers.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}</select></label>
         <label>Observações<input value={form.notes} data-testid="os-notes-input" onChange={e => setForm({ ...form, notes: e.target.value })} /></label>
@@ -854,7 +860,7 @@ function SignatureViewModal({ entry, onClose }) {
   return <div className="modal-backdrop" onClick={onClose}>
     <div className="quick-modal" onClick={e => e.stopPropagation()}>
       <button type="button" className="modal-close" onClick={onClose} data-testid="signature-view-close"><X /></button>
-      <p className="eyebrow">COMPROVANTE DE ENTREGA</p>
+      <p className="eyebrow">COMPROVANTE DE ENTREGA{entry.entry_number ? ` · Nº ${entry.entry_number}` : ''}</p>
       <h3>{entry.customer}</h3>
       <p className="muted">{entry.date} · {entry.driver} · {items.map(it => `${it.quantity} ${it.brand}`).join(' + ')} · {money(entry.total)}</p>
       {entry.signature ? <img src={entry.signature} alt="Assinatura do cliente" style={{ width: '100%', border: '1px solid var(--line)', borderRadius: 8, background: '#fff' }} data-testid="signature-view-image" /> : <p className="muted" data-testid="signature-view-missing">Este lançamento não tem assinatura registrada.</p>}
@@ -891,10 +897,11 @@ function Receipts() {
       </div>
       {loading && <Loader2 size={16} className="spin blue-text" />}
     </div>
-    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>DATA</th><th>CLIENTE</th><th>ENTREGADOR</th><th>PRODUTO</th><th>TOTAL</th><th>ASSINATURA</th><th /></tr></thead><tbody>
+    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>Nº</th><th>DATA</th><th>CLIENTE</th><th>ENTREGADOR</th><th>PRODUTO</th><th>TOTAL</th><th>ASSINATURA</th><th /></tr></thead><tbody>
       {entries.map(e => {
         const items = e.items?.length ? e.items : (e.brand ? [{ brand: e.brand, quantity: e.billed_quantity ?? e.quantity }] : []);
         return <tr key={e.id} data-testid={`receipt-row-${e.id}`}>
+          <td>{e.entry_number ? `#${e.entry_number}` : '—'}</td>
           <td>{e.date}</td>
           <td><b>{e.customer}</b></td>
           <td>{e.driver}</td>
@@ -904,7 +911,7 @@ function Receipts() {
           <td><button className="action-btn ghost" data-testid={`receipt-view-${e.id}`} onClick={() => setViewing(e)}><FileText size={13} /> Ver</button></td>
         </tr>
       })}
-      {entries.length === 0 && <tr><td colSpan={7} className="muted" style={{ padding: 16 }}>Nenhum lançamento encontrado no período/busca.</td></tr>}
+      {entries.length === 0 && <tr><td colSpan={8} className="muted" style={{ padding: 16 }}>Nenhum lançamento encontrado no período/busca.</td></tr>}
     </tbody></table></div></section>
     {viewing && <SignatureViewModal entry={viewing} onClose={() => setViewing(null)} />}
   </>
@@ -1285,7 +1292,7 @@ function MobileDiarioTab({ entries, date }) {
         const lineItems = e.items?.length ? e.items : (e.brand ? [{ brand: e.brand, quantity: e.billed_quantity ?? e.quantity }] : []);
         const itemsLabel = lineItems.map(it => `${it.quantity} ${it.brand}`).join(' + ') || `${e.billed_quantity ?? e.quantity} galões`;
         return <div className="mob-entry-card" key={e.id} data-testid={`mob-entry-${e.id}`}>
-          <div className="mob-entry-top"><b>{e.customer}</b><b>{money(e.total)}</b></div>
+          <div className="mob-entry-top"><b>{e.customer}{e.entry_number ? <small style={{ fontWeight: 400, marginLeft: 6 }}>Nº {e.entry_number}</small> : null}</b><b>{money(e.total)}</b></div>
           <div className="mob-chips">
             <span className="mob-chip neutral">{itemsLabel}</span>
             <span className="mob-chip blue">Pix {money(e.pix_value)}</span>
