@@ -100,9 +100,16 @@ function Modal({ title, fields, onClose, onSave }) { const [form, setForm] = use
 
 const fields = { product: [{ key: 'name', label: 'Nome do produto' }, { key: 'brand', label: 'Marca', required: false }, { key: 'category', label: 'Categoria', options: ['Retornável', 'Descartável'] }, { key: 'quantity', label: 'Quantidade', type: 'number' }, { key: 'minimum', label: 'Estoque mínimo', type: 'number' }, { key: 'cost_price', label: 'Custo de compra (R$/un)', type: 'number', required: false }, { key: 'batch', label: 'Lote', required: false }, { key: 'purchase_date', label: 'Data de compra', type: 'date', required: false }], expense: [{ key: 'type', label: 'Categoria', options: ['Combustível', 'Alimentação', 'Pedágio', 'Manutenção', 'Outros'] }, { key: 'driver', label: 'Entregador' }, { key: 'amount', label: 'Valor', type: 'number' }], customer: [{ key: 'name', label: 'Nome / empresa' }, { key: 'address', label: 'Endereço' }, { key: 'phone', label: 'Telefone', required: false }] };
 
-function CustomerModal({ onClose, onSave }) {
-  const [form, setForm] = useState({ name: '', address: '', phone: '', code: '', payment_type: 'normal' });
-  const [brands, setBrands] = useState([{ brand: '', price: '', price_full: '' }]);
+function CustomerModal({ onClose, onSave, customer }) {
+  const isEdit = !!customer;
+  const [form, setForm] = useState(isEdit
+    ? { name: customer.name || '', address: customer.address || '', phone: customer.phone || '', code: customer.code || '', payment_type: customer.payment_type || 'normal' }
+    : { name: '', address: '', phone: '', code: '', payment_type: 'normal' });
+  const [brands, setBrands] = useState(
+    isEdit && brandListOf(customer).length
+      ? brandListOf(customer).map(b => ({ brand: b.brand || '', price: b.price ?? '', price_full: b.price_full ?? '' }))
+      : [{ brand: '', price: '', price_full: '' }]
+  );
   const [error, setError] = useState('');
 
   function updateBrand(i, key, value) { const next = [...brands]; next[i] = { ...next[i], [key]: value }; setBrands(next); }
@@ -119,8 +126,8 @@ function CustomerModal({ onClose, onSave }) {
 
   return <div className="modal-backdrop"><form className="quick-modal" onSubmit={submit}>
     <button type="button" className="modal-close" onClick={onClose} data-testid="modal-close-button"><X /></button>
-    <p className="eyebrow">NOVO LANÇAMENTO</p>
-    <h3>Cadastrar cliente</h3>
+    <p className="eyebrow">{isEdit ? 'EDITAR CADASTRO' : 'NOVO LANÇAMENTO'}</p>
+    <h3>{isEdit ? `Editar ${customer.name}` : 'Cadastrar cliente'}</h3>
     <label>Código do cliente<input value={form.code} placeholder="ex: 0047" data-testid="modal-code-input" onChange={e => setForm({ ...form, code: e.target.value })} /></label>
     <label>Nome / empresa<input required value={form.name} data-testid="modal-name-input" onChange={e => setForm({ ...form, name: e.target.value })} /></label>
     <label>Endereço<input required value={form.address} data-testid="modal-address-input" onChange={e => setForm({ ...form, address: e.target.value })} /></label>
@@ -138,7 +145,7 @@ function CustomerModal({ onClose, onSave }) {
     </div>)}
     <button type="button" className="ghost-btn" data-testid="modal-add-brand" onClick={addBrand}><Plus size={14} /> Adicionar outro produto</button>
     {error && <div className="error" data-testid="form-validation-error">{error}</div>}
-    <button className="primary full" data-testid="modal-submit-button"><Save size={16} /> Salvar lançamento</button>
+    <button className="primary full" data-testid="modal-submit-button"><Save size={16} /> {isEdit ? 'Salvar alterações' : 'Salvar lançamento'}</button>
   </form></div>
 }
 
@@ -323,7 +330,14 @@ function Finance({ data, setData, create, user }) {
       </tbody></table></div></section></>
 }
 
-function Customers({ items, create }) { return <><Head eyebrow="RELACIONAMENTO" title="Clientes" subtitle="Sua carteira, marcas de água e preço combinado por cliente." action="Novo cliente" onAction={() => create('customer')} /><div className="customer-grid">{items.map(x => { const brandList = x.brands?.length ? x.brands : (x.brand ? [{ brand: x.brand, price: x.price }] : []); return <div className="customer-card" key={x.id}><div className="customer-avatar">{x.name?.[0]}</div><div><b>{x.name}{x.code && <small style={{ display: 'inline', marginLeft: 6, fontWeight: 400 }}>#{x.code}</small>}</b><span>{x.address}</span><small>{x.phone || 'Cliente ativo'}{x.payment_type === 'prazo' && <span className="tag orange" style={{ marginLeft: 6 }}>A prazo</span>}</small>{brandList.length > 0 && <div className="customer-brands">{brandList.map((b, i) => <span className="tag blue" key={i}>{b.brand} · {money(b.price)}</span>)}</div>}</div><ArrowUpRight size={18} /></div> })}</div></> }
+function Customers({ items, create, onEdit }) {
+  const [search, setSearch] = useState('');
+  const filtered = items.filter(x => x.name.toLowerCase().includes(search.toLowerCase()));
+  return <><Head eyebrow="RELACIONAMENTO" title="Clientes" subtitle="Sua carteira, marcas de água e preço combinado por cliente." action="Novo cliente" onAction={() => create('customer')} />
+    <div className="mob-search" style={{ marginBottom: 18, maxWidth: 360 }}><Search size={16} /><input placeholder="Buscar cliente" value={search} data-testid="customers-search-input" onChange={e => setSearch(e.target.value)} /></div>
+    <div className="customer-grid">{filtered.map(x => { const brandList = x.brands?.length ? x.brands : (x.brand ? [{ brand: x.brand, price: x.price }] : []); return <div className="customer-card" key={x.id} data-testid={`customer-card-${x.id}`}><div className="customer-avatar">{x.name?.[0]}</div><div><b>{x.name}{x.code && <small style={{ display: 'inline', marginLeft: 6, fontWeight: 400 }}>#{x.code}</small>}</b><span>{x.address}</span><small>{x.phone || 'Sem telefone'}{x.payment_type === 'prazo' && <span className="tag orange" style={{ marginLeft: 6 }}>A prazo</span>}</small>{brandList.length > 0 && <div className="customer-brands">{brandList.map((b, i) => <span className="tag blue" key={i}>{b.brand} · {money(b.price)}</span>)}</div>}</div><button type="button" className="action-btn ghost" data-testid={`customer-edit-${x.id}`} onClick={() => onEdit(x)}><Pencil size={15} /></button></div> })}
+    {filtered.length === 0 && <p className="muted">Nenhum cliente encontrado.</p>}
+    </div></> }
 
 const DAILY_ENTRY_FIELDS = ['customer', 'brand', 'quantity', 'price', 'mf_quantity', 'comp_value', 'comp_days', 'pix_value', 'cash_value'];
 
@@ -1437,7 +1451,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
 /* =================== fim app mobile do entregador ==================== */
 
 function App() {
-  const [user, setUser] = useState(null), [data, setData] = useState(null), [customers, setCustomers] = useState([]), [checking, setChecking] = useState(true), [modal, setModal] = useState(null), [notifications, setNotifications] = useState({ pending_users: 0, pending_expenses: 0, total: 0 });
+  const [user, setUser] = useState(null), [data, setData] = useState(null), [customers, setCustomers] = useState([]), [checking, setChecking] = useState(true), [modal, setModal] = useState(null), [editCustomer, setEditCustomer] = useState(null), [notifications, setNotifications] = useState({ pending_users: 0, pending_expenses: 0, total: 0 });
   useEffect(() => { const t = localStorage.getItem('hydro_token'); if (t) api.get('/auth/me', auth()).then(x => setUser(x.data)).catch(() => localStorage.removeItem('hydro_token')).finally(() => setChecking(false)); else setChecking(false) }, []);
   useEffect(() => { if (user) Promise.all([api.get('/dashboard', auth()), api.get('/customers', auth())]).then(([a, c]) => { setData(a.data); setCustomers(c.data) }) }, [user]);
   useEffect(() => {
@@ -1454,6 +1468,7 @@ function App() {
   const logout = () => { localStorage.removeItem('hydro_token'); setUser(null) };
   if (user.role === 'driver' && isMobile) return <DriverMobileApp user={user} customers={customers} onLogout={logout} />;
   async function save(kind, form) { const endpoints = { product: '/products', expense: '/expenses', customer: '/customers' }; const payload = { ...form };['quantity', 'minimum', 'value', 'amount'].forEach(k => { if (payload[k] !== undefined) payload[k] = Number(payload[k]) }); if (kind === 'expense') { payload.status = 'approved'; if (!payload.driver) payload.driver = user.name; } const { data: x } = await api.post(endpoints[kind], payload, auth()); if (kind === 'customer') setCustomers([...customers, x]); else { const key = kind === 'product' ? 'products' : 'expenses_list'; setData({ ...data, [key]: [...(data?.[key] || []), x] }) } setModal(null) }
+  async function updateCustomer(id, form) { const { data: x } = await api.patch(`/customers/${id}`, form, auth()); setCustomers(customers.map(c => c.id === id ? x : c)); setEditCustomer(null); }
   const modalFields = fields[modal];
   const adminOnly = el => user.role === 'admin' ? el : <Navigate to="/" replace />;
   return <Shell user={user} onLogout={logout} notifications={notifications}>
@@ -1467,13 +1482,14 @@ function App() {
       <Route path="/comprovantes" element={adminOnly(<Receipts />)} />
       <Route path="/marcas" element={adminOnly(<BrandsCatalog />)} />
       <Route path="/marcas-extras" element={adminOnly(<OutOfCatalogBrands />)} />
-      <Route path="/clientes" element={<Customers items={customers} create={setModal} />} />
+      <Route path="/clientes" element={<Customers items={customers} create={setModal} onEdit={setEditCustomer} />} />
       <Route path="/usuarios" element={adminOnly(<UsersPage me={user} />)} />
       <Route path="/fechamento" element={adminOnly(<DailyClosing />)} />
       <Route path="/atividade" element={adminOnly(<ActivityPage />)} />
       <Route path="/relatorios" element={adminOnly(<Reports />)} />
     </Routes>
     {modal === 'customer' && <CustomerModal onClose={() => setModal(null)} onSave={x => save('customer', x)} />}
+    {editCustomer && <CustomerModal customer={editCustomer} onClose={() => setEditCustomer(null)} onSave={x => updateCustomer(editCustomer.id, x)} />}
     {modal && modal !== 'customer' && <Modal title={{ product: 'Cadastrar produto', expense: 'Lançar despesa' }[modal]} fields={modalFields} onClose={() => setModal(null)} onSave={x => save(modal, x)} />}
   </Shell>
 }

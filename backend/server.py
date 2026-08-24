@@ -40,6 +40,7 @@ class ResourceInput(BaseModel):
     name: Optional[str] = None
     customer: Optional[str] = None
     address: Optional[str] = None
+    phone: Optional[str] = None
     driver: Optional[str] = None
     quantity: Optional[int] = 1
     value: Optional[float] = 0
