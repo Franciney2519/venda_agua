@@ -11,6 +11,80 @@ const api = axios.create({ baseURL: `${process.env.REACT_APP_BACKEND_URL}/api` }
 const auth = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem("hydro_token")}` } });
 const money = v => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v || 0);
 
+function formatDateTimeManaus(iso) {
+  if (!iso) return '';
+  try { return new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Manaus', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' (Manaus)'; }
+  catch { return iso; }
+}
+
+function entryItemsList(entry) {
+  return entry.items?.length ? entry.items : (entry.brand ? [{ brand: entry.brand, quantity: entry.billed_quantity ?? entry.quantity, price: entry.price }] : []);
+}
+
+function buildReceiptDoc(entry) {
+  const doc = new jsPDF();
+  const dt = formatDateTimeManaus(entry.created_at);
+  doc.setFontSize(17); doc.setTextColor(8, 120, 209);
+  doc.text('Distribuidora Diane', 14, 18);
+  doc.setFontSize(12); doc.setTextColor(16, 37, 63);
+  doc.text('Comprovante de Entrega / Recibo de Pagamento', 14, 26);
+  doc.setFontSize(9); doc.setTextColor(110, 130, 152);
+  doc.text(`${entry.entry_number ? `Nº ${entry.entry_number} · ` : ''}${dt}`, 14, 32);
+  doc.setFontSize(10); doc.setTextColor(16, 37, 63);
+  let y = 42;
+  doc.text(`Cliente: ${entry.customer || '-'}`, 14, y); y += 6;
+  if (entry.address) { doc.text(`Endereço: ${entry.address}`, 14, y); y += 6; }
+  doc.text(`Entregador: ${entry.driver || '-'}`, 14, y); y += 8;
+  const items = entryItemsList(entry);
+  autoTable(doc, {
+    startY: y,
+    head: [['Produto', 'Qtd', 'Preço un.', 'Subtotal']],
+    body: items.map(it => [it.brand, it.quantity, money(it.price), money((it.quantity || 0) * (it.price || 0))]),
+    headStyles: { fillColor: [8, 120, 209] },
+  });
+  y = doc.lastAutoTable.finalY + 10;
+  doc.setFontSize(12); doc.setTextColor(16, 37, 63);
+  doc.text(`Total: ${money(entry.total)}`, 14, y); y += 8;
+  doc.setFontSize(9); doc.setTextColor(80, 100, 120);
+  if (entry.pix_value > 0) { doc.text(`Pix: ${money(entry.pix_value)}`, 14, y); y += 6; }
+  if (entry.cash_value > 0) { doc.text(`Dinheiro: ${money(entry.cash_value)}`, 14, y); y += 6; }
+  if (entry.comp_value > 0) { doc.text(`A prazo (${entry.comp_days} dias${entry.due_date ? `, vence ${entry.due_date}` : ''}): ${money(entry.comp_value)}${entry.received ? ' · recebido' : ' · pendente'}`, 14, y); y += 6; }
+  y += 6;
+  if (entry.signature) {
+    doc.setFontSize(9); doc.setTextColor(16, 37, 63);
+    doc.text('Assinatura do cliente:', 14, y); y += 4;
+    try { doc.addImage(entry.signature, 'PNG', 14, y, 80, 38); } catch (err) { /* imagem inválida, ignora */ }
+    y += 42;
+    doc.setFontSize(8); doc.setTextColor(110, 130, 152);
+    doc.text(`Assinado eletronicamente em ${dt}`, 14, y);
+  } else {
+    doc.setFontSize(9); doc.setTextColor(213, 78, 78);
+    doc.text('Sem assinatura registrada para este lançamento.', 14, y);
+  }
+  return doc;
+}
+
+function receiptFileName(entry) { return `comprovante-${entry.entry_number || entry.id.slice(0, 8)}.pdf`; }
+function downloadReceiptPdf(entry) { buildReceiptDoc(entry).save(receiptFileName(entry)); }
+
+function receiptWhatsappMessage(entry) {
+  return `Olá! Segue o comprovante da entrega Nº ${entry.entry_number || ''} no valor de ${money(entry.total)}.`;
+}
+function whatsappTextLink(phone, text) {
+  const digits = (phone || '').replace(/\D/g, '');
+  if (!digits) return null;
+  return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
+}
+async function shareReceiptViaSystem(entry) {
+  const blob = buildReceiptDoc(entry).output('blob');
+  const file = new File([blob], receiptFileName(entry), { type: 'application/pdf' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    await navigator.share({ files: [file], title: 'Comprovante de entrega', text: receiptWhatsappMessage(entry) });
+    return true;
+  }
+  return false;
+}
+
 function useDraft(key, initial) {
   const [value, setValue] = useState(() => { try { const saved = localStorage.getItem(key); return saved ? JSON.parse(saved) : initial; } catch { return initial; } });
   useEffect(() => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { } }, [key, value]);
@@ -855,8 +929,10 @@ function ServiceOrders({ customers }) {
     </tbody></table></div></section></>
 }
 
-function SignatureViewModal({ entry, onClose }) {
-  const items = entry.items?.length ? entry.items : (entry.brand ? [{ brand: entry.brand, quantity: entry.billed_quantity ?? entry.quantity }] : []);
+function SignatureViewModal({ entry, customer, onClose }) {
+  const items = entryItemsList(entry);
+  const phone = customer?.phone;
+  const waLink = phone ? whatsappTextLink(phone, receiptWhatsappMessage(entry)) : null;
   return <div className="modal-backdrop" onClick={onClose}>
     <div className="quick-modal" onClick={e => e.stopPropagation()}>
       <button type="button" className="modal-close" onClick={onClose} data-testid="signature-view-close"><X /></button>
@@ -864,11 +940,15 @@ function SignatureViewModal({ entry, onClose }) {
       <h3>{entry.customer}</h3>
       <p className="muted">{entry.date} · {entry.driver} · {items.map(it => `${it.quantity} ${it.brand}`).join(' + ')} · {money(entry.total)}</p>
       {entry.signature ? <img src={entry.signature} alt="Assinatura do cliente" style={{ width: '100%', border: '1px solid var(--line)', borderRadius: 8, background: '#fff' }} data-testid="signature-view-image" /> : <p className="muted" data-testid="signature-view-missing">Este lançamento não tem assinatura registrada.</p>}
+      <div className="row-actions" style={{ marginTop: 4 }}>
+        <button type="button" className="action-btn ghost" data-testid="receipt-download-pdf" onClick={() => downloadReceiptPdf(entry)}><FileText size={13} /> Baixar comprovante (PDF)</button>
+        {waLink ? <a className="action-btn approve" href={waLink} target="_blank" rel="noreferrer" data-testid="receipt-whatsapp">WhatsApp (baixe o PDF e anexe)</a> : <span className="muted" style={{ fontSize: 11 }} title="Cadastre o telefone do cliente">Sem telefone cadastrado</span>}
+      </div>
     </div>
   </div>
 }
 
-function Receipts() {
+function Receipts({ customers }) {
   const [entries, setEntries] = useState([]);
   const [start, setStart] = useState(todayISO(-7));
   const [end, setEnd] = useState(todayISO(0));
@@ -913,7 +993,7 @@ function Receipts() {
       })}
       {entries.length === 0 && <tr><td colSpan={8} className="muted" style={{ padding: 16 }}>Nenhum lançamento encontrado no período/busca.</td></tr>}
     </tbody></table></div></section>
-    {viewing && <SignatureViewModal entry={viewing} onClose={() => setViewing(null)} />}
+    {viewing && <SignatureViewModal entry={viewing} customer={customers.find(c => c.name === viewing.customer)} onClose={() => setViewing(null)} />}
   </>
 }
 
@@ -1396,6 +1476,58 @@ function MobileAjustesTab({ user, theme, setTheme, textScale, setTextScale, onLo
   </div>
 }
 
+function MobileReceiptPrompt({ entry, customer, onSavePhone, onClose }) {
+  const [stage, setStage] = useState('ask');
+  const [phone, setPhone] = useState(customer?.phone || '');
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  async function resolvePhone() {
+    if (customer?.phone) return customer.phone;
+    if (phone.trim()) { setBusy(true); try { await onSavePhone(phone.trim()); } finally { setBusy(false); } return phone.trim(); }
+    return null;
+  }
+
+  async function handleShare() {
+    setBusy(true);
+    try {
+      const shared = await shareReceiptViaSystem(entry);
+      if (!shared) {
+        const finalPhone = await resolvePhone();
+        downloadReceiptPdf(entry);
+        const link = whatsappTextLink(finalPhone, receiptWhatsappMessage(entry));
+        if (link) window.open(link, '_blank');
+      }
+      setSent(true);
+    } finally { setBusy(false); }
+  }
+
+  return <div className="mob-backdrop" onClick={onClose}>
+    <div className="mob-sheet" onClick={e => e.stopPropagation()}>
+      <div className="mob-sheet-handle" />
+      {stage === 'ask' ? <>
+        <div className="mob-sheet-head">
+          <div><h3>Entrega registrada!</h3><p>{entry.customer} · {money(entry.total)}</p></div>
+          <button type="button" className="mob-close" data-testid="mob-receipt-close" onClick={onClose}><X size={18} /></button>
+        </div>
+        <p className="muted" style={{ padding: '0 2px 16px' }}>O cliente quer o comprovante de entrega?</p>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button type="button" className="mob-outline-btn" data-testid="mob-receipt-skip" onClick={onClose}>Não precisa</button>
+          <button type="button" className="mob-cta" style={{ flex: 1 }} data-testid="mob-receipt-yes" onClick={() => setStage('actions')}>Sim, emitir</button>
+        </div>
+      </> : <>
+        <div className="mob-sheet-head">
+          <div><h3>Comprovante</h3><p>{entry.entry_number ? `Nº ${entry.entry_number} · ` : ''}{money(entry.total)}</p></div>
+          <button type="button" className="mob-close" data-testid="mob-receipt-close-2" onClick={onClose}><X size={18} /></button>
+        </div>
+        {!customer?.phone && !sent && <label>Telefone do cliente (WhatsApp)<input value={phone} placeholder="ex: 5592999999999" data-testid="mob-receipt-phone" onChange={e => setPhone(e.target.value)} /></label>}
+        <button type="button" className="mob-outline-btn wide" data-testid="mob-receipt-download" onClick={() => downloadReceiptPdf(entry)}>Baixar comprovante (PDF)</button>
+        <button type="button" className="mob-cta" disabled={busy} data-testid="mob-receipt-send" onClick={handleShare}>{sent ? 'Enviado' : 'Enviar no WhatsApp'}</button>
+      </>}
+    </div>
+  </div>
+}
+
 function DriverMobileApp({ user, customers, onLogout }) {
   const [theme, setTheme] = useDraft('hydro_theme', 'light');
   const [textScale, setTextScale] = useDraft('hydro_text_scale', 1);
@@ -1407,8 +1539,13 @@ function DriverMobileApp({ user, customers, onLogout }) {
   const [entries, setEntries] = useState([]);
   const [expensesTotal, setExpensesTotal] = useState(0);
   const [orders, setOrders] = useState([]);
+  const [postDelivery, setPostDelivery] = useState(null);
   const [toast, setToast] = useState('');
   const date = todayISO(0);
+  async function savePhoneForCustomerName(name, phone) {
+    const c = customers.find(x => x.name === name);
+    if (c) await api.patch(`/customers/${c.id}`, { phone }, auth());
+  }
 
   async function loadEntries() { const { data } = await api.get('/daily-entries', { ...auth(), params: { driver: user.name } }); setEntries(data); }
   async function loadOrders() { const { data } = await api.get('/service-orders', auth()); setOrders(data.filter(o => (o.status || 'pending') === 'pending')); }
@@ -1430,6 +1567,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
     setEntries([entry, ...entries]);
     if (sheetOrder) { completeOrder(sheetOrder); setSheetOrder(null); }
     setSheetCustomer(null);
+    setPostDelivery(entry);
     setToast('Entrega registrada!');
     setTimeout(() => setToast(''), 2200);
   }
@@ -1449,6 +1587,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
     <MobileBottomNav tab={tab} setTab={setTab} />
     {picker && <MobilePickerSheet customers={customers} onClose={() => setPicker(false)} onPick={pickCustomer} onNewCustomer={newCustomer} />}
     {sheetCustomer && <MobileLaunchPanel customer={sheetCustomer} prefillOrder={sheetOrder} user={user} date={date} onClose={() => { setSheetCustomer(null); setSheetOrder(null); }} onComplete={onEntryComplete} />}
+    {postDelivery && <MobileReceiptPrompt entry={postDelivery} customer={customers.find(c => c.name === postDelivery.customer)} onSavePhone={p => savePhoneForCustomerName(postDelivery.customer, p)} onClose={() => setPostDelivery(null)} />}
     <MobileToast text={toast} />
   </div>
 }
@@ -1484,7 +1623,7 @@ function App() {
       <Route path="/financeiro" element={<Finance data={data} setData={setData} create={setModal} user={user} />} />
       <Route path="/provisao" element={adminOnly(<Receivables />)} />
       <Route path="/ordens-servico" element={adminOnly(<ServiceOrders customers={customers} />)} />
-      <Route path="/comprovantes" element={adminOnly(<Receipts />)} />
+      <Route path="/comprovantes" element={adminOnly(<Receipts customers={customers} />)} />
       <Route path="/marcas" element={adminOnly(<BrandsCatalog />)} />
       <Route path="/marcas-extras" element={adminOnly(<OutOfCatalogBrands />)} />
       <Route path="/clientes" element={<Customers items={customers} create={setModal} onEdit={setEditCustomer} />} />
