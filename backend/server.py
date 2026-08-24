@@ -72,7 +72,12 @@ class ResourceInput(BaseModel):
     code: Optional[str] = None
     active: Optional[bool] = None
 
+MANAUS_TZ = timezone(timedelta(hours=-4))  # America/Manaus, no DST
 def now(): return datetime.now(timezone.utc).isoformat()
+def now_local(): return datetime.now(MANAUS_TZ)
+def today_local(): return now_local().date().isoformat()
+def local_day_start_utc(day_str): return datetime.fromisoformat(day_str).replace(tzinfo=MANAUS_TZ).astimezone(timezone.utc).isoformat()
+def local_day_end_utc(day_str): return (datetime.fromisoformat(day_str).replace(tzinfo=MANAUS_TZ) + timedelta(days=1) - timedelta(microseconds=1)).astimezone(timezone.utc).isoformat()
 def entry_total(e): return float(e.get("total") or 0)
 def hash_password(password): return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 def check_password(password, hashed): return bcrypt.checkpw(password.encode(), hashed.encode())
@@ -127,7 +132,7 @@ async def me(user=Depends(current_user)): return user
 
 @api.get("/dashboard")
 async def dashboard(user=Depends(current_user)):
-    now_dt = datetime.now(timezone.utc)
+    now_dt = now_local()
     today = now_dt.date().isoformat()
     month_start = f"{now_dt.year:04d}-{now_dt.month:02d}-01"
     entries_today = await db.daily_entries.find({"date": today}, {"_id": 0}).sort("created_at", -1).to_list(200)
@@ -135,7 +140,8 @@ async def dashboard(user=Depends(current_user)):
     products = await db.products.find({}, {"_id": 0}).to_list(100)
     expenses = await db.expenses.find({}, {"_id": 0}).to_list(200)
     revenue = sum(entry_total(e) for e in entries_month)
-    expenses_month = sum(float(e.get("amount", 0)) for e in expenses if (e.get("created_at") or "") >= month_start and e.get("status") != "rejected")
+    month_start_utc = local_day_start_utc(month_start)
+    expenses_month = sum(float(e.get("amount", 0)) for e in expenses if (e.get("created_at") or "") >= month_start_utc and e.get("status") != "rejected")
     return {"revenue": revenue, "expenses": expenses_month, "deliveries": entries_today, "products": products, "expenses_list": expenses, "user": user}
 
 MONTH_LABELS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
@@ -143,7 +149,8 @@ MONTH_LABELS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "
 @api.get("/dashboard/monthly")
 async def dashboard_monthly(months: int = 6, user=Depends(current_user)):
     months = max(1, min(24, months))
-    y, m = datetime.now(timezone.utc).year, datetime.now(timezone.utc).month
+    _now = now_local()
+    y, m = _now.year, _now.month
     keys = []
     for _ in range(months):
         keys.append((y, m))
@@ -152,7 +159,7 @@ async def dashboard_monthly(months: int = 6, user=Depends(current_user)):
     keys.reverse()
     start = f"{keys[0][0]:04d}-{keys[0][1]:02d}-01"
     entries = await db.daily_entries.find({"date": {"$gte": start}}, {"_id": 0}).to_list(5000)
-    expenses = await db.expenses.find({"created_at": {"$gte": start + "T00:00:00"}}, {"_id": 0}).to_list(5000)
+    expenses = await db.expenses.find({"created_at": {"$gte": local_day_start_utc(start)}}, {"_id": 0}).to_list(5000)
     buckets = {f"{y:04d}-{m:02d}": {"month": f"{y:04d}-{m:02d}", "label": MONTH_LABELS[m - 1], "revenue": 0.0, "expenses": 0.0, "deliveries": 0, "delivered": 0} for (y, m) in keys}
     for e in entries:
         key = (e.get("date") or "")[:7]
@@ -281,7 +288,7 @@ async def daily_entries(date: Optional[str] = None, start: Optional[str] = None,
 async def add_daily_entry(data: ResourceInput, user=Depends(current_user)):
     doc = data.model_dump(exclude_none=True)
     doc["driver"] = user["name"] if user.get("role") != "admin" else (doc.get("driver") or user["name"])
-    doc["date"] = doc.get("date") or datetime.now(timezone.utc).date().isoformat()
+    doc["date"] = doc.get("date") or today_local()
     items = doc.get("items")
     if items:
         billed_qty = sum(float(it.get("quantity") or 0) for it in items)
@@ -372,7 +379,7 @@ async def delete_service_order(item_id: str, user=Depends(admin_user)):
 @api.get("/finance/summary")
 async def finance_summary(driver: Optional[str] = None, user=Depends(current_user)):
     scope_driver = driver if user.get("role") == "admin" else user["name"]
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = today_local()
 
     today_query = {"date": today}
     if scope_driver: today_query["driver"] = scope_driver
@@ -386,7 +393,7 @@ async def finance_summary(driver: Optional[str] = None, user=Depends(current_use
     comp_pending_total = sum(float(e.get("comp_value") or 0) for e in all_comp if not e.get("received"))
     comp_received_total = sum(float(e.get("comp_value") or 0) for e in all_comp if e.get("received"))
 
-    exp_query = {"created_at": {"$gte": today + "T00:00:00", "$lte": today + "T23:59:59"}}
+    exp_query = {"created_at": {"$gte": local_day_start_utc(today), "$lte": local_day_end_utc(today)}}
     if scope_driver: exp_query["driver"] = scope_driver
     todays_expenses = await db.expenses.find(exp_query, {"_id": 0}).to_list(2000)
     expenses_today_total = sum(float(e.get("amount") or 0) for e in todays_expenses if e.get("status") != "rejected")
@@ -542,9 +549,9 @@ async def notifications(user=Depends(current_user)):
 
 @api.get("/daily-closing")
 async def daily_closing(date: Optional[str] = None, user=Depends(admin_user)):
-    day = date or datetime.now(timezone.utc).date().isoformat()
+    day = date or today_local()
     entries = await db.daily_entries.find({"date": day}, {"_id": 0}).to_list(1000)
-    expenses = await db.expenses.find({"created_at": {"$gte": day + "T00:00:00", "$lte": day + "T23:59:59"}}, {"_id": 0}).to_list(1000)
+    expenses = await db.expenses.find({"created_at": {"$gte": local_day_start_utc(day), "$lte": local_day_end_utc(day)}}, {"_id": 0}).to_list(1000)
     drivers = {}
     for e in entries:
         name = e.get("driver") or "Sem entregador"
