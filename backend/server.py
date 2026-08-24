@@ -67,6 +67,9 @@ class ResourceInput(BaseModel):
     mf_date: Optional[str] = None
     batch: Optional[str] = None
     purchase_date: Optional[str] = None
+    payment_type: Optional[str] = None
+    code: Optional[str] = None
+    active: Optional[bool] = None
 
 def now(): return datetime.now(timezone.utc).isoformat()
 def entry_total(e): return float(e.get("total") or 0)
@@ -209,6 +212,19 @@ async def add_customer(data: ResourceInput, user=Depends(admin_user)): return aw
 async def update_customer(item_id: str, data: ResourceInput, user=Depends(admin_user)):
     values = data.model_dump(exclude_unset=True); await db.customers.update_one({"id": item_id}, {"$set": values})
     doc = await db.customers.find_one({"id": item_id}, {"_id": 0}); return doc
+
+@api.get("/brands")
+async def brands(user=Depends(current_user)): return await list_resource("brands")
+@api.post("/brands")
+async def add_brand(data: ResourceInput, user=Depends(admin_user)): return await create_resource("brands", data, user)
+@api.patch("/brands/{item_id}")
+async def update_brand(item_id: str, data: ResourceInput, user=Depends(admin_user)):
+    values = data.model_dump(exclude_unset=True); await db.brands.update_one({"id": item_id}, {"$set": values})
+    doc = await db.brands.find_one({"id": item_id}, {"_id": 0}); return doc
+@api.delete("/brands/{item_id}")
+async def delete_brand(item_id: str, user=Depends(admin_user)):
+    await db.brands.delete_one({"id": item_id})
+    return {"message": "Excluída"}
 
 @api.get("/customers/out-of-catalog-brands")
 async def out_of_catalog_brands(user=Depends(admin_user)):

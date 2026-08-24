@@ -29,7 +29,7 @@ function useMediaQuery(query) {
   }, [query]);
   return matches;
 }
-const nav = [['/', 'Visão geral', LayoutDashboard], ['/ordens-servico', 'Ordens de Serviço', Truck], ['/comprovantes', 'Comprovantes', FileText], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/marcas-extras', 'Marcas Extras', Droplets], ['/usuarios', 'Usuários', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
+const nav = [['/', 'Visão geral', LayoutDashboard], ['/ordens-servico', 'Ordens de Serviço', Truck], ['/comprovantes', 'Comprovantes', FileText], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/marcas', 'Marcas de Água', Droplets], ['/marcas-extras', 'Marcas Extras', AlertTriangle], ['/usuarios', 'Usuários', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
 const driverNav = [['/', 'Visão geral', LayoutDashboard], ['/controle-diario', 'Controle Diário', CalendarCheck], ['/financeiro', 'Financeiro', WalletCards]];
 
 function Shell({ user, onLogout, notifications, children }) {
@@ -101,7 +101,7 @@ function Modal({ title, fields, onClose, onSave }) { const [form, setForm] = use
 const fields = { product: [{ key: 'name', label: 'Nome do produto' }, { key: 'brand', label: 'Marca', required: false }, { key: 'category', label: 'Categoria', options: ['Retornável', 'Descartável'] }, { key: 'quantity', label: 'Quantidade', type: 'number' }, { key: 'minimum', label: 'Estoque mínimo', type: 'number' }, { key: 'cost_price', label: 'Custo de compra (R$/un)', type: 'number', required: false }, { key: 'batch', label: 'Lote', required: false }, { key: 'purchase_date', label: 'Data de compra', type: 'date', required: false }], expense: [{ key: 'type', label: 'Categoria', options: ['Combustível', 'Alimentação', 'Pedágio', 'Manutenção', 'Outros'] }, { key: 'driver', label: 'Entregador' }, { key: 'amount', label: 'Valor', type: 'number' }], customer: [{ key: 'name', label: 'Nome / empresa' }, { key: 'address', label: 'Endereço' }, { key: 'phone', label: 'Telefone', required: false }] };
 
 function CustomerModal({ onClose, onSave }) {
-  const [form, setForm] = useState({ name: '', address: '', phone: '' });
+  const [form, setForm] = useState({ name: '', address: '', phone: '', code: '', payment_type: 'normal' });
   const [brands, setBrands] = useState([{ brand: '', price: '', price_full: '' }]);
   const [error, setError] = useState('');
 
@@ -121,9 +121,14 @@ function CustomerModal({ onClose, onSave }) {
     <button type="button" className="modal-close" onClick={onClose} data-testid="modal-close-button"><X /></button>
     <p className="eyebrow">NOVO LANÇAMENTO</p>
     <h3>Cadastrar cliente</h3>
+    <label>Código do cliente<input value={form.code} placeholder="ex: 0047" data-testid="modal-code-input" onChange={e => setForm({ ...form, code: e.target.value })} /></label>
     <label>Nome / empresa<input required value={form.name} data-testid="modal-name-input" onChange={e => setForm({ ...form, name: e.target.value })} /></label>
     <label>Endereço<input required value={form.address} data-testid="modal-address-input" onChange={e => setForm({ ...form, address: e.target.value })} /></label>
     <label>Telefone<input value={form.phone} data-testid="modal-phone-input" onChange={e => setForm({ ...form, phone: e.target.value })} /></label>
+    <label>Forma de pagamento<select value={form.payment_type} data-testid="modal-payment-type-input" onChange={e => setForm({ ...form, payment_type: e.target.value })}>
+      <option value="normal">Normal — paga na entrega</option>
+      <option value="prazo">A prazo — 15 ou 30 dias</option>
+    </select></label>
     <label>Produtos que este cliente compra (água, gás, etc.) — preço com troca de vasilhame e, se for diferente, preço do vasilhame completo (novo)</label>
     {brands.map((b, i) => <div className="brand-price-row" key={i}>
       <input placeholder="Produto (ex: Minalar 20L, Gás P13)" value={b.brand} data-testid={`modal-brand-input-${i}`} onChange={e => updateBrand(i, 'brand', e.target.value)} />
@@ -318,7 +323,7 @@ function Finance({ data, setData, create, user }) {
       </tbody></table></div></section></>
 }
 
-function Customers({ items, create }) { return <><Head eyebrow="RELACIONAMENTO" title="Clientes" subtitle="Sua carteira, marcas de água e preço combinado por cliente." action="Novo cliente" onAction={() => create('customer')} /><div className="customer-grid">{items.map(x => { const brandList = x.brands?.length ? x.brands : (x.brand ? [{ brand: x.brand, price: x.price }] : []); return <div className="customer-card" key={x.id}><div className="customer-avatar">{x.name?.[0]}</div><div><b>{x.name}</b><span>{x.address}</span><small>{x.phone || 'Cliente ativo'}</small>{brandList.length > 0 && <div className="customer-brands">{brandList.map((b, i) => <span className="tag blue" key={i}>{b.brand} · {money(b.price)}</span>)}</div>}</div><ArrowUpRight size={18} /></div> })}</div></> }
+function Customers({ items, create }) { return <><Head eyebrow="RELACIONAMENTO" title="Clientes" subtitle="Sua carteira, marcas de água e preço combinado por cliente." action="Novo cliente" onAction={() => create('customer')} /><div className="customer-grid">{items.map(x => { const brandList = x.brands?.length ? x.brands : (x.brand ? [{ brand: x.brand, price: x.price }] : []); return <div className="customer-card" key={x.id}><div className="customer-avatar">{x.name?.[0]}</div><div><b>{x.name}{x.code && <small style={{ display: 'inline', marginLeft: 6, fontWeight: 400 }}>#{x.code}</small>}</b><span>{x.address}</span><small>{x.phone || 'Cliente ativo'}{x.payment_type === 'prazo' && <span className="tag orange" style={{ marginLeft: 6 }}>A prazo</span>}</small>{brandList.length > 0 && <div className="customer-brands">{brandList.map((b, i) => <span className="tag blue" key={i}>{b.brand} · {money(b.price)}</span>)}</div>}</div><ArrowUpRight size={18} /></div> })}</div></> }
 
 const DAILY_ENTRY_FIELDS = ['customer', 'brand', 'quantity', 'price', 'mf_quantity', 'comp_value', 'comp_days', 'pix_value', 'cash_value'];
 
@@ -667,6 +672,48 @@ function Receivables() {
         </tr>
       })}
       {data.rows.length === 0 && <tr><td colSpan={8} className="muted" style={{ padding: 16 }}>Nenhuma venda a prazo encontrada.</td></tr>}
+    </tbody></table></div></section></>
+}
+
+function BrandsCatalog() {
+  const [brands, setBrands] = useState([]);
+  const [form, setForm] = useState({ code: '', name: '' });
+  const [error, setError] = useState('');
+
+  async function load() { const { data } = await api.get('/brands', auth()); setBrands(data); }
+  useEffect(() => { load(); }, []);
+
+  async function submit(e) {
+    e.preventDefault(); setError('');
+    if (!form.name.trim()) return setError('Informe o nome da marca.');
+    try {
+      const { data } = await api.post('/brands', { ...form, active: true }, auth());
+      setBrands([data, ...brands]); setForm({ code: '', name: '' });
+    } catch (e) { setError(e.response?.data?.detail || 'Não foi possível salvar.'); }
+  }
+
+  async function toggleActive(b) { const { data } = await api.patch(`/brands/${b.id}`, { active: !(b.active !== false) }, auth()); setBrands(brands.map(x => x.id === b.id ? data : x)); }
+  async function remove(b) { if (!window.confirm(`Excluir a marca "${b.name}"?`)) return; await api.delete(`/brands/${b.id}`, auth()); setBrands(brands.filter(x => x.id !== b.id)); }
+
+  return <><Head eyebrow="CADASTRO" title="Marcas de Água" subtitle="Catálogo de marcas com código, usado no cadastro de clientes e nos lançamentos." />
+    <section className="panel table-panel" style={{ marginBottom: 22 }}>
+      <form className="daily-entry-form" style={{ gridTemplateColumns: '.6fr 1.4fr auto' }} onSubmit={submit}>
+        <label>Código<input placeholder="ex: 0001" value={form.code} data-testid="brand-code-input" onChange={e => setForm({ ...form, code: e.target.value })} /></label>
+        <label>Marca<input required placeholder="ex: Minalar" value={form.name} data-testid="brand-name-input" onChange={e => setForm({ ...form, name: e.target.value })} /></label>
+        <button className="primary" data-testid="brand-submit-button"><Plus size={15} /> Adicionar</button>
+      </form>
+      {error && <div className="error" style={{ margin: '0 23px 16px' }} data-testid="brand-form-error">{error}</div>}
+    </section>
+    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>MARCA</th><th>SITUAÇÃO</th><th /></tr></thead><tbody>
+      {brands.map(b => { const active = b.active !== false; return <tr key={b.id} data-testid={`brand-row-${b.id}`}>
+        <td>{b.code || '—'}</td><td><b>{b.name}</b></td>
+        <td><span className={`tag ${active ? 'green' : 'gray'}`}>{active ? 'Ativa' : 'Inativa'}</span></td>
+        <td><div className="row-actions">
+          <button className="action-btn ghost" data-testid={`brand-toggle-${b.id}`} onClick={() => toggleActive(b)}>{active ? 'Desativar' : 'Ativar'}</button>
+          <button className="action-btn reject" data-testid={`brand-delete-${b.id}`} onClick={() => remove(b)}><Trash2 size={13} /></button>
+        </div></td>
+      </tr> })}
+      {brands.length === 0 && <tr><td colSpan={4} className="muted" style={{ padding: 16 }}>Nenhuma marca cadastrada.</td></tr>}
     </tbody></table></div></section></>
 }
 
@@ -1058,7 +1105,7 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
   const [newPrice, setNewPrice] = useState('');
   const [pix, setPix] = useState(0);
   const [cash, setCash] = useState(0);
-  const [compOn, setCompOn] = useState(false);
+  const [compOn, setCompOn] = useState(customer.payment_type === 'prazo');
   const [comp, setComp] = useState('');
   const [compDays, setCompDays] = useState(15);
   const [mfPlan, setMfPlan] = useState(null);
@@ -1418,6 +1465,7 @@ function App() {
       <Route path="/provisao" element={adminOnly(<Receivables />)} />
       <Route path="/ordens-servico" element={adminOnly(<ServiceOrders customers={customers} />)} />
       <Route path="/comprovantes" element={adminOnly(<Receipts />)} />
+      <Route path="/marcas" element={adminOnly(<BrandsCatalog />)} />
       <Route path="/marcas-extras" element={adminOnly(<OutOfCatalogBrands />)} />
       <Route path="/clientes" element={<Customers items={customers} create={setModal} />} />
       <Route path="/usuarios" element={adminOnly(<UsersPage me={user} />)} />
