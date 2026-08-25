@@ -1394,17 +1394,18 @@ function MobileCaixaTab({ entries, expensesTotal, date, onAddExpense, onCloseDay
   const pix = todays.reduce((s, e) => s + Number(e.pix_value || 0), 0);
   const cash = todays.reduce((s, e) => s + Number(e.cash_value || 0), 0);
   const comp = todays.reduce((s, e) => s + Number(e.comp_value || 0), 0);
+  const netCash = cash - Number(expensesTotal || 0);
   return <div className="mob-screen">
     <div className="mob-cash-hero">
       <span>A ENTREGAR NA BASE</span>
-      <b data-testid="mob-cash-to-deliver">{money(cash)}</b>
-      <small>dinheiro em espécie · Pix já cai na conta</small>
+      <b data-testid="mob-cash-to-deliver">{money(netCash)}</b>
+      <small>dinheiro em espécie, já descontadas as despesas · Pix já cai na conta</small>
     </div>
     <div className="mob-cash-rows">
       <div className="mob-cash-row"><span className="mob-cash-icon blue"><CircleDollarSign size={16} /></span><div><b>Recebido em Pix</b><small>já na conta da empresa</small></div><b className="blue">{money(pix)}</b></div>
-      <div className="mob-cash-row"><span className="mob-cash-icon green"><Wallet size={16} /></span><div><b>Recebido em dinheiro</b><small>entregar na base</small></div><b className="green">{money(cash)}</b></div>
+      <div className="mob-cash-row"><span className="mob-cash-icon green"><Wallet size={16} /></span><div><b>Recebido em dinheiro</b><small>antes das despesas</small></div><b className="green">{money(cash)}</b></div>
       <div className="mob-cash-row"><span className="mob-cash-icon orange"><Clock3 size={16} /></span><div><b>Vendas a prazo</b><small>COMP lançado hoje</small></div><b className="orange">{money(comp)}</b></div>
-      <div className="mob-cash-row"><span className="mob-cash-icon orange"><WalletCards size={16} /></span><div><b>Despesas do dia</b><small>já lançadas</small></div><b className="orange">{money(expensesTotal)}</b></div>
+      <div className="mob-cash-row"><span className="mob-cash-icon orange"><WalletCards size={16} /></span><div><b>Despesas do dia</b><small>descontado do dinheiro a entregar</small></div><b className="orange">-{money(expensesTotal)}</b></div>
     </div>
     <button type="button" className="mob-outline-btn" data-testid="mob-add-expense-shortcut" onClick={onAddExpense}><Plus size={16} /> Lançar despesa</button>
     <button type="button" className="mob-cta" data-testid="mob-close-day-button" onClick={onCloseDay}>Fechar o dia</button>
@@ -1523,7 +1524,7 @@ function MobileReceiptPrompt({ entry, customer, onSavePhone, onClose }) {
           <div><h3>Comprovante</h3><p>{entry.entry_number ? `Nº ${entry.entry_number} · ` : ''}{money(entry.total)}</p></div>
           <button type="button" className="mob-close" data-testid="mob-receipt-close-2" onClick={onClose}><X size={18} /></button>
         </div>
-        {!customer?.phone && !sent && <label>Telefone do cliente (WhatsApp)<input value={phone} placeholder="ex: 5592999999999" data-testid="mob-receipt-phone" onChange={e => setPhone(e.target.value)} /></label>}
+        {!customer?.phone && !sent && <label className="mob-field-md">Telefone do cliente (WhatsApp)<input value={phone} placeholder="ex: 5592999999999" data-testid="mob-receipt-phone" onChange={e => setPhone(e.target.value)} /></label>}
         <button type="button" className="mob-outline-btn wide" data-testid="mob-receipt-download" onClick={() => downloadReceiptPdf(entry)}>Baixar comprovante (PDF)</button>
         <button type="button" className="mob-cta" disabled={busy} data-testid="mob-receipt-send" onClick={handleShare}>{sent ? 'Enviado' : 'Enviar no WhatsApp'}</button>
       </>}

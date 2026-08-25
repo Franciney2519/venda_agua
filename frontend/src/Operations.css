@@ -177,7 +177,7 @@
 .mob-split-shortcuts{display:flex;gap:10px}
 .mob-split-shortcuts button{flex:1;height:48px;border-radius:12px;background:var(--mob-surface2);color:var(--mob-ink);font:700 calc(13px * var(--scale)) 'DM Sans',sans-serif;border:1px solid var(--mob-line)}
 
-.mob-pix-cash{display:flex;gap:10px}
+.mob-pix-cash{display:flex;flex-direction:column;gap:10px}
 .mob-pix-cash label{flex:1;display:grid;gap:6px}
 .mob-pix-cash span{font-size:calc(11px * var(--scale));font-weight:700;color:var(--mob-muted);text-transform:uppercase}
 .mob-pix-cash input{padding:12px;border-radius:12px;font:700 calc(24px * var(--scale)) 'Space Grotesk',sans-serif;color:var(--mob-ink);border:1.5px solid var(--mob-blue-border);background:var(--mob-blue-soft)}
