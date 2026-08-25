@@ -775,8 +775,10 @@ function Receivables() {
 
 function BrandsCatalog() {
   const [brands, setBrands] = useState([]);
-  const [form, setForm] = useState({ code: '', name: '' });
+  const [form, setForm] = useState({ code: '', name: '', cost_price: '' });
   const [error, setError] = useState('');
+  const [editingCost, setEditingCost] = useState(null);
+  const [costDraft, setCostDraft] = useState('');
 
   async function load() { const { data } = await api.get('/brands', auth()); setBrands(data); }
   useEffect(() => { load(); }, []);
@@ -785,33 +787,44 @@ function BrandsCatalog() {
     e.preventDefault(); setError('');
     if (!form.name.trim()) return setError('Informe o nome da marca.');
     try {
-      const { data } = await api.post('/brands', { ...form, active: true }, auth());
-      setBrands([data, ...brands]); setForm({ code: '', name: '' });
+      const payload = { ...form, active: true };
+      if (payload.cost_price !== '') payload.cost_price = Number(payload.cost_price); else delete payload.cost_price;
+      const { data } = await api.post('/brands', payload, auth());
+      setBrands([data, ...brands]); setForm({ code: '', name: '', cost_price: '' });
     } catch (e) { setError(e.response?.data?.detail || 'Não foi possível salvar.'); }
   }
 
   async function toggleActive(b) { const { data } = await api.patch(`/brands/${b.id}`, { active: !(b.active !== false) }, auth()); setBrands(brands.map(x => x.id === b.id ? data : x)); }
   async function remove(b) { if (!window.confirm(`Excluir a marca "${b.name}"?`)) return; await api.delete(`/brands/${b.id}`, auth()); setBrands(brands.filter(x => x.id !== b.id)); }
+  async function saveCost(b) {
+    const { data } = await api.patch(`/brands/${b.id}`, { cost_price: Number(costDraft) || 0 }, auth());
+    setBrands(brands.map(x => x.id === b.id ? data : x)); setEditingCost(null);
+  }
 
-  return <><Head eyebrow="CADASTRO" title="Marcas de Água" subtitle="Catálogo de marcas com código, usado no cadastro de clientes e nos lançamentos." />
+  return <><Head eyebrow="CADASTRO" title="Marcas de Água" subtitle="Catálogo de marcas com código e custo de compra, usado no cadastro de clientes, nos lançamentos e no cálculo de lucro por marca." />
     <section className="panel table-panel" style={{ marginBottom: 22 }}>
-      <form className="daily-entry-form" style={{ gridTemplateColumns: '.6fr 1.4fr auto' }} onSubmit={submit}>
+      <form className="daily-entry-form" style={{ gridTemplateColumns: '.6fr 1.2fr .8fr auto' }} onSubmit={submit}>
         <label>Código<input placeholder="ex: 0001" value={form.code} data-testid="brand-code-input" onChange={e => setForm({ ...form, code: e.target.value })} /></label>
         <label>Marca<input required placeholder="ex: Minalar" value={form.name} data-testid="brand-name-input" onChange={e => setForm({ ...form, name: e.target.value })} /></label>
+        <label>Custo de compra (R$/un)<input type="number" step="0.01" placeholder="0,00" value={form.cost_price} data-testid="brand-cost-input" onChange={e => setForm({ ...form, cost_price: e.target.value })} /></label>
         <button className="primary" data-testid="brand-submit-button"><Plus size={15} /> Adicionar</button>
       </form>
       {error && <div className="error" style={{ margin: '0 23px 16px' }} data-testid="brand-form-error">{error}</div>}
     </section>
-    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>MARCA</th><th>SITUAÇÃO</th><th /></tr></thead><tbody>
+    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>MARCA</th><th>CUSTO DE COMPRA</th><th>SITUAÇÃO</th><th /></tr></thead><tbody>
       {brands.map(b => { const active = b.active !== false; return <tr key={b.id} data-testid={`brand-row-${b.id}`}>
         <td>{b.code || '—'}</td><td><b>{b.name}</b></td>
+        <td>{editingCost === b.id
+          ? <div className="row-actions"><input type="number" step="0.01" autoFocus style={{ width: 90 }} value={costDraft} data-testid={`brand-cost-edit-${b.id}`} onChange={e => setCostDraft(e.target.value)} /><button type="button" className="action-btn approve" data-testid={`brand-cost-save-${b.id}`} onClick={() => saveCost(b)}><Check size={13} /></button></div>
+          : <button type="button" className="action-btn ghost" data-testid={`brand-cost-${b.id}`} onClick={() => { setEditingCost(b.id); setCostDraft(b.cost_price ?? ''); }}>{b.cost_price ? money(b.cost_price) : <span className="muted">definir</span>} <Pencil size={12} /></button>}
+        </td>
         <td><span className={`tag ${active ? 'green' : 'gray'}`}>{active ? 'Ativa' : 'Inativa'}</span></td>
         <td><div className="row-actions">
           <button className="action-btn ghost" data-testid={`brand-toggle-${b.id}`} onClick={() => toggleActive(b)}>{active ? 'Desativar' : 'Ativar'}</button>
           <button className="action-btn reject" data-testid={`brand-delete-${b.id}`} onClick={() => remove(b)}><Trash2 size={13} /></button>
         </div></td>
       </tr> })}
-      {brands.length === 0 && <tr><td colSpan={4} className="muted" style={{ padding: 16 }}>Nenhuma marca cadastrada.</td></tr>}
+      {brands.length === 0 && <tr><td colSpan={5} className="muted" style={{ padding: 16 }}>Nenhuma marca cadastrada.</td></tr>}
     </tbody></table></div></section></>
 }
 

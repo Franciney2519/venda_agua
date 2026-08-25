@@ -451,7 +451,11 @@ async def _profit_rows(start, end, group_by):
         query["date"] = rng
     entries = await db.daily_entries.find(query, {"_id": 0}).to_list(5000)
     products = await db.products.find({}, {"_id": 0}).to_list(1000)
-    cost_by_brand = {(p.get("brand") or p.get("name") or "").strip().lower(): float(p.get("cost_price") or 0) for p in products}
+    brands_cat = await db.brands.find({}, {"_id": 0}).to_list(1000)
+    cost_by_brand = {(p.get("brand") or p.get("name") or "").strip().lower(): float(p.get("cost_price") or 0) for p in products if p.get("cost_price")}
+    for b in brands_cat:
+        if b.get("cost_price"):
+            cost_by_brand[(b.get("name") or "").strip().lower()] = float(b["cost_price"])
     rows = {}
     for e in entries:
         customer = e.get("customer") or "Sem cliente"
