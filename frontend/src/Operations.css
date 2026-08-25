@@ -228,10 +228,10 @@
 .mob-signature-screen .mob-text-btn{margin-top:6px;text-align:center}
 .mob-toast.orange{background:var(--mob-orange)}
 
-.mob-total-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.mob-total-card{background:var(--mob-surface);border:1px solid var(--mob-line);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:6px}
-.mob-total-card span{font-size:calc(11.5px * var(--scale));color:var(--mob-muted);font-weight:700;text-transform:uppercase}
-.mob-total-card b{font:700 calc(22px * var(--scale)) 'Space Grotesk',sans-serif}
+.mob-total-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.mob-total-card{min-width:0;background:var(--mob-surface);border:1px solid var(--mob-line);border-radius:14px;padding:12px 10px;display:flex;flex-direction:column;gap:6px;overflow:hidden}
+.mob-total-card span{font-size:calc(11.5px * var(--scale));color:var(--mob-muted);font-weight:700;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mob-total-card b{font:700 calc(22px * var(--scale)) 'Space Grotesk',sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mob-total-card b.blue{color:var(--mob-blue)}
 .mob-total-card b.green{color:var(--mob-green)}
 .mob-empty-dashed{border:1.5px dashed var(--mob-line);border-radius:14px;padding:30px 16px;text-align:center;color:var(--mob-muted);font-size:calc(13px * var(--scale))}
