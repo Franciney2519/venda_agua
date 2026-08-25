@@ -19,6 +19,11 @@ app = FastAPI(title="Distribuidora Diane API")
 api = APIRouter(prefix="/api")
 JWT_ALGORITHM = "HS256"
 
+@api.get("/ping")
+async def ping():
+    await db.command("ping")
+    return {"status": "ok"}
+
 class LoginInput(BaseModel):
     email: str
     password: str
@@ -653,7 +658,6 @@ async def seed():
         await db.users.update_many({"status": {"$exists": False}}, {"$set": {"status": "approved", "active": True}})
     if await db.products.count_documents({}) == 0:
         await db.products.insert_many([{"id":"p1","name":"Galão 20L","category":"Retornável","quantity":84,"minimum":30,"unit":"un"},{"id":"p2","name":"Fardo 500ml (12un)","category":"Descartável","quantity":18,"minimum":25,"unit":"fardos"},{"id":"p3","name":"Água mineral 1,5L","category":"Descartável","quantity":42,"minimum":20,"unit":"fardos"}])
-    if await db.expenses.count_documents({}) == 0: await db.expenses.insert_one({"id":"e1","type":"Combustível","amount":85,"driver":"Carlos Mendes","status":"pending","created_at":now()})
 
 app.include_router(api)
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=[os.environ["FRONTEND_URL"]], allow_methods=["*"], allow_headers=["*"])
