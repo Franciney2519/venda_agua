@@ -175,7 +175,7 @@ function Stat({ label, value, detail, Icon, tone = '' }) { return <div className
 
 function Modal({ title, fields, onClose, onSave }) { const [form, setForm] = useState({}), [error, setError] = useState(''); async function submit(e) { e.preventDefault(); if (fields.some(x => x.required !== false && !String(form[x.key] || '').trim())) return setError('Preencha os campos obrigatórios.'); try { await onSave(form) } catch (e) { setError(e.response?.data?.detail || 'Não foi possível salvar.') } } return <div className="modal-backdrop"><form className="quick-modal" onSubmit={submit}><button type="button" className="modal-close" onClick={onClose} data-testid="modal-close-button"><X /></button><p className="eyebrow">NOVO LANÇAMENTO</p><h3>{title}</h3>{fields.map(f => <label key={f.key}>{f.label}{f.options ? <select required={f.required !== false} data-testid={`modal-${f.key}-input`} onChange={e => setForm({ ...form, [f.key]: e.target.value })}><option value="">Selecione</option>{f.options.map(x => <option key={x}>{x}</option>)}</select> : <input required={f.required !== false} type={f.type || 'text'} data-testid={`modal-${f.key}-input`} onChange={e => setForm({ ...form, [f.key]: e.target.value })} />}</label>)}{error && <div className="error" data-testid="form-validation-error">{error}</div>}<button className="primary full" data-testid="modal-submit-button"><Save size={16} /> Salvar lançamento</button></form></div> }
 
-const fields = { product: [{ key: 'name', label: 'Nome do produto' }, { key: 'brand', label: 'Marca', required: false }, { key: 'category', label: 'Categoria', options: ['Retornável', 'Descartável'] }, { key: 'quantity', label: 'Quantidade', type: 'number' }, { key: 'minimum', label: 'Estoque mínimo', type: 'number' }, { key: 'cost_price', label: 'Custo de compra (R$/un)', type: 'number', required: false }, { key: 'batch', label: 'Lote', required: false }, { key: 'purchase_date', label: 'Data de compra', type: 'date', required: false }], expense: [{ key: 'type', label: 'Categoria', options: ['Combustível', 'Alimentação', 'Pedágio', 'Manutenção', 'Outros'] }, { key: 'driver', label: 'Entregador' }, { key: 'amount', label: 'Valor', type: 'number' }], customer: [{ key: 'name', label: 'Nome / empresa' }, { key: 'address', label: 'Endereço' }, { key: 'phone', label: 'Telefone', required: false }] };
+const fields = { expense: [{ key: 'type', label: 'Categoria', options: ['Combustível', 'Alimentação', 'Pedágio', 'Manutenção', 'Outros'] }, { key: 'driver', label: 'Entregador' }, { key: 'amount', label: 'Valor', type: 'number' }], customer: [{ key: 'name', label: 'Nome / empresa' }, { key: 'address', label: 'Endereço' }, { key: 'phone', label: 'Telefone', required: false }] };
 
 function CustomerModal({ onClose, onSave, customer }) {
   const isEdit = !!customer;
@@ -351,6 +351,54 @@ function StockAdjustModal({ product, onClose, onSave }) {
   </form></div>
 }
 
+function ProductModal({ onClose, onSave }) {
+  const [brands, setBrands] = useState([]);
+  const [form, setForm] = useState({ brand: '', name: '', category: 'Retornável', quantity: '', minimum: '', cost_price: '', batch: '', purchase_date: '' });
+  const [error, setError] = useState('');
+
+  useEffect(() => { api.get('/brands', auth()).then(({ data }) => setBrands(data.filter(b => b.active !== false))); }, []);
+
+  function pickBrand(brandName) {
+    const b = brands.find(x => x.name === brandName);
+    setForm({ ...form, brand: brandName, name: form.name || brandName, cost_price: form.cost_price || (b?.cost_price ?? '') });
+  }
+
+  async function submit(e) {
+    e.preventDefault(); setError('');
+    if (!form.name.trim()) return setError('Informe o nome do produto.');
+    if (form.quantity === '' || form.minimum === '') return setError('Informe quantidade e estoque mínimo.');
+    try {
+      const payload = { ...form, quantity: Number(form.quantity), minimum: Number(form.minimum) };
+      if (payload.cost_price !== '') payload.cost_price = Number(payload.cost_price); else delete payload.cost_price;
+      if (!payload.batch) delete payload.batch;
+      if (!payload.purchase_date) delete payload.purchase_date;
+      await onSave(payload);
+    } catch (e) { setError(e.response?.data?.detail || 'Não foi possível salvar.'); }
+  }
+
+  return <div className="modal-backdrop"><form className="quick-modal" onSubmit={submit}>
+    <button type="button" className="modal-close" onClick={onClose} data-testid="modal-close-button"><X /></button>
+    <p className="eyebrow">NOVO LANÇAMENTO</p>
+    <h3>Cadastrar produto</h3>
+    <label>Marca (cadastrada em Marcas de Água)<select value={form.brand} data-testid="modal-brand-input" onChange={e => pickBrand(e.target.value)}>
+      <option value="">Sem marca / outro produto</option>
+      {brands.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
+    </select></label>
+    {brands.length === 0 && <p className="muted" style={{ marginTop: -8 }}>Nenhuma marca cadastrada ainda — cadastre em <b>Marcas de Água</b> primeiro para vinculá-la ao estoque.</p>}
+    <label>Nome do produto<input required value={form.name} data-testid="modal-name-input" onChange={e => setForm({ ...form, name: e.target.value })} /></label>
+    <label>Categoria<select value={form.category} data-testid="modal-category-input" onChange={e => setForm({ ...form, category: e.target.value })}>
+      <option>Retornável</option><option>Descartável</option>
+    </select></label>
+    <label>Quantidade<input required type="number" value={form.quantity} data-testid="modal-quantity-input" onChange={e => setForm({ ...form, quantity: e.target.value })} /></label>
+    <label>Estoque mínimo<input required type="number" value={form.minimum} data-testid="modal-minimum-input" onChange={e => setForm({ ...form, minimum: e.target.value })} /></label>
+    <label>Custo de compra (R$/un){form.brand && <small className="muted"> · puxado da marca, edite se mudou</small>}<input type="number" step="0.01" value={form.cost_price} data-testid="modal-cost_price-input" onChange={e => setForm({ ...form, cost_price: e.target.value })} /></label>
+    <label>Lote<input value={form.batch} data-testid="modal-batch-input" onChange={e => setForm({ ...form, batch: e.target.value })} /></label>
+    <label>Data de compra<input type="date" value={form.purchase_date} data-testid="modal-purchase_date-input" onChange={e => setForm({ ...form, purchase_date: e.target.value })} /></label>
+    {error && <div className="error" data-testid="form-validation-error">{error}</div>}
+    <button className="primary full" data-testid="modal-submit-button"><Save size={16} /> Salvar lançamento</button>
+  </form></div>
+}
+
 function Stock({ data, setData, create }) {
   const [adjusting, setAdjusting] = useState(null);
   async function saveAdjustment(payload) {
@@ -358,7 +406,7 @@ function Stock({ data, setData, create }) {
     setData({ ...data, products: data.products.map(p => p.id === updated.id ? updated : p) });
     setAdjusting(null);
   }
-  return <><Head eyebrow="INVENTÁRIO" title="Estoque" subtitle="Produtos, galões retornáveis e níveis mínimos." action="Novo produto" onAction={() => create('product')} /><div className="stock-alert" data-testid="stock-alert"><AlertTriangle size={19} /><div><b>{data?.products?.filter(x => x.quantity < x.minimum).length || 0} produtos precisam de reposição</b><span>Confira os itens antes da próxima rota.</span></div></div><section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>CATEGORIA</th><th>DISPONÍVEL</th><th>MÍNIMO</th><th>SITUAÇÃO</th><th>LOTE / COMPRA</th><th /></tr></thead><tbody>{(data?.products || []).map(p => <tr key={p.id} data-testid={`stock-row-${p.id}`}><td><b>{p.name}</b><small>SKU-{p.id}</small></td><td>{p.category}</td><td>{p.quantity} {p.unit || 'un'}</td><td>{p.minimum}</td><td><span className={`tag ${p.quantity < p.minimum ? 'red' : 'green'}`}>{p.quantity < p.minimum ? 'Repor' : 'Saudável'}</span></td><td><small className="muted">{p.batch ? `Lote ${p.batch}` : '—'}{p.purchase_date ? ` · ${p.purchase_date}` : ''}</small></td><td><button className="action-btn ghost" data-testid={`stock-adjust-${p.id}`} onClick={() => setAdjusting(p)}><Pencil size={13} /> Ajustar</button></td></tr>)}</tbody></table></div></section>
+  return <><Head eyebrow="INVENTÁRIO" title="Estoque" subtitle="Produtos, galões retornáveis e níveis mínimos." action="Novo produto" onAction={() => create('product')} /><div className="stock-alert" data-testid="stock-alert"><AlertTriangle size={19} /><div><b>{data?.products?.filter(x => x.quantity < x.minimum).length || 0} produtos precisam de reposição</b><span>Confira os itens antes da próxima rota.</span></div></div><section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>MARCA</th><th>CATEGORIA</th><th>DISPONÍVEL</th><th>MÍNIMO</th><th>SITUAÇÃO</th><th>LOTE / COMPRA</th><th /></tr></thead><tbody>{(data?.products || []).map(p => <tr key={p.id} data-testid={`stock-row-${p.id}`}><td><b>{p.name}</b><small>SKU-{p.id}</small></td><td>{p.brand || '—'}</td><td>{p.category}</td><td>{p.quantity} {p.unit || 'un'}</td><td>{p.minimum}</td><td><span className={`tag ${p.quantity < p.minimum ? 'red' : 'green'}`}>{p.quantity < p.minimum ? 'Repor' : 'Saudável'}</span></td><td><small className="muted">{p.batch ? `Lote ${p.batch}` : '—'}{p.purchase_date ? ` · ${p.purchase_date}` : ''}</small></td><td><button className="action-btn ghost" data-testid={`stock-adjust-${p.id}`} onClick={() => setAdjusting(p)}><Pencil size={13} /> Ajustar</button></td></tr>)}</tbody></table></div></section>
     {adjusting && <StockAdjustModal product={adjusting} onClose={() => setAdjusting(null)} onSave={saveAdjustment} />}
   </> }
 
@@ -1658,7 +1706,8 @@ function App() {
     </Routes>
     {modal === 'customer' && <CustomerModal onClose={() => setModal(null)} onSave={x => save('customer', x)} />}
     {editCustomer && <CustomerModal customer={editCustomer} onClose={() => setEditCustomer(null)} onSave={x => updateCustomer(editCustomer.id, x)} />}
-    {modal && modal !== 'customer' && <Modal title={{ product: 'Cadastrar produto', expense: 'Lançar despesa' }[modal]} fields={modalFields} onClose={() => setModal(null)} onSave={x => save(modal, x)} />}
+    {modal === 'product' && <ProductModal onClose={() => setModal(null)} onSave={x => save('product', x)} />}
+    {modal && modal !== 'customer' && modal !== 'product' && <Modal title={{ expense: 'Lançar despesa' }[modal]} fields={modalFields} onClose={() => setModal(null)} onSave={x => save(modal, x)} />}
   </Shell>
 }
 export default () => <BrowserRouter><App /></BrowserRouter>;
