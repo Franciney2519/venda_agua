@@ -1414,7 +1414,7 @@ function MobileCaixaTab({ entries, expensesTotal, date, onAddExpense, onCloseDay
 
 const MOBILE_EXPENSE_CATEGORIES = [['Combustível', Fuel], ['Alimentação', Utensils], ['Pedágio', Receipt], ['Manutenção', Wrench], ['Outros', MoreHorizontal]];
 
-function MobileDespesasTab({ user }) {
+function MobileDespesasTab({ user, date }) {
   const [items, setItems] = useState([]);
   const [category, setCategory] = useState('Combustível');
   const [amount, setAmount] = useState('');
@@ -1422,9 +1422,9 @@ function MobileDespesasTab({ user }) {
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
 
-  async function load() { const { data } = await api.get('/expenses', auth()); setItems(data.filter(x => (x.driver || '') === user.name)); }
+  async function load() { const { data } = await api.get('/expenses', auth()); setItems(data.filter(x => (x.driver || '') === user.name && (x.created_at || '').slice(0, 10) === date)); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [date]);
 
   async function submit() {
     setError('');
