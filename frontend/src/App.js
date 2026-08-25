@@ -719,7 +719,14 @@ function DailyClosing() {
     </section></>
 }
 
-function todayISO(offset = 0) { const d = new Date(); d.setDate(d.getDate() + offset); return d.toISOString().slice(0, 10); }
+function todayISO(offset = 0) {
+  // America/Manaus is fixed UTC-4 (no DST): shift the current instant by -4h,
+  // then read UTC date parts off that — gives the Manaus calendar date
+  // regardless of the browser/device's own timezone setting.
+  const manaus = new Date(Date.now() - 4 * 3600 * 1000);
+  manaus.setUTCDate(manaus.getUTCDate() + offset);
+  return manaus.toISOString().slice(0, 10);
+}
 
 function Receivables() {
   const [filter, setFilter] = useState('pending');
