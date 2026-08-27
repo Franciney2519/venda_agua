@@ -415,6 +415,25 @@ function ProductModal({ onClose, onSave }) {
   </form></div>
 }
 
+function StockMovements() {
+  const [movements, setMovements] = useState(null);
+  useEffect(() => { api.get('/stock-movements', auth()).then(x => setMovements(x.data)).catch(() => setMovements([])); }, []);
+  const reasonLabel = { venda: 'Venda', estorno: 'Estorno', ajuste: 'Ajuste' };
+  return <section className="panel table-panel" style={{ marginTop: 22 }}>
+    <div className="panel-head" style={{ padding: '18px 23px' }}><div><h3>Movimentação de estoque</h3><p className="muted">Saídas por venda e entradas por estorno, com a venda de origem</p></div></div>
+    <div className="table-wrap"><table><thead><tr><th>DATA</th><th>PRODUTO</th><th>QTD</th><th>MOTIVO</th><th>VENDA DE ORIGEM</th></tr></thead><tbody>
+      {(movements || []).map(m => <tr key={m.id} data-testid={`stock-movement-${m.id}`}>
+        <td><small>{formatDateTimeManaus(m.created_at)}</small></td>
+        <td><b>{m.product_name || m.brand}</b></td>
+        <td><span className={`tag ${m.quantity < 0 ? 'red' : 'green'}`}>{m.quantity > 0 ? '+' : ''}{m.quantity}</span></td>
+        <td>{reasonLabel[m.reason] || m.reason}</td>
+        <td>{m.entry_number ? <small>Nº {m.entry_number} · {m.customer}{m.driver ? ` · ${m.driver}` : ''}</small> : <small className="muted">—</small>}</td>
+      </tr>)}
+      {movements?.length === 0 && <tr><td colSpan={5} className="muted" style={{ padding: 16 }}>Nenhuma movimentação registrada ainda.</td></tr>}
+    </tbody></table></div>
+  </section>
+}
+
 function Stock({ data, setData, create }) {
   const [adjusting, setAdjusting] = useState(null);
   async function saveAdjustment(payload) {
@@ -424,6 +443,7 @@ function Stock({ data, setData, create }) {
   }
   return <><Head eyebrow="INVENTÁRIO" title="Estoque" subtitle="Produtos, galões retornáveis e níveis mínimos." action="Novo produto" onAction={() => create('product')} /><div className="stock-alert" data-testid="stock-alert"><AlertTriangle size={19} /><div><b>{data?.products?.filter(x => x.quantity < x.minimum).length || 0} produtos precisam de reposição</b><span>Confira os itens antes da próxima rota.</span></div></div><section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>MARCA</th><th>CATEGORIA</th><th>DISPONÍVEL</th><th>MÍNIMO</th><th>SITUAÇÃO</th><th>LOTE / COMPRA</th><th /></tr></thead><tbody>{(data?.products || []).map(p => <tr key={p.id} data-testid={`stock-row-${p.id}`}><td><b>{p.name}</b><small>SKU-{p.id}</small></td><td>{p.brand || '—'}</td><td>{p.category}</td><td>{p.quantity} {p.unit || 'un'}</td><td>{p.minimum}</td><td><span className={`tag ${p.quantity < p.minimum ? 'red' : 'green'}`}>{p.quantity < p.minimum ? 'Repor' : 'Saudável'}</span></td><td><small className="muted">{p.batch ? `Lote ${p.batch}` : '—'}{p.purchase_date ? ` · ${p.purchase_date}` : ''}</small></td><td><button className="action-btn ghost" data-testid={`stock-adjust-${p.id}`} onClick={() => setAdjusting(p)}><Pencil size={13} /> Ajustar</button></td></tr>)}</tbody></table></div></section>
     {adjusting && <StockAdjustModal product={adjusting} onClose={() => setAdjusting(null)} onSave={saveAdjustment} />}
+    <StockMovements />
   </> }
 
 function Finance({ data, setData, create, user }) {

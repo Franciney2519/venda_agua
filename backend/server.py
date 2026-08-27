@@ -184,6 +184,45 @@ async def dashboard_monthly(months: int = 6, user=Depends(current_user)):
     return [buckets[f"{y:04d}-{m:02d}"] for (y, m) in keys]
 
 async def list_resource(collection): return await db[collection].find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
+
+def match_product(products_cache, brand):
+    b = (brand or "").strip().lower()
+    if not b: return None
+    return next((p for p in products_cache if (p.get("brand") or p.get("name") or "").strip().lower() == b), None)
+
+async def apply_stock_delta(products_cache, brand, delta, reason, entry, user):
+    if not delta: return
+    match = match_product(products_cache, brand)
+    if not match: return
+    await db.products.update_one({"id": match["id"]}, {"$inc": {"quantity": delta}})
+    await db.stock_movements.insert_one({
+        "id": str(uuid.uuid4()), "product_id": match["id"], "product_name": match.get("name"), "brand": match.get("brand") or match.get("name"),
+        "quantity": delta, "reason": reason,
+        "entry_id": entry.get("id"), "entry_number": entry.get("entry_number"), "customer": entry.get("customer"), "driver": entry.get("driver"),
+        "created_at": now(), "created_by": user.get("id") if user else None, "created_by_name": user.get("name") if user else "sistema",
+    })
+
+async def apply_entry_stock_movements(doc, reason, sign, user):
+    products_cache = await db.products.find({}, {"_id": 0}).to_list(1000)
+    items = doc.get("items")
+    if items:
+        for it in items:
+            qty = float(it.get("quantity") or 0)
+            if qty > 0: await apply_stock_delta(products_cache, it.get("brand"), sign * -qty, reason, doc, user)
+    else:
+        qty = float(doc.get("billed_quantity") or 0)
+        if qty > 0: await apply_stock_delta(products_cache, doc.get("brand"), sign * -qty, reason, doc, user)
+    if doc.get("mf_plan") == "swap":
+        mf_items = [it for it in (items or []) if float(it.get("mf_quantity") or 0) > 0]
+        mf_total = sum(float(it.get("mf_quantity") or 0) for it in mf_items) if items else float(doc.get("mf_quantity") or 0)
+        if items:
+            for it in mf_items:
+                await apply_stock_delta(products_cache, it.get("brand"), sign * -float(it["mf_quantity"]), reason, doc, user)
+        elif mf_total > 0:
+            await apply_stock_delta(products_cache, doc.get("brand"), sign * -mf_total, reason, doc, user)
+
+@api.get("/stock-movements")
+async def stock_movements(user=Depends(admin_user)): return await db.stock_movements.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
 async def create_resource(collection, payload, user):
     doc = payload.model_dump(exclude_none=True); doc.update({"id": str(uuid.uuid4()), "created_at": now(), "created_by": user["id"]})
     await db[collection].insert_one(doc); doc.pop("_id", None); return doc
@@ -327,15 +366,7 @@ async def add_daily_entry(data: ResourceInput, user=Depends(current_user)):
     doc["entry_number"] = await next_sequence("daily_entries")
     doc.update({"id": str(uuid.uuid4()), "created_at": now(), "created_by": user["id"]})
 
-    mf_plan = doc.get("mf_plan")
-    mf_items = [it for it in (items or []) if float(it.get("mf_quantity") or 0) > 0]
-    if mf_plan == "swap" and mf_items:
-        products = await db.products.find({}, {"_id": 0}).to_list(1000)
-        for it in mf_items:
-            brand = (it.get("brand") or "").strip().lower()
-            match = next((p for p in products if (p.get("brand") or p.get("name") or "").strip().lower() == brand), None)
-            if match:
-                await db.products.update_one({"id": match["id"]}, {"$inc": {"quantity": -float(it["mf_quantity"])}})
+    await apply_entry_stock_movements(doc, "venda", 1, user)
     await db.daily_entries.insert_one(doc); doc.pop("_id", None); return doc
 
 @api.patch("/daily-entries/{item_id}")
@@ -349,6 +380,7 @@ async def delete_daily_entry(item_id: str, user=Depends(current_user)):
     target = await db.daily_entries.find_one({"id": item_id}, {"_id": 0})
     if not target: raise HTTPException(404, "Lançamento não encontrado")
     if user.get("role") != "admin" and target.get("created_by") != user["id"]: raise HTTPException(403, "Sem permissão")
+    await apply_entry_stock_movements(target, "estorno", -1, user)
     await db.daily_entries.delete_one({"id": item_id})
     return {"message": "Excluído"}
 
