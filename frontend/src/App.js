@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import axios from "axios";
 import { BrowserRouter, Routes, Route, NavLink, Navigate, Link } from "react-router-dom";
-import { LayoutDashboard, Truck, Package, WalletCards, Users, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, Clock3, CircleDollarSign, BarChart3, Save, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle, CalendarCheck, Wallet, Eye, EyeOff, Minus, Sun, Moon, Camera, Search, MoreHorizontal, Fuel, Utensils, Wrench, Receipt, ChevronRight } from "lucide-react";
+import { LayoutDashboard, Truck, Package, WalletCards, Users, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, Clock3, CircleDollarSign, BarChart3, Save, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle, CalendarCheck, Wallet, Eye, EyeOff, Minus, Sun, Moon, Camera, Search, MoreHorizontal, Fuel, Utensils, Wrench, Receipt, ChevronRight, RefreshCw } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import logoImg from "./assets/logo.png";
@@ -246,9 +246,11 @@ function PerformanceChart() {
   </div></div>
 }
 
-function Dashboard({ data }) {
+function Dashboard({ data, onRefresh, refreshing }) {
   const today = (data?.deliveries || []);
-  return <><Head eyebrow="PAINEL DE CONTROLE" title="Visão geral" subtitle="Acompanhe a saúde da sua operação em um só lugar." />
+  return <><section className="section-head"><div><p className="eyebrow">PAINEL DE CONTROLE</p><h2>Visão geral</h2><p className="muted">Acompanhe a saúde da sua operação em um só lugar.</p></div>
+      <button type="button" className="ghost-btn" data-testid="dashboard-refresh-button" disabled={refreshing} onClick={onRefresh}><RefreshCw size={15} className={refreshing ? 'spin' : ''} /> {refreshing ? 'Atualizando...' : 'Atualizar dados'}</button>
+    </section>
     <div className="stats">
       <Stat label="Receita no mês" value={money(data?.revenue)} detail="Lançamentos do Controle Diário" Icon={CircleDollarSign} />
       <Stat label="Despesas no mês" value={money(data?.expenses)} detail="Lançadas pelos entregadores" Icon={WalletCards} tone="orange" />
@@ -270,6 +272,7 @@ function SignaturePad({ onSave, onCancel, variant = 'desktop', customer, total }
   const canvasRef = useRef(null);
   const drawing = useRef(false);
   const [empty, setEmpty] = useState(true);
+  const [signerName, setSignerName] = useState('');
   const [penColor, setPenColor] = useState(SIGNATURE_COLORS[0][0]);
   const penColorRef = useRef(penColor);
   useEffect(() => { penColorRef.current = penColor; }, [penColor]);
@@ -286,7 +289,7 @@ function SignaturePad({ onSave, onCancel, variant = 'desktop', customer, total }
     return () => { c.removeEventListener('mousedown', start); c.removeEventListener('mousemove', move); window.removeEventListener('mouseup', end); c.removeEventListener('touchstart', start); c.removeEventListener('touchmove', move); window.removeEventListener('touchend', end); };
   }, [variant]);
   function clear() { const c = canvasRef.current; c.getContext('2d').clearRect(0, 0, c.width, c.height); setEmpty(true); }
-  function save() { onSave(canvasRef.current.toDataURL('image/png')); }
+  function save() { onSave(canvasRef.current.toDataURL('image/png'), signerName.trim()); }
 
   if (variant === 'mobile') return <div className="mob-signature-screen" data-testid="mob-signature-screen">
     <p className="mob-eyebrow">CONFIRMAÇÃO DE ENTREGA</p>
@@ -300,6 +303,8 @@ function SignaturePad({ onSave, onCancel, variant = 'desktop', customer, total }
       <canvas ref={canvasRef} data-testid="signature-canvas" />
       {empty && <span className="mob-sign-placeholder">Assine com o dedo</span>}
     </div>
+    <button type="button" className="mob-text-btn" data-testid="signature-clear" disabled={empty} onClick={clear}>Apagar assinatura</button>
+    <label className="mob-sign-name-label">Nome do assinante<input value={signerName} placeholder="Digite o nome de quem assinou" data-testid="signature-name-input" onChange={e => setSignerName(e.target.value)} /></label>
     <button type="button" className="mob-cta green" data-testid="signature-save" disabled={empty} onClick={save}>Concluir parada</button>
     <button type="button" className="mob-text-btn" data-testid="signature-close" onClick={onCancel}>Voltar</button>
   </div>;
@@ -310,8 +315,9 @@ function SignaturePad({ onSave, onCancel, variant = 'desktop', customer, total }
     <h3>Assinatura do cliente</h3>
     <p className="muted">Peça para o cliente assinar abaixo confirmando o recebimento.</p>
     <canvas ref={canvasRef} width={360} height={180} className="signature-canvas" data-testid="signature-canvas" />
+    <label>Nome do assinante<input value={signerName} placeholder="Digite o nome de quem assinou" data-testid="signature-name-input" onChange={e => setSignerName(e.target.value)} /></label>
     <div className="signature-actions">
-      <button type="button" className="ghost-btn" data-testid="signature-clear" onClick={clear}>Limpar</button>
+      <button type="button" className="ghost-btn" data-testid="signature-clear" onClick={clear}>Apagar assinatura</button>
       <button type="button" className="primary" data-testid="signature-save" onClick={save} disabled={empty}><Check size={16} /> Concluir parada</button>
     </div>
   </div></div>
@@ -1273,6 +1279,8 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
   const [adding, setAdding] = useState(false);
   const [newBrand, setNewBrand] = useState('');
   const [newPrice, setNewPrice] = useState('');
+  const [newQty, setNewQty] = useState('');
+  const [newFull, setNewFull] = useState(false);
   const [pix, setPix] = useState(0);
   const [cash, setCash] = useState(0);
   const [compOn, setCompOn] = useState(customer.payment_type === 'prazo');
@@ -1284,7 +1292,7 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const linePrice = l => (l.saleType === 'full' && l.priceFull != null) ? l.priceFull : l.priceExchange;
+  const linePrice = l => l.saleType === 'full' ? (l.priceFull != null ? l.priceFull : (Number(l.priceFullManual) || l.priceExchange)) : l.priceExchange;
   const total = lines.reduce((s, l) => s + l.qty * linePrice(l), 0);
   const compValue = compOn ? (Number(comp) || 0) : 0;
   const remaining = Math.max(0, Math.round((total - compValue) * 100) / 100);
@@ -1301,11 +1309,13 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
   function incMf(i) { setLines(prev => prev.map((l, idx) => idx === i && l.qty > 0 ? { ...l, qty: l.qty - 1, mf: l.mf + 1 } : l)); }
   function decMf(i) { setLines(prev => prev.map((l, idx) => idx === i && l.mf > 0 ? { ...l, qty: l.qty + 1, mf: l.mf - 1 } : l)); }
   function setSaleType(i, type) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, saleType: type } : l)); }
+  function setFullPriceManual(i, value) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, priceFullManual: value } : l)); }
 
   function addBrandLine() {
     if (!newBrand.trim()) return;
-    setLines(prev => [...prev, { brand: newBrand.trim(), priceExchange: Number(newPrice) || 0, priceFull: null, saleType: 'exchange', qty: 0, mf: 0, extra: true }]);
-    setNewBrand(''); setNewPrice(''); setAdding(false);
+    const price = Number(newPrice) || 0;
+    setLines(prev => [...prev, { brand: newBrand.trim(), priceExchange: newFull ? 0 : price, priceFull: newFull ? price : null, saleType: newFull ? 'full' : 'exchange', qty: Math.max(0, parseInt(newQty, 10) || 0), mf: 0, extra: true }]);
+    setNewBrand(''); setNewPrice(''); setNewQty(''); setNewFull(false); setAdding(false);
   }
 
   function setPixVal(raw) { const v = Math.min(Math.max(0, Number(raw) || 0), remaining); setPix(v); setCash(Math.round((remaining - v) * 100) / 100); }
@@ -1313,7 +1323,7 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
   function allPix() { setPix(remaining); setCash(0); }
   function allCash() { setCash(remaining); setPix(0); }
 
-  async function complete(signature) {
+  async function complete(signature, signatureName) {
     setSaving(true); setError('');
     const items = lines.filter(l => l.qty > 0 || l.mf > 0).map(l => ({ brand: l.brand, price: linePrice(l), sale_type: l.saleType, quantity: l.qty, mf_quantity: l.mf, out_of_catalog: !!l.extra }));
     const payload = {
@@ -1321,7 +1331,7 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
       pix_value: Math.round(pix * 100) / 100, cash_value: Math.round(cash * 100) / 100,
       comp_value: compValue, comp_days: compOn ? compDays : undefined,
       mf_plan: totalMf > 0 ? mfPlan : undefined, mf_date: totalMf > 0 && mfPlan === 'reschedule' ? mfDate : undefined,
-      signature,
+      signature, signature_name: signatureName || undefined,
     };
     try {
       const { data } = await api.post('/daily-entries', payload, auth());
@@ -1348,12 +1358,13 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
       <p className="mob-eyebrow">PRODUTOS DO CADASTRO · TOQUE + OU DIGITE A QUANTIDADE</p>
       <div className="mob-lines">
         {lines.map((l, i) => <div className={`mob-line${l.qty > 0 ? ' active' : ''}`} key={i} data-testid={`mob-line-${i}`}>
-          {l.priceFull != null && <div className="mob-sale-type">
+          {!l.extra && <div className="mob-sale-type">
             <button type="button" className={l.saleType !== 'full' ? 'active' : ''} data-testid={`mob-sale-exchange-${i}`} onClick={() => setSaleType(i, 'exchange')}>Troca de vasilhame</button>
-            <button type="button" className={l.saleType === 'full' ? 'active' : ''} data-testid={`mob-sale-full-${i}`} onClick={() => setSaleType(i, 'full')}>Completo (vasilhame novo)</button>
+            <button type="button" className={l.saleType === 'full' ? 'active' : ''} data-testid={`mob-sale-full-${i}`} onClick={() => setSaleType(i, 'full')}>Completo (vasilhame + água)</button>
           </div>}
+          {!l.extra && l.saleType === 'full' && l.priceFull == null && <label className="mob-line-full-price">Preço da venda completa (não cadastrado)<input type="number" step="0.01" placeholder={l.priceExchange.toFixed(2)} value={l.priceFullManual || ''} data-testid={`mob-sale-full-price-${i}`} onChange={e => setFullPriceManual(i, e.target.value)} /></label>}
           <div className="mob-line-top">
-            <div className="mob-line-info"><b>{l.brand}{l.extra && <span className="mob-tag orange" style={{ marginLeft: 6 }}>nova</span>}</b><small>R$ {linePrice(l).toFixed(2)} por galão</small><span className="mob-line-subtotal">{money(l.qty * linePrice(l))}</span></div>
+            <div className="mob-line-info"><b>{l.brand}{l.extra && <span className="mob-tag orange" style={{ marginLeft: 6 }}>nova</span>}{l.saleType === 'full' && <span className="mob-tag" style={{ marginLeft: 6 }}>venda completa</span>}</b><small>R$ {linePrice(l).toFixed(2)} por galão</small><span className="mob-line-subtotal">{money(l.qty * linePrice(l))}</span></div>
             <div className="mob-counter">
               <button type="button" data-testid={`mob-qty-minus-${i}`} onClick={() => decQty(i)}><Minus size={18} /></button>
               <input type="number" inputMode="numeric" min="0" value={l.qty} data-testid={`mob-qty-input-${i}`} onChange={e => setQty(i, e.target.value)} onFocus={e => e.target.select()} />
@@ -1374,9 +1385,14 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
 
       {!adding ? <button type="button" className="mob-dashed-btn" data-testid="mob-add-brand-button" onClick={() => setAdding(true)}><Plus size={16} /> Outra marca (fora do cadastro)</button> : <div className="mob-add-brand">
         <input placeholder="Nome da marca" value={newBrand} data-testid="mob-new-brand-input" onChange={e => setNewBrand(e.target.value)} />
-        <label>Preço combinado (R$ por galão)<input type="number" step="0.01" value={newPrice} data-testid="mob-new-brand-price" onChange={e => setNewPrice(e.target.value)} /></label>
+        <label>Quantidade<input type="number" inputMode="numeric" min="0" value={newQty} data-testid="mob-new-brand-qty" onChange={e => setNewQty(e.target.value)} /></label>
+        <label>{newFull ? 'Preço combinado (venda completa)' : 'Preço combinado (R$ por galão)'}<input type="number" step="0.01" value={newPrice} data-testid="mob-new-brand-price" onChange={e => setNewPrice(e.target.value)} /></label>
+        <div className="mob-sale-type">
+          <button type="button" className={!newFull ? 'active' : ''} data-testid="mob-new-brand-exchange" onClick={() => setNewFull(false)}>Troca de vasilhame</button>
+          <button type="button" className={newFull ? 'active' : ''} data-testid="mob-new-brand-full" onClick={() => setNewFull(true)}>Venda completa (vasilhame + água)</button>
+        </div>
         <div className="mob-row-actions">
-          <button type="button" className="mob-ghost-btn" onClick={() => { setAdding(false); setNewBrand(''); setNewPrice(''); }}>Cancelar</button>
+          <button type="button" className="mob-ghost-btn" onClick={() => { setAdding(false); setNewBrand(''); setNewPrice(''); setNewQty(''); setNewFull(false); }}>Cancelar</button>
           <button type="button" className="primary" data-testid="mob-confirm-add-brand" onClick={addBrandLine}>Adicionar marca</button>
         </div>
       </div>}
@@ -1667,9 +1683,14 @@ function DriverMobileApp({ user, customers, onLogout }) {
 /* =================== fim app mobile do entregador ==================== */
 
 function App() {
-  const [user, setUser] = useState(null), [data, setData] = useState(null), [customers, setCustomers] = useState([]), [checking, setChecking] = useState(true), [modal, setModal] = useState(null), [editCustomer, setEditCustomer] = useState(null), [notifications, setNotifications] = useState({ pending_users: 0, pending_expenses: 0, total: 0 });
+  const [user, setUser] = useState(null), [data, setData] = useState(null), [customers, setCustomers] = useState([]), [checking, setChecking] = useState(true), [modal, setModal] = useState(null), [editCustomer, setEditCustomer] = useState(null), [notifications, setNotifications] = useState({ pending_users: 0, pending_expenses: 0, total: 0 }), [refreshing, setRefreshing] = useState(false);
   useEffect(() => { const t = localStorage.getItem('hydro_token'); if (t) api.get('/auth/me', auth()).then(x => setUser(x.data)).catch(() => localStorage.removeItem('hydro_token')).finally(() => setChecking(false)); else setChecking(false) }, []);
-  useEffect(() => { if (user) Promise.all([api.get('/dashboard', auth()), api.get('/customers', auth())]).then(([a, c]) => { setData(a.data); setCustomers(c.data) }) }, [user]);
+  async function loadDashboard() {
+    setRefreshing(true);
+    try { const [a, c] = await Promise.all([api.get('/dashboard', auth()), api.get('/customers', auth())]); setData(a.data); setCustomers(c.data); }
+    finally { setRefreshing(false); }
+  }
+  useEffect(() => { if (user) loadDashboard(); }, [user]);
   useEffect(() => {
     if (!user) return;
     const fetchNotif = () => api.get('/notifications', auth()).then(x => setNotifications(x.data)).catch(() => { });
@@ -1689,7 +1710,7 @@ function App() {
   const adminOnly = el => user.role === 'admin' ? el : <Navigate to="/" replace />;
   return <Shell user={user} onLogout={logout} notifications={notifications}>
     <Routes>
-      <Route path="/" element={<Dashboard data={data} />} />
+      <Route path="/" element={<Dashboard data={data} onRefresh={loadDashboard} refreshing={refreshing} />} />
       <Route path="/controle-diario" element={user.role === 'driver' ? <DailyControl user={user} customers={customers} /> : <Navigate to="/" replace />} />
       <Route path="/estoque" element={<Stock data={data} setData={setData} create={setModal} />} />
       <Route path="/financeiro" element={<Finance data={data} setData={setData} create={setModal} user={user} />} />

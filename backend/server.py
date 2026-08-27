@@ -56,6 +56,7 @@ class ResourceInput(BaseModel):
     minimum: Optional[int] = 10
     status: Optional[str] = "pending"
     signature: Optional[str] = None
+    signature_name: Optional[str] = None
     notes: Optional[str] = None
     brand: Optional[str] = None
     price: Optional[float] = None
