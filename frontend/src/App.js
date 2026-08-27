@@ -674,7 +674,7 @@ function DailyControl({ user, customers }) {
     </div>
     {tab === 'expenses' ? <DailyExpensesTab user={user} date={date} /> : <section className="panel table-panel">
       <form className="daily-entry-form" onSubmit={submit}>
-        <label>Cliente<input list="daily-customers" value={form.customer || ''} data-testid="daily-customer-input" onChange={e => pickCustomer(e.target.value)} /><datalist id="daily-customers">{customers.map(c => <option key={c.id} value={c.name} />)}</datalist></label>
+        <label>Cliente<CustomerCombobox customers={customers} value={form.customer || ''} onPick={pickCustomer} testId="daily-customer-input" /></label>
         <label>Marca{brandOptions.length > 1
           ? <select value={form.brand || ''} data-testid="daily-brand-select" onChange={e => pickBrand(e.target.value)}>{brandOptions.map(b => <option key={b.brand} value={b.brand}>{b.brand}</option>)}</select>
           : <input value={form.brand || ''} readOnly={customerFound} placeholder={customerFound ? '' : 'Cliente sem cadastro'} data-testid="daily-brand-input" onChange={e => setForm({ ...form, brand: e.target.value })} />}
@@ -1006,6 +1006,33 @@ function whatsappLinkFor(order, driverUser) {
   return `https://wa.me/${phone}?text=${encodeURIComponent(lines.join('\n'))}`;
 }
 
+function CustomerCombobox({ customers, value, onPick, testId }) {
+  const [query, setQuery] = useState(value || '');
+  const [open, setOpen] = useState(false);
+  const blurTimer = useRef(null);
+  useEffect(() => { setQuery(value || ''); }, [value]);
+  const sorted = [...customers].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
+  const q = query.trim().toLowerCase();
+  const filtered = q ? sorted.filter(c => (c.name || '').toLowerCase().includes(q) || (c.code || '').toLowerCase().includes(q)) : sorted;
+  function pick(c) { setQuery(c.name); setOpen(false); onPick(c.name); }
+  return <div className="combobox">
+    <input
+      value={query}
+      placeholder="Nome ou código do cliente"
+      data-testid={testId}
+      onChange={e => { setQuery(e.target.value); setOpen(true); if (!e.target.value) onPick(''); }}
+      onFocus={() => setOpen(true)}
+      onBlur={() => { blurTimer.current = setTimeout(() => setOpen(false), 150); }}
+    />
+    {open && filtered.length > 0 && <div className="combobox-list" onMouseDown={e => e.preventDefault()}>
+      {filtered.slice(0, 50).map(c => <button type="button" key={c.id} className="combobox-option" data-testid={`${testId}-option-${c.id}`} onClick={() => pick(c)}>
+        <b>{c.name}</b>{c.code && <span className="combobox-code">#{c.code}</span>}
+      </button>)}
+    </div>}
+    {open && query && filtered.length === 0 && <div className="combobox-list"><p className="combobox-empty">Nenhum cliente encontrado.</p></div>}
+  </div>
+}
+
 function ServiceOrders({ customers }) {
   const [orders, setOrders] = useState([]);
   const [drivers, setDrivers] = useState([]);
@@ -1048,7 +1075,7 @@ function ServiceOrders({ customers }) {
   return <><Head eyebrow="LOGÍSTICA" title="Ordens de Serviço" subtitle="Solicitações de entrega recebidas pelo admin, direcionadas para o entregador." />
     <section className="panel table-panel" style={{ marginBottom: 22 }}>
       <form className="os-form" onSubmit={submit}>
-        <label>Cliente<input list="os-customers" required value={form.customer} data-testid="os-customer-input" onChange={e => pickCustomer(e.target.value)} /><datalist id="os-customers">{customers.map(c => <option key={c.id} value={c.name} />)}</datalist></label>
+        <label>Cliente<CustomerCombobox customers={customers} value={form.customer} onPick={pickCustomer} testId="os-customer-input" /></label>
         <label>Endereço<input value={form.address} data-testid="os-address-input" onChange={e => setForm({ ...form, address: e.target.value })} /></label>
         <label>Produto{brandOptions.length > 0
           ? <select value={form.brand} data-testid="os-product-select" onChange={e => setForm({ ...form, brand: e.target.value })}>{brandOptions.map(b => <option key={b.brand} value={b.brand}>{b.brand} · {money(b.price)}</option>)}</select>

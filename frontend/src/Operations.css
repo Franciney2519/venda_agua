@@ -383,3 +383,13 @@
 @media(min-width:640px){.os-submit{flex:0 0 auto;justify-content:flex-start}}
 .app-shell.dark .os-form input,.app-shell.dark .os-form select{background:#15293c;border-color:var(--line);color:var(--ink)}
 @media(max-width:700px){.os-form{padding:16px}.os-form label{flex:1 1 100%;min-width:0}.os-form .os-field-narrow{flex:1 1 100%}}
+
+.combobox{position:relative}
+.combobox-list{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:20;background:var(--panel,#fff);border:1px solid var(--line);border-radius:8px;box-shadow:0 12px 28px rgba(16,37,63,.18);max-height:260px;overflow-y:auto;padding:4px}
+.combobox-option{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:9px 10px;border-radius:6px;font-size:13px;font-weight:400;color:var(--ink,#10253f);background:none;border:0}
+.combobox-option:hover,.combobox-option:focus{background:var(--pale,#eef4fa)}
+.combobox-code{color:#8b9cad;font-size:11px;font-weight:700}
+.combobox-empty{padding:10px;margin:0;color:#8b9cad;font-size:12px;text-align:center}
+.app-shell.dark .combobox-list{background:#15293c;border-color:var(--line)}
+.app-shell.dark .combobox-option{color:var(--ink)}
+.app-shell.dark .combobox-option:hover,.app-shell.dark .combobox-option:focus{background:#1c3350}
