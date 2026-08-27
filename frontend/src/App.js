@@ -259,6 +259,7 @@ function Dashboard({ data, onRefresh, refreshing }) {
     <div className="stats">
       <Stat label="Receita no mês" value={money(data?.revenue)} detail="Lançamentos do Controle Diário" Icon={CircleDollarSign} />
       <Stat label="Despesas no mês" value={money(data?.expenses)} detail="Lançadas pelos entregadores" Icon={WalletCards} tone="orange" />
+      <Stat label="Receita líquida" value={money((data?.revenue || 0) - (data?.expenses || 0))} detail="Receita − despesas do mês" Icon={Wallet} tone={(data?.revenue || 0) - (data?.expenses || 0) >= 0 ? 'green' : 'red'} />
       <Stat label="Lançamentos hoje" value={today.length} detail="Registrados pelos entregadores" Icon={Truck} tone="green" />
       <Stat label="Alertas de estoque" value={data?.products?.filter(x => x.quantity < x.minimum).length || 0} detail="Itens abaixo do mínimo" Icon={AlertTriangle} tone="red" />
     </div>
