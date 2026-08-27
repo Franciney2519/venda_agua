@@ -367,9 +367,12 @@ function StockAdjustModal({ product, onClose, onSave }) {
   </form></div>
 }
 
-function ProductModal({ onClose, onSave }) {
+function ProductModal({ onClose, onSave, product }) {
+  const isEdit = !!product;
   const [brands, setBrands] = useState([]);
-  const [form, setForm] = useState({ brand: '', name: '', category: 'Retornável', unit: 'un', quantity: '', minimum: '', cost_price: '', units_per_package: '', batch: '', purchase_date: '' });
+  const [form, setForm] = useState(isEdit
+    ? { brand: product.brand || '', name: product.name || '', category: product.category || 'Retornável', unit: product.unit || 'un', quantity: product.quantity ?? '', minimum: product.minimum ?? '', cost_price: product.cost_price ?? '', units_per_package: product.units_per_package ?? '', batch: product.batch || '', purchase_date: product.purchase_date || '' }
+    : { brand: '', name: '', category: 'Retornável', unit: 'un', quantity: '', minimum: '', cost_price: '', units_per_package: '', batch: '', purchase_date: '' });
   const [error, setError] = useState('');
 
   useEffect(() => { api.get('/brands', auth()).then(({ data }) => setBrands(data.filter(b => b.active !== false))); }, []);
@@ -384,7 +387,8 @@ function ProductModal({ onClose, onSave }) {
     if (!form.name.trim()) return setError('Informe o nome do produto.');
     if (form.quantity === '' || form.minimum === '') return setError('Informe quantidade e estoque mínimo.');
     try {
-      const payload = { ...form, quantity: Number(form.quantity), minimum: Number(form.minimum) };
+      const payload = { ...form, minimum: Number(form.minimum) };
+      if (isEdit) delete payload.quantity; else payload.quantity = Number(form.quantity);
       if (payload.cost_price !== '') payload.cost_price = Number(payload.cost_price); else delete payload.cost_price;
       if (payload.unit === 'fardo' && payload.units_per_package !== '') payload.units_per_package = Number(payload.units_per_package); else delete payload.units_per_package;
       if (!payload.batch) delete payload.batch;
@@ -395,8 +399,8 @@ function ProductModal({ onClose, onSave }) {
 
   return <div className="modal-backdrop"><form className="quick-modal" onSubmit={submit}>
     <button type="button" className="modal-close" onClick={onClose} data-testid="modal-close-button"><X /></button>
-    <p className="eyebrow">NOVO LANÇAMENTO</p>
-    <h3>Cadastrar produto</h3>
+    <p className="eyebrow">{isEdit ? 'EDITAR PRODUTO' : 'NOVO LANÇAMENTO'}</p>
+    <h3>{isEdit ? `Editar ${product.name}` : 'Cadastrar produto'}</h3>
     <label>Marca (cadastrada em Marcas de Água)<select value={form.brand} data-testid="modal-brand-input" onChange={e => pickBrand(e.target.value)}>
       <option value="">Sem marca / outro produto</option>
       {brands.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
@@ -410,8 +414,9 @@ function ProductModal({ onClose, onSave }) {
       <option value="un">Unidade avulsa</option>
       <option value="fardo">Fardo</option>
     </select></label>
-    <p className="muted" style={{ marginTop: -8, fontSize: 12 }}>{form.unit === 'fardo' ? 'Cadastre quantidade, mínimo e custo sempre em fardos — e lance as vendas desse produto também em fardos.' : 'Cadastre quantidade, mínimo e custo por unidade avulsa.'}</p>
-    <label>Quantidade ({form.unit === 'fardo' ? 'fardos' : 'unidades'})<input required type="number" value={form.quantity} data-testid="modal-quantity-input" onChange={e => setForm({ ...form, quantity: e.target.value })} /></label>
+    <p className="muted" style={{ marginTop: -8, fontSize: 12 }}>{form.unit === 'fardo' ? 'Cadastre mínimo e custo sempre em fardos — e lance as vendas desse produto também em fardos.' : 'Cadastre mínimo e custo por unidade avulsa.'}</p>
+    {isEdit ? <label>Quantidade em estoque ({form.unit === 'fardo' ? 'fardos' : 'unidades'})<input disabled value={form.quantity} data-testid="modal-quantity-input" /><small className="muted">Para mudar a quantidade, use "Ajustar" na lista de estoque.</small></label>
+      : <label>Quantidade ({form.unit === 'fardo' ? 'fardos' : 'unidades'})<input required type="number" value={form.quantity} data-testid="modal-quantity-input" onChange={e => setForm({ ...form, quantity: e.target.value })} /></label>}
     <label>Estoque mínimo ({form.unit === 'fardo' ? 'fardos' : 'unidades'})<input required type="number" value={form.minimum} data-testid="modal-minimum-input" onChange={e => setForm({ ...form, minimum: e.target.value })} /></label>
     <label>{form.unit === 'fardo' ? 'Custo de compra (R$ por fardo)' : 'Custo de compra (R$ por unidade)'}{form.brand && <small className="muted"> · puxado da marca, edite se mudou</small>}<input type="number" step="0.01" value={form.cost_price} data-testid="modal-cost_price-input" onChange={e => setForm({ ...form, cost_price: e.target.value })} /></label>
     {form.unit === 'fardo' && <>
@@ -421,7 +426,7 @@ function ProductModal({ onClose, onSave }) {
     <label>Lote<input value={form.batch} data-testid="modal-batch-input" onChange={e => setForm({ ...form, batch: e.target.value })} /></label>
     <label>Data de compra<input type="date" value={form.purchase_date} data-testid="modal-purchase_date-input" onChange={e => setForm({ ...form, purchase_date: e.target.value })} /></label>
     {error && <div className="error" data-testid="form-validation-error">{error}</div>}
-    <button className="primary full" data-testid="modal-submit-button"><Save size={16} /> Salvar lançamento</button>
+    <button className="primary full" data-testid="modal-submit-button"><Save size={16} /> {isEdit ? 'Salvar alterações' : 'Salvar lançamento'}</button>
   </form></div>
 }
 
@@ -429,14 +434,28 @@ function StockMovements() {
   const [movements, setMovements] = useState(null);
   function load() { api.get('/stock-movements', auth()).then(x => setMovements(x.data)).catch(() => setMovements([])); }
   useEffect(() => { load(); }, []);
-  const reasonLabel = { venda: 'Venda', estorno: 'Estorno', ajuste: 'Ajuste', mf_defeito: 'Defeito (MF)' };
+  const reasonLabel = { venda: 'Venda', estorno: 'Estorno', ajuste: 'Ajuste', mf_defeito: 'Defeito (MF)', mf_reagendado: 'MF reagendado', sem_correspondencia: 'Sem produto correspondente' };
   const pendingExchange = (movements || []).filter(m => m.reason === 'mf_defeito' && !m.resolved);
-  async function markExchanged(m) { const { data } = await api.patch(`/stock-movements/${m.id}`, {}, auth()); setMovements(prev => prev.map(x => x.id === m.id ? data : x)); }
+  const pendingReschedule = (movements || []).filter(m => m.reason === 'mf_reagendado' && !m.resolved);
+  const unmatched = (movements || []).filter(m => m.reason === 'sem_correspondencia');
+  async function markExchanged(m) { await api.patch(`/stock-movements/${m.id}`, {}, auth()); load(); }
   return <>
+    {pendingReschedule.length > 0 && <div className="stock-alert" data-testid="mf-reschedule-alert" style={{ marginTop: 22 }}>
+      <AlertTriangle size={19} />
+      <div><b>{pendingReschedule.length} troca{pendingReschedule.length > 1 ? 's' : ''} de MF reagendada{pendingReschedule.length > 1 ? 's' : ''} para outra visita</b>
+        <span>{pendingReschedule.map(m => `${m.product_name || m.brand} (${m.pending_quantity}) · ${m.customer}${m.mf_date ? ` · ${m.mf_date}` : ''}`).join(' · ')} — confirme "Troca realizada" quando o entregador levar o galão novo.</span>
+      </div>
+    </div>}
     {pendingExchange.length > 0 && <div className="stock-alert" data-testid="mf-exchange-alert" style={{ marginTop: 22 }}>
       <AlertTriangle size={19} />
       <div><b>{pendingExchange.length} galão{pendingExchange.length > 1 ? 'ões' : ''} com defeito (microfuro) aguardando troca com o fornecedor</b>
         <span>{pendingExchange.map(m => `${m.product_name || m.brand} (${Math.abs(m.quantity)})`).join(' · ')}</span>
+      </div>
+    </div>}
+    {unmatched.length > 0 && <div className="stock-alert" data-testid="stock-unmatched-alert" style={{ marginTop: 22 }}>
+      <AlertTriangle size={19} />
+      <div><b>{unmatched.length} venda{unmatched.length > 1 ? 's' : ''} não baixaram estoque — marca não cadastrada em Estoque</b>
+        <span>{[...new Set(unmatched.map(m => m.brand))].join(' · ')} — cadastre um produto com esse nome/marca para o estoque acompanhar essas vendas.</span>
       </div>
     </div>}
     <section className="panel table-panel" style={{ marginTop: 22 }}>
@@ -445,10 +464,10 @@ function StockMovements() {
         {(movements || []).map(m => <tr key={m.id} data-testid={`stock-movement-${m.id}`}>
           <td><small>{formatDateTimeManaus(m.created_at)}</small></td>
           <td><b>{m.product_name || m.brand}</b></td>
-          <td><span className={`tag ${m.quantity < 0 ? 'red' : 'green'}`}>{m.quantity > 0 ? '+' : ''}{m.quantity}</span></td>
-          <td>{m.reason === 'mf_defeito' ? <span className="tag orange">{reasonLabel[m.reason]}</span> : (reasonLabel[m.reason] || m.reason)}</td>
+          <td>{m.reason === 'mf_reagendado' ? <span className="tag orange">pendente ({m.pending_quantity})</span> : m.reason === 'sem_correspondencia' ? <span className="tag gray">—</span> : <span className={`tag ${m.quantity < 0 ? 'red' : 'green'}`}>{m.quantity > 0 ? '+' : ''}{m.quantity}</span>}</td>
+          <td>{(m.reason === 'mf_defeito' || m.reason === 'mf_reagendado' || m.reason === 'sem_correspondencia') ? <span className="tag orange">{reasonLabel[m.reason]}</span> : (reasonLabel[m.reason] || m.reason)}</td>
           <td>{m.entry_number ? <small>Nº {m.entry_number} · {m.customer}{m.driver ? ` · ${m.driver}` : ''}</small> : <small className="muted">—</small>}</td>
-          <td>{m.reason === 'mf_defeito' && (m.resolved ? <span className="tag green" title={m.resolved_note}>Trocado</span> : <button className="action-btn ghost" data-testid={`mf-mark-exchanged-${m.id}`} onClick={() => markExchanged(m)}>Marcar trocado</button>)}</td>
+          <td>{(m.reason === 'mf_defeito' || m.reason === 'mf_reagendado') && (m.resolved ? <span className="tag green" title={m.resolved_note}>{m.reason === 'mf_reagendado' ? 'Trocado' : 'Trocado'}</span> : <button className="action-btn ghost" data-testid={`mf-mark-exchanged-${m.id}`} onClick={() => markExchanged(m)}>{m.reason === 'mf_reagendado' ? 'Troca realizada' : 'Marcar trocado'}</button>)}</td>
         </tr>)}
         {movements?.length === 0 && <tr><td colSpan={6} className="muted" style={{ padding: 16 }}>Nenhuma movimentação registrada ainda.</td></tr>}
       </tbody></table></div>
@@ -458,10 +477,16 @@ function StockMovements() {
 
 function Stock({ data, setData, create }) {
   const [adjusting, setAdjusting] = useState(null);
+  const [editing, setEditing] = useState(null);
   async function saveAdjustment(payload) {
     const { data: updated } = await api.patch(`/products/${adjusting.id}`, payload, auth());
     setData({ ...data, products: data.products.map(p => p.id === updated.id ? updated : p) });
     setAdjusting(null);
+  }
+  async function saveEdit(payload) {
+    const { data: updated } = await api.patch(`/products/${editing.id}`, payload, auth());
+    setData({ ...data, products: data.products.map(p => p.id === updated.id ? updated : p) });
+    setEditing(null);
   }
   const products = data?.products || [];
   const stockValue = products.reduce((s, p) => s + (Number(p.quantity) || 0) * (Number(p.cost_price) || 0), 0);
@@ -470,8 +495,9 @@ function Stock({ data, setData, create }) {
     <div className="stats">
       <Stat label="Valor em estoque" value={money(stockValue)} detail={missingCost > 0 ? `${missingCost} produto${missingCost > 1 ? 's' : ''} sem custo cadastrado` : 'Custo de compra × quantidade disponível'} Icon={WalletCards} tone={missingCost > 0 ? 'orange' : ''} />
     </div>
-    <div className="stock-alert" data-testid="stock-alert"><AlertTriangle size={19} /><div><b>{products.filter(x => x.quantity < x.minimum).length} produtos precisam de reposição</b><span>Confira os itens antes da próxima rota.</span></div></div><section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>MARCA</th><th>CATEGORIA</th><th>DISPONÍVEL</th><th>MÍNIMO</th><th>VALOR EM ESTOQUE</th><th>SITUAÇÃO</th><th>LOTE / COMPRA</th><th /></tr></thead><tbody>{products.map(p => <tr key={p.id} data-testid={`stock-row-${p.id}`}><td><b>{p.name}</b><small>SKU-{p.id}</small></td><td>{p.brand || '—'}</td><td>{p.category}</td><td>{p.quantity} {p.unit || 'un'}</td><td>{p.minimum}</td><td>{p.cost_price != null ? money((Number(p.quantity) || 0) * Number(p.cost_price)) : <small className="muted">sem custo</small>}</td><td><span className={`tag ${p.quantity < p.minimum ? 'red' : 'green'}`}>{p.quantity < p.minimum ? 'Repor' : 'Saudável'}</span></td><td><small className="muted">{p.batch ? `Lote ${p.batch}` : '—'}{p.purchase_date ? ` · ${p.purchase_date}` : ''}</small></td><td><button className="action-btn ghost" data-testid={`stock-adjust-${p.id}`} onClick={() => setAdjusting(p)}><Pencil size={13} /> Ajustar</button></td></tr>)}</tbody></table></div></section>
+    <div className="stock-alert" data-testid="stock-alert"><AlertTriangle size={19} /><div><b>{products.filter(x => x.quantity < x.minimum).length} produtos precisam de reposição</b><span>Confira os itens antes da próxima rota.</span></div></div><section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>MARCA</th><th>CATEGORIA</th><th>DISPONÍVEL</th><th>MÍNIMO</th><th>VALOR EM ESTOQUE</th><th>SITUAÇÃO</th><th>LOTE / COMPRA</th><th /></tr></thead><tbody>{products.map(p => <tr key={p.id} data-testid={`stock-row-${p.id}`}><td><b>{p.name}</b><small>SKU-{p.id}</small></td><td>{p.brand || '—'}</td><td>{p.category}</td><td>{p.quantity} {p.unit || 'un'}</td><td>{p.minimum}</td><td>{p.cost_price != null ? money((Number(p.quantity) || 0) * Number(p.cost_price)) : <small className="muted">sem custo</small>}</td><td><span className={`tag ${p.quantity < p.minimum ? 'red' : 'green'}`}>{p.quantity < p.minimum ? 'Repor' : 'Saudável'}</span></td><td><small className="muted">{p.batch ? `Lote ${p.batch}` : '—'}{p.purchase_date ? ` · ${p.purchase_date}` : ''}</small></td><td className="row-actions"><button className="action-btn ghost" data-testid={`stock-edit-${p.id}`} onClick={() => setEditing(p)}><Pencil size={13} /> Editar</button><button className="action-btn ghost" data-testid={`stock-adjust-${p.id}`} onClick={() => setAdjusting(p)}>Ajustar</button></td></tr>)}</tbody></table></div></section>
     {adjusting && <StockAdjustModal product={adjusting} onClose={() => setAdjusting(null)} onSave={saveAdjustment} />}
+    {editing && <ProductModal product={editing} onClose={() => setEditing(null)} onSave={saveEdit} />}
     <StockMovements />
   </> }
 
@@ -983,7 +1009,7 @@ function whatsappLinkFor(order, driverUser) {
 function ServiceOrders({ customers }) {
   const [orders, setOrders] = useState([]);
   const [drivers, setDrivers] = useState([]);
-  const [form, setForm] = useState({ customer: '', address: '', brand: '', quantity: '', driver: '', notes: '' });
+  const [form, setForm] = useState({ customer: '', address: '', brand: '', quantity: '', sale_type: 'exchange', driver: '', notes: '' });
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('pending');
 
@@ -1008,7 +1034,7 @@ function ServiceOrders({ customers }) {
       const payload = { ...form, quantity: form.quantity ? Number(form.quantity) : undefined };
       const { data } = await api.post('/service-orders', payload, auth());
       setOrders([data, ...orders]);
-      setForm({ customer: '', address: '', brand: '', quantity: '', driver: form.driver, notes: '' });
+      setForm({ customer: '', address: '', brand: '', quantity: '', sale_type: 'exchange', driver: form.driver, notes: '' });
     } catch (e) { setError(e.response?.data?.detail || 'Não foi possível criar a ordem.'); }
   }
 
@@ -1029,6 +1055,10 @@ function ServiceOrders({ customers }) {
           : <input placeholder="ex: Minalar 20L" value={form.brand} data-testid="os-product-input" onChange={e => setForm({ ...form, brand: e.target.value })} />}
         </label>
         <label className="os-field-narrow">Qtd<input type="number" value={form.quantity} data-testid="os-quantity-input" onChange={e => setForm({ ...form, quantity: e.target.value })} /></label>
+        <label>Tipo de venda<select value={form.sale_type} data-testid="os-sale-type-select" onChange={e => setForm({ ...form, sale_type: e.target.value })}>
+          <option value="exchange">Somente água (troca de vasilhame)</option>
+          <option value="full">Venda completa (vasilhame + água)</option>
+        </select></label>
         <label>Entregador<select required value={form.driver} data-testid="os-driver-select" onChange={e => setForm({ ...form, driver: e.target.value })}><option value="">Selecione</option>{drivers.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}</select></label>
         <label>Observações<input value={form.notes} data-testid="os-notes-input" onChange={e => setForm({ ...form, notes: e.target.value })} /></label>
         {error && <div className="error" data-testid="os-form-error">{error}</div>}
@@ -1049,7 +1079,7 @@ function ServiceOrders({ customers }) {
         const status = o.status || 'pending';
         return <tr key={o.id} data-testid={`os-row-${o.id}`}>
           <td><b>{o.customer}</b>{o.address && <small>{o.address}</small>}{o.notes && <small className="muted">{o.notes}</small>}</td>
-          <td>{o.brand || '—'}</td>
+          <td>{o.brand || '—'}{o.sale_type === 'full' && <span className="tag" style={{ marginLeft: 6 }}>completa</span>}</td>
           <td>{o.quantity || '—'}</td>
           <td>{o.driver}</td>
           <td><span className={`tag ${statusTag[status]}`}>{statusLabel[status]}</span></td>
@@ -1336,9 +1366,12 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
     if (draft?.lines) return draft.lines;
     const base = brandListOf(customer).map(b => ({ brand: b.brand, priceExchange: Number(b.price) || 0, priceFull: b.price_full != null ? Number(b.price_full) || 0 : null, qtyExchange: 0, qtyFull: 0, mf: 0 }));
     if (prefillOrder?.brand) {
+      const wantsFull = prefillOrder.sale_type === 'full';
       const idx = base.findIndex(l => l.brand.toLowerCase() === prefillOrder.brand.toLowerCase());
-      if (idx >= 0) base[idx] = { ...base[idx], qtyExchange: Number(prefillOrder.quantity) || base[idx].qtyExchange };
-      else base.push({ brand: prefillOrder.brand, priceExchange: 0, priceFull: null, saleType: 'exchange', qty: Number(prefillOrder.quantity) || 0, mf: 0, extra: true });
+      if (idx >= 0) base[idx] = wantsFull
+        ? { ...base[idx], qtyFull: Number(prefillOrder.quantity) || base[idx].qtyFull }
+        : { ...base[idx], qtyExchange: Number(prefillOrder.quantity) || base[idx].qtyExchange };
+      else base.push({ brand: prefillOrder.brand, priceExchange: 0, priceFull: null, saleType: wantsFull ? 'full' : 'exchange', qty: Number(prefillOrder.quantity) || 0, mf: 0, extra: true });
     }
     return base;
   });
@@ -1442,7 +1475,7 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
         <button type="button" className="mob-close" data-testid="mob-panel-close" onClick={onClose}><X size={18} /></button>
       </div>
 
-      {prefillOrder && <div className="mob-order-banner" data-testid="mob-order-banner">Vindo da ordem de serviço{prefillOrder.notes ? ` · ${prefillOrder.notes}` : ''}{lines.some(l => l.extra && l.brand.toLowerCase() === (prefillOrder.brand || '').toLowerCase()) ? ' · confira o preço, esse produto não está no cadastro do cliente' : ''}</div>}
+      {prefillOrder && <div className="mob-order-banner" data-testid="mob-order-banner">Vindo da ordem de serviço · {prefillOrder.sale_type === 'full' ? 'venda completa (vasilhame + água)' : 'somente água (troca de vasilhame)'}{prefillOrder.notes ? ` · ${prefillOrder.notes}` : ''}{lines.some(l => l.extra && l.brand.toLowerCase() === (prefillOrder.brand || '').toLowerCase()) ? ' · confira o preço, esse produto não está no cadastro do cliente' : ''}</div>}
       <p className="mob-eyebrow">PRODUTOS DO CADASTRO · TOQUE + OU DIGITE A QUANTIDADE</p>
       <div className="mob-lines">
         {lines.map((l, i) => l.extra ? <div className={`mob-line${l.qty > 0 ? ' active' : ''}`} key={i} data-testid={`mob-line-${i}`}>

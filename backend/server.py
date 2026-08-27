@@ -79,6 +79,7 @@ class ResourceInput(BaseModel):
     code: Optional[str] = None
     unit: Optional[str] = None
     units_per_package: Optional[float] = None
+    sale_type: Optional[str] = None
     active: Optional[bool] = None
 
 MANAUS_TZ = timezone(timedelta(hours=-4))  # America/Manaus, no DST
@@ -195,7 +196,15 @@ def match_product(products_cache, brand):
 async def apply_stock_delta(products_cache, brand, delta, reason, entry, user, extra=None):
     if not delta: return
     match = match_product(products_cache, brand)
-    if not match: return
+    if not match:
+        if reason == "venda" and (brand or "").strip():
+            await db.stock_movements.insert_one({
+                "id": str(uuid.uuid4()), "product_id": None, "product_name": None, "brand": brand,
+                "quantity": 0, "reason": "sem_correspondencia",
+                "entry_id": entry.get("id"), "entry_number": entry.get("entry_number"), "customer": entry.get("customer"), "driver": entry.get("driver"),
+                "created_at": now(), "created_by": user.get("id") if user else None, "created_by_name": user.get("name") if user else "sistema",
+            })
+        return
     await db.products.update_one({"id": match["id"]}, {"$inc": {"quantity": delta}})
     movement = {
         "id": str(uuid.uuid4()), "product_id": match["id"], "product_name": match.get("name"), "brand": match.get("brand") or match.get("name"),
@@ -216,24 +225,32 @@ async def apply_entry_stock_movements(doc, reason, sign, user):
     else:
         qty = float(doc.get("billed_quantity") or 0)
         if qty > 0: await apply_stock_delta(products_cache, doc.get("brand"), sign * -qty, reason, doc, user)
-    if doc.get("mf_plan") == "swap":
+    mf_plan = doc.get("mf_plan")
+    if mf_plan in ("swap", "reschedule"):
         mf_items = [it for it in (items or []) if float(it.get("mf_quantity") or 0) > 0]
         mf_total = sum(float(it.get("mf_quantity") or 0) for it in mf_items) if items else float(doc.get("mf_quantity") or 0)
+        mf_brand_qty = [(it.get("brand"), float(it["mf_quantity"])) for it in mf_items] if items else ([(doc.get("brand"), mf_total)] if mf_total > 0 else [])
         if sign == 1:
-            # Defective (microfuro) bottle swapped on the truck: flag for supplier exchange.
-            if items:
-                for it in mf_items:
-                    await apply_stock_delta(products_cache, it.get("brand"), -float(it["mf_quantity"]), "mf_defeito", doc, user, extra={"resolved": False})
-            elif mf_total > 0:
-                await apply_stock_delta(products_cache, doc.get("brand"), -mf_total, "mf_defeito", doc, user, extra={"resolved": False})
+            if mf_plan == "swap":
+                # Defective (microfuro) bottle swapped on the truck right away: flag for supplier exchange.
+                for brand, qty in mf_brand_qty:
+                    await apply_stock_delta(products_cache, brand, -qty, "mf_defeito", doc, user, extra={"resolved": False})
+            else:
+                # Reschedule: no stock impact yet, just track that a future swap/pickup is owed.
+                for brand, qty in mf_brand_qty:
+                    match = match_product(products_cache, brand)
+                    await db.stock_movements.insert_one({
+                        "id": str(uuid.uuid4()), "product_id": match["id"] if match else None, "product_name": match.get("name") if match else None, "brand": (match.get("brand") or match.get("name")) if match else brand,
+                        "quantity": 0, "pending_quantity": qty, "reason": "mf_reagendado", "resolved": False,
+                        "entry_id": doc.get("id"), "entry_number": doc.get("entry_number"), "customer": doc.get("customer"), "driver": doc.get("driver"),
+                        "mf_date": doc.get("mf_date"), "created_at": now(), "created_by": user.get("id") if user else None, "created_by_name": user.get("name") if user else "sistema",
+                    })
         else:
-            # Estorno: the earlier defect swap no longer applies, cancel its pending supplier-exchange flag.
-            await db.stock_movements.update_many({"entry_id": doc.get("id"), "reason": "mf_defeito"}, {"$set": {"resolved": True, "resolved_note": "Estornado"}})
-            if items:
-                for it in mf_items:
-                    await apply_stock_delta(products_cache, it.get("brand"), float(it["mf_quantity"]), reason, doc, user)
-            elif mf_total > 0:
-                await apply_stock_delta(products_cache, doc.get("brand"), mf_total, reason, doc, user)
+            # Estorno: any pending defect tracking for this entry no longer applies.
+            await db.stock_movements.update_many({"entry_id": doc.get("id"), "reason": {"$in": ["mf_defeito", "mf_reagendado"]}, "resolved": False}, {"$set": {"resolved": True, "resolved_note": "Estornado"}})
+            if mf_plan == "swap":
+                for brand, qty in mf_brand_qty:
+                    await apply_stock_delta(products_cache, brand, qty, reason, doc, user)
 
 @api.get("/stock-movements")
 async def stock_movements(user=Depends(admin_user)): return await db.stock_movements.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
@@ -242,7 +259,19 @@ async def stock_movements(user=Depends(admin_user)): return await db.stock_movem
 async def update_stock_movement(item_id: str, user=Depends(admin_user)):
     target = await db.stock_movements.find_one({"id": item_id}, {"_id": 0})
     if not target: raise HTTPException(404, "Movimentação não encontrada")
-    await db.stock_movements.update_one({"id": item_id}, {"$set": {"resolved": True, "resolved_note": "Trocado com o fornecedor", "resolved_by": user["name"], "resolved_at": now()}})
+    if target.get("reason") == "mf_reagendado" and not target.get("resolved"):
+        qty = float(target.get("pending_quantity") or 0)
+        if target.get("product_id") and qty > 0:
+            await db.products.update_one({"id": target["product_id"]}, {"$inc": {"quantity": -qty}})
+            await db.stock_movements.insert_one({
+                "id": str(uuid.uuid4()), "product_id": target["product_id"], "product_name": target.get("product_name"), "brand": target.get("brand"),
+                "quantity": -qty, "reason": "mf_defeito", "resolved": False,
+                "entry_id": target.get("entry_id"), "entry_number": target.get("entry_number"), "customer": target.get("customer"), "driver": target.get("driver"),
+                "created_at": now(), "created_by": user["id"], "created_by_name": user["name"],
+            })
+        await db.stock_movements.update_one({"id": item_id}, {"$set": {"resolved": True, "resolved_note": "Troca realizada", "resolved_by": user["name"], "resolved_at": now()}})
+    else:
+        await db.stock_movements.update_one({"id": item_id}, {"$set": {"resolved": True, "resolved_note": "Trocado com o fornecedor", "resolved_by": user["name"], "resolved_at": now()}})
     return await db.stock_movements.find_one({"id": item_id}, {"_id": 0})
 async def create_resource(collection, payload, user):
     doc = payload.model_dump(exclude_none=True); doc.update({"id": str(uuid.uuid4()), "created_at": now(), "created_by": user["id"]})
