@@ -1391,11 +1391,11 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
           </div>
         </div> : <div className={`mob-line${(l.qtyExchange > 0 || l.qtyFull > 0) ? ' active' : ''}`} key={i} data-testid={`mob-line-${i}`}>
           <div className="mob-line-top">
-            <div className="mob-line-info"><b>{l.brand}</b><small>Troca R$ {l.priceExchange.toFixed(2)} · Completo R$ {fullPriceOf(l).toFixed(2)}</small><span className="mob-line-subtotal">{money(lineTotal(l))}</span></div>
+            <div className="mob-line-info"><b>{l.brand}</b><small>Somente água R$ {l.priceExchange.toFixed(2)} · Completo R$ {fullPriceOf(l).toFixed(2)}</small><span className="mob-line-subtotal">{money(lineTotal(l))}</span></div>
           </div>
           <div className="mob-line-split">
             <div className="mob-line-split-col">
-              <span className="mob-line-split-label">Troca de vasilhame</span>
+              <span className="mob-line-split-label">Somente água</span>
               <div className="mob-counter">
                 <button type="button" data-testid={`mob-qty-exchange-minus-${i}`} onClick={() => decQtyExchange(i)}><Minus size={18} /></button>
                 <input type="number" inputMode="numeric" min="0" value={l.qtyExchange} data-testid={`mob-qty-exchange-input-${i}`} onChange={e => setQtyExchange(i, e.target.value)} onFocus={e => e.target.select()} />
@@ -1429,7 +1429,7 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
         <label>Quantidade<input type="number" inputMode="numeric" min="0" value={newQty} data-testid="mob-new-brand-qty" onChange={e => setNewQty(e.target.value)} /></label>
         <label>{newFull ? 'Preço combinado (venda completa)' : 'Preço combinado (R$ por galão)'}<input type="number" inputMode="decimal" step="0.01" value={newPrice} data-testid="mob-new-brand-price" onChange={e => setNewPrice(e.target.value)} onFocus={e => e.target.select()} /></label>
         <div className="mob-sale-type">
-          <button type="button" className={!newFull ? 'active' : ''} data-testid="mob-new-brand-exchange" onClick={() => setNewFull(false)}>Troca de vasilhame</button>
+          <button type="button" className={!newFull ? 'active' : ''} data-testid="mob-new-brand-exchange" onClick={() => setNewFull(false)}>Somente água</button>
           <button type="button" className={newFull ? 'active' : ''} data-testid="mob-new-brand-full" onClick={() => setNewFull(true)}>Venda completa (vasilhame + água)</button>
         </div>
         <div className="mob-row-actions">
