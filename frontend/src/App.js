@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import axios from "axios";
 import { BrowserRouter, Routes, Route, NavLink, Navigate, Link } from "react-router-dom";
-import { LayoutDashboard, Truck, Package, WalletCards, Users, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, Clock3, CircleDollarSign, BarChart3, Save, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle, CalendarCheck, Wallet, Eye, EyeOff, Minus, Sun, Moon, Camera, Search, MoreHorizontal, Fuel, Utensils, Wrench, Receipt, ChevronRight, RefreshCw } from "lucide-react";
+import { LayoutDashboard, Truck, Package, WalletCards, Users, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, Clock3, CircleDollarSign, BarChart3, Save, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle, CalendarCheck, Wallet, Eye, EyeOff, Minus, Sun, Moon, Camera, Search, MoreHorizontal, Fuel, Utensils, Wrench, Receipt, ChevronRight, RefreshCw, Eraser } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import logoImg from "./assets/logo.png";
@@ -303,8 +303,8 @@ function SignaturePad({ onSave, onCancel, variant = 'desktop', customer, total, 
     <div className="mob-sign-area">
       <canvas ref={canvasRef} data-testid="signature-canvas" />
       {empty && <span className="mob-sign-placeholder">Assine com o dedo</span>}
-      <button type="button" className="mob-sign-clear-btn" data-testid="signature-clear" disabled={empty} onClick={clear}><Trash2 size={18} /> Apagar</button>
     </div>
+    <button type="button" className="mob-sign-clear-btn" data-testid="signature-clear" disabled={empty} onClick={clear}><Eraser size={20} /> Apagar assinatura</button>
     <label className="mob-sign-name-field">
       <span>Nome do assinante</span>
       <input value={signerName} placeholder="Digite o nome de quem assinou" data-testid="signature-name-input" onChange={e => setSignerName(e.target.value)} />
@@ -321,7 +321,7 @@ function SignaturePad({ onSave, onCancel, variant = 'desktop', customer, total, 
     <canvas ref={canvasRef} width={360} height={180} className="signature-canvas" data-testid="signature-canvas" />
     <label className="signature-name-field"><span>Nome do assinante</span><input value={signerName} placeholder="Digite o nome de quem assinou" data-testid="signature-name-input" onChange={e => setSignerName(e.target.value)} /></label>
     <div className="signature-actions">
-      <button type="button" className="ghost-btn signature-clear-btn" data-testid="signature-clear" onClick={clear}><Trash2 size={16} /> Apagar assinatura</button>
+      <button type="button" className="ghost-btn signature-clear-btn" data-testid="signature-clear" onClick={clear}><Eraser size={16} /> Apagar assinatura</button>
       <button type="button" className="primary" data-testid="signature-save" onClick={save} disabled={empty}><Check size={16} /> Concluir parada</button>
     </div>
   </div></div>
