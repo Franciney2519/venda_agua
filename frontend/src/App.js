@@ -467,9 +467,9 @@ function Finance({ data, setData, create, user }) {
 
 function Customers({ items, create, onEdit }) {
   const [search, setSearch] = useState('');
-  const filtered = items.filter(x => x.name.toLowerCase().includes(search.toLowerCase()));
+  const filtered = items.filter(x => x.name.toLowerCase().includes(search.toLowerCase()) || (x.code || '').toLowerCase().includes(search.toLowerCase()));
   return <><Head eyebrow="RELACIONAMENTO" title="Clientes" subtitle="Sua carteira, marcas de água e preço combinado por cliente." action="Novo cliente" onAction={() => create('customer')} />
-    <div className="mob-search" style={{ marginBottom: 18, maxWidth: 360 }}><Search size={16} /><input placeholder="Buscar cliente" value={search} data-testid="customers-search-input" onChange={e => setSearch(e.target.value)} /></div>
+    <div className="mob-search" style={{ marginBottom: 18, maxWidth: 360 }}><Search size={16} /><input placeholder="Buscar por nome ou código" value={search} data-testid="customers-search-input" onChange={e => setSearch(e.target.value)} /></div>
     <div className="customer-grid">{filtered.map(x => { const brandList = x.brands?.length ? x.brands : (x.brand ? [{ brand: x.brand, price: x.price }] : []); return <div className="customer-card" key={x.id} data-testid={`customer-card-${x.id}`}><div className="customer-avatar">{x.name?.[0]}</div><div><b>{x.name}{x.code && <small style={{ display: 'inline', marginLeft: 6, fontWeight: 400 }}>#{x.code}</small>}</b><span>{x.address}</span><small>{x.phone || 'Sem telefone'}{x.payment_type === 'prazo' && <span className="tag orange" style={{ marginLeft: 6 }}>A prazo</span>}</small>{brandList.length > 0 && <div className="customer-brands">{brandList.map((b, i) => <span className="tag blue" key={i}>{b.brand} · {money(b.price)}</span>)}</div>}</div><button type="button" className="action-btn ghost" data-testid={`customer-edit-${x.id}`} onClick={() => onEdit(x)}><Pencil size={15} /></button></div> })}
     {filtered.length === 0 && <p className="muted">Nenhum cliente encontrado.</p>}
     </div></> }
@@ -1216,7 +1216,7 @@ function MobilePickerRow({ c, onClick }) {
   const line = brands.length ? `${brands.length} ${brands.length === 1 ? 'marca' : 'marcas'} · ${brands.map(b => b.brand).join(', ')}` : 'sem marca cadastrada';
   return <button type="button" className="mob-customer-row" data-testid={`mob-picker-row-${c.id || 'new'}`} onClick={onClick}>
     <span className="mob-customer-avatar">{c.name?.[0] || '?'}</span>
-    <span className="mob-customer-info"><b>{c.name}</b><small>{line}</small></span>
+    <span className="mob-customer-info"><b>{c.name}{c.code && <span className="mob-tag neutral" style={{ marginLeft: 6 }}>#{c.code}</span>}</b><small>{line}</small></span>
     <ChevronRight size={20} color="var(--mob-blue)" />
   </button>
 }
@@ -1225,7 +1225,7 @@ function MobileClientesTab({ customers, entries, orders, onStartOrder, date, onO
   const todaysEntries = entries.filter(e => e.date === date);
   const doneNames = new Set(todaysEntries.map(e => e.customer));
   const receivedToday = todaysEntries.reduce((s, e) => s + Number(e.pix_value || 0) + Number(e.cash_value || 0), 0);
-  const filtered = customers.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
+  const filtered = customers.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || (c.code || '').toLowerCase().includes(search.toLowerCase()));
   const goal = customers.length || 1;
   const progress = Math.min(100, (doneNames.size / goal) * 100);
   return <div className="mob-screen">
@@ -1241,7 +1241,7 @@ function MobileClientesTab({ customers, entries, orders, onStartOrder, date, onO
       <div className="mob-progress"><div style={{ width: `${progress}%` }} /></div>
     </div>
     <button type="button" className="mob-cta" data-testid="mob-new-delivery-button" onClick={onOpenPicker}><Plus size={20} /> Nova entrega</button>
-    <div className="mob-search"><Search size={16} /><input placeholder="Buscar cliente" value={search} data-testid="mob-search-input" onChange={e => setSearch(e.target.value)} /></div>
+    <div className="mob-search"><Search size={16} /><input placeholder="Buscar por nome ou código" value={search} data-testid="mob-search-input" onChange={e => setSearch(e.target.value)} /></div>
     <div className="mob-customer-list">
       {filtered.map(c => <MobileStopRow key={c.id} c={c} done={doneNames.has(c.name)} onClick={() => onOpenCustomer(c)} />)}
       {filtered.length === 0 && <p className="muted" style={{ padding: 16 }}>Nenhum cliente encontrado.</p>}
@@ -1251,7 +1251,7 @@ function MobileClientesTab({ customers, entries, orders, onStartOrder, date, onO
 
 function MobilePickerSheet({ customers, onClose, onPick, onNewCustomer }) {
   const [q, setQ] = useState('');
-  const filtered = customers.filter(c => c.name.toLowerCase().includes(q.toLowerCase()));
+  const filtered = customers.filter(c => c.name.toLowerCase().includes(q.toLowerCase()) || (c.code || '').toLowerCase().includes(q.toLowerCase()));
   return <div className="mob-backdrop" onClick={onClose}>
     <div className="mob-sheet" onClick={e => e.stopPropagation()}>
       <div className="mob-sheet-handle" />
@@ -1259,7 +1259,7 @@ function MobilePickerSheet({ customers, onClose, onPick, onNewCustomer }) {
         <div><h3>Nova entrega</h3><p>Escolha o cliente — marca e preço vêm do cadastro</p></div>
         <button type="button" className="mob-close" data-testid="mob-picker-close" onClick={onClose}><X size={18} /></button>
       </div>
-      <div className="mob-search"><Search size={16} /><input autoFocus placeholder="Digite o nome do cliente" value={q} data-testid="mob-picker-search" onChange={e => setQ(e.target.value)} /></div>
+      <div className="mob-search"><Search size={16} /><input autoFocus placeholder="Digite o nome ou o código do cliente" value={q} data-testid="mob-picker-search" onChange={e => setQ(e.target.value)} /></div>
       <div className="mob-sheet-list">
         {filtered.map(c => <MobilePickerRow key={c.id} c={c} onClick={() => onPick(c)} />)}
         {filtered.length === 0 && <p className="muted" style={{ padding: 16 }}>Nenhum cliente encontrado.</p>}
