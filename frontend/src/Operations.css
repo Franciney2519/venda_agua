@@ -161,6 +161,8 @@
 .mob-counter.small button{width:48px;height:48px;border-radius:12px}
 .mob-counter.small button.mf{background:var(--mob-orange-soft);border-color:var(--mob-orange-border);color:var(--mob-orange)}
 .mob-counter.small span{font-size:calc(21px * var(--scale))}
+.mob-line-full-price{display:grid;gap:6px;background:var(--mob-blue-soft);border:1.5px solid var(--mob-blue-border);border-radius:14px;padding:12px;margin-bottom:10px;font-size:calc(12px * var(--scale));font-weight:700;color:var(--mob-blue)}
+.mob-line-full-price input{padding:14px;border-radius:12px;border:1.5px solid var(--mob-blue-border);background:var(--mob-surface);color:var(--mob-ink);font:700 calc(26px * var(--scale)) 'Space Grotesk',sans-serif;width:100%}
 .mob-line-mf{display:flex;justify-content:space-between;align-items:center;gap:10px;border-top:1px solid var(--mob-line);padding-top:12px;margin-top:12px}
 .mob-line-mf span:first-child{font-size:calc(12.5px * var(--scale));font-weight:700;color:var(--mob-muted);white-space:nowrap}
 
