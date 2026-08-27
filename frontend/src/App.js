@@ -369,7 +369,7 @@ function StockAdjustModal({ product, onClose, onSave }) {
 
 function ProductModal({ onClose, onSave }) {
   const [brands, setBrands] = useState([]);
-  const [form, setForm] = useState({ brand: '', name: '', category: 'Retornável', quantity: '', minimum: '', cost_price: '', batch: '', purchase_date: '' });
+  const [form, setForm] = useState({ brand: '', name: '', category: 'Retornável', unit: 'un', quantity: '', minimum: '', cost_price: '', units_per_package: '', batch: '', purchase_date: '' });
   const [error, setError] = useState('');
 
   useEffect(() => { api.get('/brands', auth()).then(({ data }) => setBrands(data.filter(b => b.active !== false))); }, []);
@@ -386,6 +386,7 @@ function ProductModal({ onClose, onSave }) {
     try {
       const payload = { ...form, quantity: Number(form.quantity), minimum: Number(form.minimum) };
       if (payload.cost_price !== '') payload.cost_price = Number(payload.cost_price); else delete payload.cost_price;
+      if (payload.unit === 'fardo' && payload.units_per_package !== '') payload.units_per_package = Number(payload.units_per_package); else delete payload.units_per_package;
       if (!payload.batch) delete payload.batch;
       if (!payload.purchase_date) delete payload.purchase_date;
       await onSave(payload);
@@ -405,9 +406,18 @@ function ProductModal({ onClose, onSave }) {
     <label>Categoria<select value={form.category} data-testid="modal-category-input" onChange={e => setForm({ ...form, category: e.target.value })}>
       <option>Retornável</option><option>Descartável</option>
     </select></label>
-    <label>Quantidade<input required type="number" value={form.quantity} data-testid="modal-quantity-input" onChange={e => setForm({ ...form, quantity: e.target.value })} /></label>
-    <label>Estoque mínimo<input required type="number" value={form.minimum} data-testid="modal-minimum-input" onChange={e => setForm({ ...form, minimum: e.target.value })} /></label>
-    <label>Custo de compra (R$/un){form.brand && <small className="muted"> · puxado da marca, edite se mudou</small>}<input type="number" step="0.01" value={form.cost_price} data-testid="modal-cost_price-input" onChange={e => setForm({ ...form, cost_price: e.target.value })} /></label>
+    <label>Unidade de medida<select value={form.unit} data-testid="modal-unit-input" onChange={e => setForm({ ...form, unit: e.target.value })}>
+      <option value="un">Unidade avulsa</option>
+      <option value="fardo">Fardo</option>
+    </select></label>
+    <p className="muted" style={{ marginTop: -8, fontSize: 12 }}>{form.unit === 'fardo' ? 'Cadastre quantidade, mínimo e custo sempre em fardos — e lance as vendas desse produto também em fardos.' : 'Cadastre quantidade, mínimo e custo por unidade avulsa.'}</p>
+    <label>Quantidade ({form.unit === 'fardo' ? 'fardos' : 'unidades'})<input required type="number" value={form.quantity} data-testid="modal-quantity-input" onChange={e => setForm({ ...form, quantity: e.target.value })} /></label>
+    <label>Estoque mínimo ({form.unit === 'fardo' ? 'fardos' : 'unidades'})<input required type="number" value={form.minimum} data-testid="modal-minimum-input" onChange={e => setForm({ ...form, minimum: e.target.value })} /></label>
+    <label>{form.unit === 'fardo' ? 'Custo de compra (R$ por fardo)' : 'Custo de compra (R$ por unidade)'}{form.brand && <small className="muted"> · puxado da marca, edite se mudou</small>}<input type="number" step="0.01" value={form.cost_price} data-testid="modal-cost_price-input" onChange={e => setForm({ ...form, cost_price: e.target.value })} /></label>
+    {form.unit === 'fardo' && <>
+      <label>Unidades por fardo<input type="number" placeholder="ex: 12" value={form.units_per_package} data-testid="modal-units_per_package-input" onChange={e => setForm({ ...form, units_per_package: e.target.value })} /></label>
+      {form.cost_price !== '' && form.units_per_package !== '' && Number(form.units_per_package) > 0 && <p className="muted" style={{ marginTop: -8, fontSize: 12 }}>Custo por unidade avulsa (calculado): <b>{money(Number(form.cost_price) / Number(form.units_per_package))}</b> — usado para calcular o lucro quando a venda for por unidade.</p>}
+    </>}
     <label>Lote<input value={form.batch} data-testid="modal-batch-input" onChange={e => setForm({ ...form, batch: e.target.value })} /></label>
     <label>Data de compra<input type="date" value={form.purchase_date} data-testid="modal-purchase_date-input" onChange={e => setForm({ ...form, purchase_date: e.target.value })} /></label>
     {error && <div className="error" data-testid="form-validation-error">{error}</div>}
@@ -417,21 +427,33 @@ function ProductModal({ onClose, onSave }) {
 
 function StockMovements() {
   const [movements, setMovements] = useState(null);
-  useEffect(() => { api.get('/stock-movements', auth()).then(x => setMovements(x.data)).catch(() => setMovements([])); }, []);
-  const reasonLabel = { venda: 'Venda', estorno: 'Estorno', ajuste: 'Ajuste' };
-  return <section className="panel table-panel" style={{ marginTop: 22 }}>
-    <div className="panel-head" style={{ padding: '18px 23px' }}><div><h3>Movimentação de estoque</h3><p className="muted">Saídas por venda e entradas por estorno, com a venda de origem</p></div></div>
-    <div className="table-wrap"><table><thead><tr><th>DATA</th><th>PRODUTO</th><th>QTD</th><th>MOTIVO</th><th>VENDA DE ORIGEM</th></tr></thead><tbody>
-      {(movements || []).map(m => <tr key={m.id} data-testid={`stock-movement-${m.id}`}>
-        <td><small>{formatDateTimeManaus(m.created_at)}</small></td>
-        <td><b>{m.product_name || m.brand}</b></td>
-        <td><span className={`tag ${m.quantity < 0 ? 'red' : 'green'}`}>{m.quantity > 0 ? '+' : ''}{m.quantity}</span></td>
-        <td>{reasonLabel[m.reason] || m.reason}</td>
-        <td>{m.entry_number ? <small>Nº {m.entry_number} · {m.customer}{m.driver ? ` · ${m.driver}` : ''}</small> : <small className="muted">—</small>}</td>
-      </tr>)}
-      {movements?.length === 0 && <tr><td colSpan={5} className="muted" style={{ padding: 16 }}>Nenhuma movimentação registrada ainda.</td></tr>}
-    </tbody></table></div>
-  </section>
+  function load() { api.get('/stock-movements', auth()).then(x => setMovements(x.data)).catch(() => setMovements([])); }
+  useEffect(() => { load(); }, []);
+  const reasonLabel = { venda: 'Venda', estorno: 'Estorno', ajuste: 'Ajuste', mf_defeito: 'Defeito (MF)' };
+  const pendingExchange = (movements || []).filter(m => m.reason === 'mf_defeito' && !m.resolved);
+  async function markExchanged(m) { const { data } = await api.patch(`/stock-movements/${m.id}`, {}, auth()); setMovements(prev => prev.map(x => x.id === m.id ? data : x)); }
+  return <>
+    {pendingExchange.length > 0 && <div className="stock-alert" data-testid="mf-exchange-alert" style={{ marginTop: 22 }}>
+      <AlertTriangle size={19} />
+      <div><b>{pendingExchange.length} galão{pendingExchange.length > 1 ? 'ões' : ''} com defeito (microfuro) aguardando troca com o fornecedor</b>
+        <span>{pendingExchange.map(m => `${m.product_name || m.brand} (${Math.abs(m.quantity)})`).join(' · ')}</span>
+      </div>
+    </div>}
+    <section className="panel table-panel" style={{ marginTop: 22 }}>
+      <div className="panel-head" style={{ padding: '18px 23px' }}><div><h3>Movimentação de estoque</h3><p className="muted">Saídas por venda, defeitos (MF) e entradas por estorno, com a venda de origem</p></div></div>
+      <div className="table-wrap"><table><thead><tr><th>DATA</th><th>PRODUTO</th><th>QTD</th><th>MOTIVO</th><th>VENDA DE ORIGEM</th><th /></tr></thead><tbody>
+        {(movements || []).map(m => <tr key={m.id} data-testid={`stock-movement-${m.id}`}>
+          <td><small>{formatDateTimeManaus(m.created_at)}</small></td>
+          <td><b>{m.product_name || m.brand}</b></td>
+          <td><span className={`tag ${m.quantity < 0 ? 'red' : 'green'}`}>{m.quantity > 0 ? '+' : ''}{m.quantity}</span></td>
+          <td>{m.reason === 'mf_defeito' ? <span className="tag orange">{reasonLabel[m.reason]}</span> : (reasonLabel[m.reason] || m.reason)}</td>
+          <td>{m.entry_number ? <small>Nº {m.entry_number} · {m.customer}{m.driver ? ` · ${m.driver}` : ''}</small> : <small className="muted">—</small>}</td>
+          <td>{m.reason === 'mf_defeito' && (m.resolved ? <span className="tag green" title={m.resolved_note}>Trocado</span> : <button className="action-btn ghost" data-testid={`mf-mark-exchanged-${m.id}`} onClick={() => markExchanged(m)}>Marcar trocado</button>)}</td>
+        </tr>)}
+        {movements?.length === 0 && <tr><td colSpan={6} className="muted" style={{ padding: 16 }}>Nenhuma movimentação registrada ainda.</td></tr>}
+      </tbody></table></div>
+    </section>
+  </>
 }
 
 function Stock({ data, setData, create }) {

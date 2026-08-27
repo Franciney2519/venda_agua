@@ -77,6 +77,8 @@ class ResourceInput(BaseModel):
     purchase_date: Optional[str] = None
     payment_type: Optional[str] = None
     code: Optional[str] = None
+    unit: Optional[str] = None
+    units_per_package: Optional[float] = None
     active: Optional[bool] = None
 
 MANAUS_TZ = timezone(timedelta(hours=-4))  # America/Manaus, no DST
@@ -190,17 +192,19 @@ def match_product(products_cache, brand):
     if not b: return None
     return next((p for p in products_cache if (p.get("brand") or p.get("name") or "").strip().lower() == b), None)
 
-async def apply_stock_delta(products_cache, brand, delta, reason, entry, user):
+async def apply_stock_delta(products_cache, brand, delta, reason, entry, user, extra=None):
     if not delta: return
     match = match_product(products_cache, brand)
     if not match: return
     await db.products.update_one({"id": match["id"]}, {"$inc": {"quantity": delta}})
-    await db.stock_movements.insert_one({
+    movement = {
         "id": str(uuid.uuid4()), "product_id": match["id"], "product_name": match.get("name"), "brand": match.get("brand") or match.get("name"),
         "quantity": delta, "reason": reason,
         "entry_id": entry.get("id"), "entry_number": entry.get("entry_number"), "customer": entry.get("customer"), "driver": entry.get("driver"),
         "created_at": now(), "created_by": user.get("id") if user else None, "created_by_name": user.get("name") if user else "sistema",
-    })
+    }
+    if extra: movement.update(extra)
+    await db.stock_movements.insert_one(movement)
 
 async def apply_entry_stock_movements(doc, reason, sign, user):
     products_cache = await db.products.find({}, {"_id": 0}).to_list(1000)
@@ -215,14 +219,31 @@ async def apply_entry_stock_movements(doc, reason, sign, user):
     if doc.get("mf_plan") == "swap":
         mf_items = [it for it in (items or []) if float(it.get("mf_quantity") or 0) > 0]
         mf_total = sum(float(it.get("mf_quantity") or 0) for it in mf_items) if items else float(doc.get("mf_quantity") or 0)
-        if items:
-            for it in mf_items:
-                await apply_stock_delta(products_cache, it.get("brand"), sign * -float(it["mf_quantity"]), reason, doc, user)
-        elif mf_total > 0:
-            await apply_stock_delta(products_cache, doc.get("brand"), sign * -mf_total, reason, doc, user)
+        if sign == 1:
+            # Defective (microfuro) bottle swapped on the truck: flag for supplier exchange.
+            if items:
+                for it in mf_items:
+                    await apply_stock_delta(products_cache, it.get("brand"), -float(it["mf_quantity"]), "mf_defeito", doc, user, extra={"resolved": False})
+            elif mf_total > 0:
+                await apply_stock_delta(products_cache, doc.get("brand"), -mf_total, "mf_defeito", doc, user, extra={"resolved": False})
+        else:
+            # Estorno: the earlier defect swap no longer applies, cancel its pending supplier-exchange flag.
+            await db.stock_movements.update_many({"entry_id": doc.get("id"), "reason": "mf_defeito"}, {"$set": {"resolved": True, "resolved_note": "Estornado"}})
+            if items:
+                for it in mf_items:
+                    await apply_stock_delta(products_cache, it.get("brand"), float(it["mf_quantity"]), reason, doc, user)
+            elif mf_total > 0:
+                await apply_stock_delta(products_cache, doc.get("brand"), mf_total, reason, doc, user)
 
 @api.get("/stock-movements")
 async def stock_movements(user=Depends(admin_user)): return await db.stock_movements.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+
+@api.patch("/stock-movements/{item_id}")
+async def update_stock_movement(item_id: str, user=Depends(admin_user)):
+    target = await db.stock_movements.find_one({"id": item_id}, {"_id": 0})
+    if not target: raise HTTPException(404, "Movimentação não encontrada")
+    await db.stock_movements.update_one({"id": item_id}, {"$set": {"resolved": True, "resolved_note": "Trocado com o fornecedor", "resolved_by": user["name"], "resolved_at": now()}})
+    return await db.stock_movements.find_one({"id": item_id}, {"_id": 0})
 async def create_resource(collection, payload, user):
     doc = payload.model_dump(exclude_none=True); doc.update({"id": str(uuid.uuid4()), "created_at": now(), "created_by": user["id"]})
     await db[collection].insert_one(doc); doc.pop("_id", None); return doc
@@ -490,10 +511,15 @@ async def _profit_rows(start, end, group_by):
     entries = await db.daily_entries.find(query, {"_id": 0}).to_list(5000)
     products = await db.products.find({}, {"_id": 0}).to_list(1000)
     brands_cat = await db.brands.find({}, {"_id": 0}).to_list(1000)
-    cost_by_brand = {(p.get("brand") or p.get("name") or "").strip().lower(): float(p.get("cost_price") or 0) for p in products if p.get("cost_price")}
+    cost_by_brand = {}
     for b in brands_cat:
         if b.get("cost_price"):
             cost_by_brand[(b.get("name") or "").strip().lower()] = float(b["cost_price"])
+    for p in products:
+        if not p.get("cost_price"): continue
+        upp = float(p.get("units_per_package") or 1) if (p.get("unit") or "").lower().startswith("fardo") else 1
+        unit_cost = float(p["cost_price"]) / upp if upp else float(p["cost_price"])
+        cost_by_brand[(p.get("brand") or p.get("name") or "").strip().lower()] = unit_cost
     rows = {}
     for e in entries:
         customer = e.get("customer") or "Sem cliente"
