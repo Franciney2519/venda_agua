@@ -58,6 +58,11 @@ function buildReceiptDoc(entry) {
     doc.text('Assinatura do cliente:', 14, y); y += 4;
     try { doc.addImage(entry.signature, 'PNG', 14, y, 80, 38); } catch (err) { /* imagem inválida, ignora */ }
     y += 42;
+    if (entry.signature_name) {
+      doc.setDrawColor(200, 210, 220); doc.line(14, y, 94, y); y += 5;
+      doc.setFontSize(9); doc.setTextColor(16, 37, 63);
+      doc.text(entry.signature_name, 14, y); y += 6;
+    }
     doc.setFontSize(8); doc.setTextColor(110, 130, 152);
     doc.text(`Assinado eletronicamente em ${dt}`, 14, y);
   } else {
@@ -1020,7 +1025,10 @@ function SignatureViewModal({ entry, customer, onClose }) {
       <p className="eyebrow">COMPROVANTE DE ENTREGA{entry.entry_number ? ` · Nº ${entry.entry_number}` : ''}</p>
       <h3>{entry.customer}</h3>
       <p className="muted">{entry.date} · {entry.driver} · {items.map(it => `${it.quantity} ${it.brand}`).join(' + ')} · {money(entry.total)}</p>
-      {entry.signature ? <img src={entry.signature} alt="Assinatura do cliente" style={{ width: '100%', border: '1px solid var(--line)', borderRadius: 8, background: '#fff' }} data-testid="signature-view-image" /> : <p className="muted" data-testid="signature-view-missing">Este lançamento não tem assinatura registrada.</p>}
+      {entry.signature ? <>
+        <img src={entry.signature} alt="Assinatura do cliente" style={{ width: '100%', border: '1px solid var(--line)', borderRadius: 8, background: '#fff' }} data-testid="signature-view-image" />
+        {entry.signature_name && <p className="muted" style={{ marginTop: 4 }} data-testid="signature-view-name">Assinado por: <b>{entry.signature_name}</b></p>}
+      </> : <p className="muted" data-testid="signature-view-missing">Este lançamento não tem assinatura registrada.</p>}
       <div className="row-actions" style={{ marginTop: 4 }}>
         <button type="button" className="action-btn ghost" data-testid="receipt-download-pdf" onClick={() => downloadReceiptPdf(entry)}><FileText size={13} /> Baixar comprovante (PDF)</button>
         {waLink ? <a className="action-btn approve" href={waLink} target="_blank" rel="noreferrer" data-testid="receipt-whatsapp">WhatsApp (baixe o PDF e anexe)</a> : <span className="muted" style={{ fontSize: 11 }} title="Cadastre o telefone do cliente">Sem telefone cadastrado</span>}
