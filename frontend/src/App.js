@@ -1009,14 +1009,26 @@ function whatsappLinkFor(order, driverUser) {
 function CustomerCombobox({ customers, value, onPick, testId }) {
   const [query, setQuery] = useState(value || '');
   const [open, setOpen] = useState(false);
+  const [rect, setRect] = useState(null);
   const blurTimer = useRef(null);
+  const inputRef = useRef(null);
   useEffect(() => { setQuery(value || ''); }, [value]);
+  useEffect(() => {
+    if (!open) return;
+    function updateRect() { if (inputRef.current) setRect(inputRef.current.getBoundingClientRect()); }
+    updateRect();
+    window.addEventListener('scroll', updateRect, true);
+    window.addEventListener('resize', updateRect);
+    return () => { window.removeEventListener('scroll', updateRect, true); window.removeEventListener('resize', updateRect); };
+  }, [open]);
   const sorted = [...customers].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
   const q = query.trim().toLowerCase();
   const filtered = q ? sorted.filter(c => (c.name || '').toLowerCase().includes(q) || (c.code || '').toLowerCase().includes(q)) : sorted;
   function pick(c) { setQuery(c.name); setOpen(false); onPick(c.name); }
+  const listStyle = rect ? { position: 'fixed', top: rect.bottom + 4, left: rect.left, width: rect.width } : null;
   return <div className="combobox">
     <input
+      ref={inputRef}
       value={query}
       placeholder="Nome ou código do cliente"
       data-testid={testId}
@@ -1024,12 +1036,12 @@ function CustomerCombobox({ customers, value, onPick, testId }) {
       onFocus={() => setOpen(true)}
       onBlur={() => { blurTimer.current = setTimeout(() => setOpen(false), 150); }}
     />
-    {open && filtered.length > 0 && <div className="combobox-list" onMouseDown={e => e.preventDefault()}>
+    {open && listStyle && filtered.length > 0 && <div className="combobox-list" style={listStyle} onMouseDown={e => e.preventDefault()}>
       {filtered.slice(0, 50).map(c => <button type="button" key={c.id} className="combobox-option" data-testid={`${testId}-option-${c.id}`} onClick={() => pick(c)}>
         <b>{c.name}</b>{c.code && <span className="combobox-code">#{c.code}</span>}
       </button>)}
     </div>}
-    {open && query && filtered.length === 0 && <div className="combobox-list"><p className="combobox-empty">Nenhum cliente encontrado.</p></div>}
+    {open && listStyle && query && filtered.length === 0 && <div className="combobox-list" style={listStyle}><p className="combobox-empty">Nenhum cliente encontrado.</p></div>}
   </div>
 }
 
