@@ -1268,10 +1268,10 @@ function MobilePickerSheet({ customers, onClose, onPick, onNewCustomer }) {
 function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillOrder }) {
   const [customerName, setCustomerName] = useState(customer.name || '');
   const [lines, setLines] = useState(() => {
-    const base = brandListOf(customer).map(b => ({ brand: b.brand, priceExchange: Number(b.price) || 0, priceFull: b.price_full != null ? Number(b.price_full) || 0 : null, saleType: 'exchange', qty: 0, mf: 0 }));
+    const base = brandListOf(customer).map(b => ({ brand: b.brand, priceExchange: Number(b.price) || 0, priceFull: b.price_full != null ? Number(b.price_full) || 0 : null, qtyExchange: 0, qtyFull: 0, mf: 0 }));
     if (prefillOrder?.brand) {
       const idx = base.findIndex(l => l.brand.toLowerCase() === prefillOrder.brand.toLowerCase());
-      if (idx >= 0) base[idx] = { ...base[idx], qty: Number(prefillOrder.quantity) || base[idx].qty };
+      if (idx >= 0) base[idx] = { ...base[idx], qtyExchange: Number(prefillOrder.quantity) || base[idx].qtyExchange };
       else base.push({ brand: prefillOrder.brand, priceExchange: 0, priceFull: null, saleType: 'exchange', qty: Number(prefillOrder.quantity) || 0, mf: 0, extra: true });
     }
     return base;
@@ -1292,8 +1292,10 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  const fullPriceOf = l => l.priceFull != null ? l.priceFull : (Number(l.priceFullManual) || 0);
   const linePrice = l => l.saleType === 'full' ? (l.priceFull != null ? l.priceFull : (Number(l.priceFullManual) || l.priceExchange)) : l.priceExchange;
-  const total = lines.reduce((s, l) => s + l.qty * linePrice(l), 0);
+  const lineTotal = l => l.extra ? l.qty * linePrice(l) : (l.qtyExchange * l.priceExchange) + (l.qtyFull * fullPriceOf(l));
+  const total = lines.reduce((s, l) => s + lineTotal(l), 0);
   const compValue = compOn ? (Number(comp) || 0) : 0;
   const remaining = Math.max(0, Math.round((total - compValue) * 100) / 100);
   const totalMf = lines.reduce((s, l) => s + l.mf, 0);
@@ -1306,9 +1308,14 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
   function incQty(i) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qty: l.qty + 1 } : l)); }
   function decQty(i) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qty: Math.max(0, l.qty - 1) } : l)); }
   function setQty(i, raw) { const v = Math.max(0, parseInt(raw, 10) || 0); setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qty: v } : l)); }
-  function incMf(i) { setLines(prev => prev.map((l, idx) => idx === i && l.qty > 0 ? { ...l, qty: l.qty - 1, mf: l.mf + 1 } : l)); }
-  function decMf(i) { setLines(prev => prev.map((l, idx) => idx === i && l.mf > 0 ? { ...l, qty: l.qty + 1, mf: l.mf - 1 } : l)); }
-  function setSaleType(i, type) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, saleType: type } : l)); }
+  function incQtyExchange(i) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qtyExchange: l.qtyExchange + 1 } : l)); }
+  function decQtyExchange(i) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qtyExchange: Math.max(0, l.qtyExchange - 1) } : l)); }
+  function setQtyExchange(i, raw) { const v = Math.max(0, parseInt(raw, 10) || 0); setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qtyExchange: v } : l)); }
+  function incQtyFull(i) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qtyFull: l.qtyFull + 1 } : l)); }
+  function decQtyFull(i) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qtyFull: Math.max(0, l.qtyFull - 1) } : l)); }
+  function setQtyFull(i, raw) { const v = Math.max(0, parseInt(raw, 10) || 0); setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qtyFull: v } : l)); }
+  function incMf(i) { setLines(prev => prev.map((l, idx) => { if (idx !== i) return l; if (l.extra) return l.qty > 0 ? { ...l, qty: l.qty - 1, mf: l.mf + 1 } : l; return l.qtyExchange > 0 ? { ...l, qtyExchange: l.qtyExchange - 1, mf: l.mf + 1 } : l; })); }
+  function decMf(i) { setLines(prev => prev.map((l, idx) => { if (idx !== i) return l; if (l.mf === 0) return l; return l.extra ? { ...l, qty: l.qty + 1, mf: l.mf - 1 } : { ...l, qtyExchange: l.qtyExchange + 1, mf: l.mf - 1 }; })); }
   function setFullPriceManual(i, value) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, priceFullManual: value } : l)); }
 
   function addBrandLine() {
@@ -1325,7 +1332,15 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
 
   async function complete(signature, signatureName) {
     setSaving(true); setError('');
-    const items = lines.filter(l => l.qty > 0 || l.mf > 0).map(l => ({ brand: l.brand, price: linePrice(l), sale_type: l.saleType, quantity: l.qty, mf_quantity: l.mf, out_of_catalog: !!l.extra }));
+    const items = [];
+    for (const l of lines) {
+      if (l.extra) {
+        if (l.qty > 0 || l.mf > 0) items.push({ brand: l.brand, price: linePrice(l), sale_type: l.saleType, quantity: l.qty, mf_quantity: l.mf, out_of_catalog: true });
+        continue;
+      }
+      if (l.qtyExchange > 0 || l.mf > 0) items.push({ brand: l.brand, price: l.priceExchange, sale_type: 'exchange', quantity: l.qtyExchange, mf_quantity: l.mf });
+      if (l.qtyFull > 0) items.push({ brand: l.brand, price: fullPriceOf(l), sale_type: 'full', quantity: l.qtyFull });
+    }
     const payload = {
       customer: customerName, driver: user.name, date, items,
       pix_value: Math.round(pix * 100) / 100, cash_value: Math.round(cash * 100) / 100,
@@ -1341,7 +1356,7 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
 
   if (signing) return <SignaturePad variant="mobile" customer={customerName} total={total} onSave={complete} onCancel={() => setSigning(false)} />;
 
-  const canSubmit = lines.some(l => l.qty > 0 || l.mf > 0) && (totalMf === 0 || !!mfPlan) && Math.abs((pix + cash + compValue) - total) < 0.01;
+  const canSubmit = lines.some(l => l.extra ? (l.qty > 0 || l.mf > 0) : (l.qtyExchange > 0 || l.qtyFull > 0 || l.mf > 0)) && (totalMf === 0 || !!mfPlan) && Math.abs((pix + cash + compValue) - total) < 0.01;
 
   return <div className="mob-backdrop" onClick={onClose}>
     <div className="mob-sheet mob-sheet-tall" onClick={e => e.stopPropagation()}>
@@ -1357,20 +1372,46 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
       {prefillOrder && <div className="mob-order-banner" data-testid="mob-order-banner">Vindo da ordem de serviço{prefillOrder.notes ? ` · ${prefillOrder.notes}` : ''}{lines.some(l => l.extra && l.brand.toLowerCase() === (prefillOrder.brand || '').toLowerCase()) ? ' · confira o preço, esse produto não está no cadastro do cliente' : ''}</div>}
       <p className="mob-eyebrow">PRODUTOS DO CADASTRO · TOQUE + OU DIGITE A QUANTIDADE</p>
       <div className="mob-lines">
-        {lines.map((l, i) => <div className={`mob-line${l.qty > 0 ? ' active' : ''}`} key={i} data-testid={`mob-line-${i}`}>
-          {!l.extra && <div className="mob-sale-type">
-            <button type="button" className={l.saleType !== 'full' ? 'active' : ''} data-testid={`mob-sale-exchange-${i}`} onClick={() => setSaleType(i, 'exchange')}>Troca de vasilhame</button>
-            <button type="button" className={l.saleType === 'full' ? 'active' : ''} data-testid={`mob-sale-full-${i}`} onClick={() => setSaleType(i, 'full')}>Completo (vasilhame + água)</button>
-          </div>}
-          {!l.extra && l.saleType === 'full' && l.priceFull == null && <label className="mob-line-full-price">Preço da venda completa (não cadastrado)<input type="number" inputMode="decimal" step="0.01" autoFocus placeholder={l.priceExchange.toFixed(2)} value={l.priceFullManual || ''} data-testid={`mob-sale-full-price-${i}`} onChange={e => setFullPriceManual(i, e.target.value)} onFocus={e => e.target.select()} /></label>}
+        {lines.map((l, i) => l.extra ? <div className={`mob-line${l.qty > 0 ? ' active' : ''}`} key={i} data-testid={`mob-line-${i}`}>
           <div className="mob-line-top">
-            <div className="mob-line-info"><b>{l.brand}{l.extra && <span className="mob-tag orange" style={{ marginLeft: 6 }}>nova</span>}{l.saleType === 'full' && <span className="mob-tag" style={{ marginLeft: 6 }}>venda completa</span>}</b><small>R$ {linePrice(l).toFixed(2)} por galão</small><span className="mob-line-subtotal">{money(l.qty * linePrice(l))}</span></div>
+            <div className="mob-line-info"><b>{l.brand}<span className="mob-tag orange" style={{ marginLeft: 6 }}>nova</span>{l.saleType === 'full' && <span className="mob-tag" style={{ marginLeft: 6 }}>venda completa</span>}</b><small>R$ {linePrice(l).toFixed(2)} por galão</small><span className="mob-line-subtotal">{money(l.qty * linePrice(l))}</span></div>
             <div className="mob-counter">
               <button type="button" data-testid={`mob-qty-minus-${i}`} onClick={() => decQty(i)}><Minus size={18} /></button>
               <input type="number" inputMode="numeric" min="0" value={l.qty} data-testid={`mob-qty-input-${i}`} onChange={e => setQty(i, e.target.value)} onFocus={e => e.target.select()} />
               <button type="button" className="fill" data-testid={`mob-qty-plus-${i}`} onClick={() => incQty(i)}><Plus size={20} /></button>
             </div>
           </div>
+          <div className="mob-line-mf">
+            <span>MF · microfuro</span>
+            <div className="mob-counter small">
+              <button type="button" data-testid={`mob-mf-minus-${i}`} onClick={() => decMf(i)}><Minus size={14} /></button>
+              <span>{l.mf}</span>
+              <button type="button" className="mf" data-testid={`mob-mf-plus-${i}`} onClick={() => incMf(i)}><Plus size={16} /></button>
+            </div>
+          </div>
+        </div> : <div className={`mob-line${(l.qtyExchange > 0 || l.qtyFull > 0) ? ' active' : ''}`} key={i} data-testid={`mob-line-${i}`}>
+          <div className="mob-line-top">
+            <div className="mob-line-info"><b>{l.brand}</b><small>Troca R$ {l.priceExchange.toFixed(2)} · Completo R$ {fullPriceOf(l).toFixed(2)}</small><span className="mob-line-subtotal">{money(lineTotal(l))}</span></div>
+          </div>
+          <div className="mob-line-split">
+            <div className="mob-line-split-col">
+              <span className="mob-line-split-label">Troca de vasilhame</span>
+              <div className="mob-counter">
+                <button type="button" data-testid={`mob-qty-exchange-minus-${i}`} onClick={() => decQtyExchange(i)}><Minus size={18} /></button>
+                <input type="number" inputMode="numeric" min="0" value={l.qtyExchange} data-testid={`mob-qty-exchange-input-${i}`} onChange={e => setQtyExchange(i, e.target.value)} onFocus={e => e.target.select()} />
+                <button type="button" className="fill" data-testid={`mob-qty-exchange-plus-${i}`} onClick={() => incQtyExchange(i)}><Plus size={20} /></button>
+              </div>
+            </div>
+            <div className="mob-line-split-col">
+              <span className="mob-line-split-label">Completo (vasilhame + água)</span>
+              <div className="mob-counter">
+                <button type="button" data-testid={`mob-qty-full-minus-${i}`} onClick={() => decQtyFull(i)}><Minus size={18} /></button>
+                <input type="number" inputMode="numeric" min="0" value={l.qtyFull} data-testid={`mob-qty-full-input-${i}`} onChange={e => setQtyFull(i, e.target.value)} onFocus={e => e.target.select()} />
+                <button type="button" className="fill" data-testid={`mob-qty-full-plus-${i}`} onClick={() => incQtyFull(i)}><Plus size={20} /></button>
+              </div>
+            </div>
+          </div>
+          {l.qtyFull > 0 && l.priceFull == null && <label className="mob-line-full-price">Preço da venda completa (não cadastrado)<input type="number" inputMode="decimal" step="0.01" autoFocus placeholder={l.priceExchange.toFixed(2)} value={l.priceFullManual || ''} data-testid={`mob-sale-full-price-${i}`} onChange={e => setFullPriceManual(i, e.target.value)} onFocus={e => e.target.select()} /></label>}
           <div className="mob-line-mf">
             <span>MF · microfuro</span>
             <div className="mob-counter small">
