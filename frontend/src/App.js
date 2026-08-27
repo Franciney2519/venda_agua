@@ -268,11 +268,12 @@ function Dashboard({ data, onRefresh, refreshing }) {
 
 const SIGNATURE_COLORS = [['#10253f', 'Preto'], ['#0878d1', 'Azul'], ['#d54e4e', 'Vermelho']];
 
-function SignaturePad({ onSave, onCancel, variant = 'desktop', customer, total }) {
+function SignaturePad({ onSave, onCancel, variant = 'desktop', customer, total, signerName: signerNameProp, onSignerNameChange }) {
   const canvasRef = useRef(null);
   const drawing = useRef(false);
   const [empty, setEmpty] = useState(true);
-  const [signerName, setSignerName] = useState('');
+  const [signerName, setSignerNameState] = useState(signerNameProp || '');
+  function setSignerName(v) { setSignerNameState(v); onSignerNameChange?.(v); }
   const [penColor, setPenColor] = useState(SIGNATURE_COLORS[0][0]);
   const penColorRef = useRef(penColor);
   useEffect(() => { penColorRef.current = penColor; }, [penColor]);
@@ -302,9 +303,12 @@ function SignaturePad({ onSave, onCancel, variant = 'desktop', customer, total }
     <div className="mob-sign-area">
       <canvas ref={canvasRef} data-testid="signature-canvas" />
       {empty && <span className="mob-sign-placeholder">Assine com o dedo</span>}
+      <button type="button" className="mob-sign-clear-btn" data-testid="signature-clear" disabled={empty} onClick={clear}><Trash2 size={18} /> Apagar</button>
     </div>
-    <button type="button" className="mob-text-btn" data-testid="signature-clear" disabled={empty} onClick={clear}>Apagar assinatura</button>
-    <label className="mob-sign-name-label">Nome do assinante<input value={signerName} placeholder="Digite o nome de quem assinou" data-testid="signature-name-input" onChange={e => setSignerName(e.target.value)} /></label>
+    <label className="mob-sign-name-field">
+      <span>Nome do assinante</span>
+      <input value={signerName} placeholder="Digite o nome de quem assinou" data-testid="signature-name-input" onChange={e => setSignerName(e.target.value)} />
+    </label>
     <button type="button" className="mob-cta green" data-testid="signature-save" disabled={empty} onClick={save}>Concluir parada</button>
     <button type="button" className="mob-text-btn" data-testid="signature-close" onClick={onCancel}>Voltar</button>
   </div>;
@@ -315,9 +319,9 @@ function SignaturePad({ onSave, onCancel, variant = 'desktop', customer, total }
     <h3>Assinatura do cliente</h3>
     <p className="muted">Peça para o cliente assinar abaixo confirmando o recebimento.</p>
     <canvas ref={canvasRef} width={360} height={180} className="signature-canvas" data-testid="signature-canvas" />
-    <label>Nome do assinante<input value={signerName} placeholder="Digite o nome de quem assinou" data-testid="signature-name-input" onChange={e => setSignerName(e.target.value)} /></label>
+    <label className="signature-name-field"><span>Nome do assinante</span><input value={signerName} placeholder="Digite o nome de quem assinou" data-testid="signature-name-input" onChange={e => setSignerName(e.target.value)} /></label>
     <div className="signature-actions">
-      <button type="button" className="ghost-btn" data-testid="signature-clear" onClick={clear}>Apagar assinatura</button>
+      <button type="button" className="ghost-btn signature-clear-btn" data-testid="signature-clear" onClick={clear}><Trash2 size={16} /> Apagar assinatura</button>
       <button type="button" className="primary" data-testid="signature-save" onClick={save} disabled={empty}><Check size={16} /> Concluir parada</button>
     </div>
   </div></div>
@@ -1266,8 +1270,12 @@ function MobilePickerSheet({ customers, onClose, onPick, onNewCustomer }) {
 }
 
 function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillOrder }) {
-  const [customerName, setCustomerName] = useState(customer.name || '');
+  const draftKey = `hydro_draft_${customer.id || 'novo_' + (customer.name || 'cliente')}`;
+  const draft = useMemo(() => { try { return JSON.parse(localStorage.getItem(draftKey)); } catch { return null; } }, [draftKey]);
+
+  const [customerName, setCustomerName] = useState(draft?.customerName ?? (customer.name || ''));
   const [lines, setLines] = useState(() => {
+    if (draft?.lines) return draft.lines;
     const base = brandListOf(customer).map(b => ({ brand: b.brand, priceExchange: Number(b.price) || 0, priceFull: b.price_full != null ? Number(b.price_full) || 0 : null, qtyExchange: 0, qtyFull: 0, mf: 0 }));
     if (prefillOrder?.brand) {
       const idx = base.findIndex(l => l.brand.toLowerCase() === prefillOrder.brand.toLowerCase());
@@ -1281,16 +1289,22 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
   const [newPrice, setNewPrice] = useState('');
   const [newQty, setNewQty] = useState('');
   const [newFull, setNewFull] = useState(false);
-  const [pix, setPix] = useState(0);
-  const [cash, setCash] = useState(0);
-  const [compOn, setCompOn] = useState(customer.payment_type === 'prazo');
-  const [comp, setComp] = useState('');
-  const [compDays, setCompDays] = useState(15);
-  const [mfPlan, setMfPlan] = useState(null);
-  const [mfDate, setMfDate] = useState('Amanhã');
+  const [pix, setPix] = useState(draft?.pix ?? 0);
+  const [cash, setCash] = useState(draft?.cash ?? 0);
+  const [compOn, setCompOn] = useState(draft?.compOn ?? (customer.payment_type === 'prazo'));
+  const [comp, setComp] = useState(draft?.comp ?? '');
+  const [compDays, setCompDays] = useState(draft?.compDays ?? 15);
+  const [mfPlan, setMfPlan] = useState(draft?.mfPlan ?? null);
+  const [mfDate, setMfDate] = useState(draft?.mfDate ?? 'Amanhã');
+  const [signerName, setSignerName] = useState(draft?.signerName ?? '');
   const [signing, setSigning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    try { localStorage.setItem(draftKey, JSON.stringify({ customerName, lines, pix, cash, compOn, comp, compDays, mfPlan, mfDate, signerName })); } catch { /* ignore quota errors */ }
+  }, [draftKey, customerName, lines, pix, cash, compOn, comp, compDays, mfPlan, mfDate, signerName]);
+  function clearDraft() { try { localStorage.removeItem(draftKey); } catch { /* ignore */ } }
 
   const fullPriceOf = l => l.priceFull != null ? l.priceFull : (Number(l.priceFullManual) || 0);
   const linePrice = l => l.saleType === 'full' ? (l.priceFull != null ? l.priceFull : (Number(l.priceFullManual) || l.priceExchange)) : l.priceExchange;
@@ -1350,11 +1364,12 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
     };
     try {
       const { data } = await api.post('/daily-entries', payload, auth());
+      clearDraft();
       onComplete(data);
     } catch (e) { setError(e.response?.data?.detail || 'Não foi possível concluir.'); setSaving(false); setSigning(false); }
   }
 
-  if (signing) return <SignaturePad variant="mobile" customer={customerName} total={total} onSave={complete} onCancel={() => setSigning(false)} />;
+  if (signing) return <SignaturePad variant="mobile" customer={customerName} total={total} signerName={signerName} onSignerNameChange={setSignerName} onSave={complete} onCancel={() => setSigning(false)} />;
 
   const canSubmit = lines.some(l => l.extra ? (l.qty > 0 || l.mf > 0) : (l.qtyExchange > 0 || l.qtyFull > 0 || l.mf > 0)) && (totalMf === 0 || !!mfPlan) && Math.abs((pix + cash + compValue) - total) < 0.01;
 

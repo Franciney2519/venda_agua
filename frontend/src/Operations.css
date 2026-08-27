@@ -46,6 +46,10 @@
 .signature-canvas{background:#f7fafc;border:2px dashed #cfd9e3;border-radius:8px;width:100%;touch-action:none;cursor:crosshair;display:block;margin:6px 0}
 .signature-actions{display:flex;gap:10px;margin-top:12px}
 .signature-actions>*{flex:1;justify-content:center}
+.signature-actions .signature-clear-btn{color:#c96a1c;border-color:#f3d0a8;background:#fff6ec}
+.signature-name-field{display:grid;gap:6px;text-align:left;margin:12px 0 0;font-weight:700;font-size:13px;color:var(--muted,#6e8298)}
+.signature-name-field input{height:52px;padding:0 14px;border-radius:12px;border:1.5px solid var(--line,#dbe4ee);background:#eaf5ff;font:700 17px 'DM Sans',sans-serif;color:var(--ink,#10253f)}
+.signature-name-field input:focus{outline:none;border-color:#0878d1}
 @media(max-width:700px){
   .stop-card{padding:14px}
   .stop-index{width:28px;height:28px;font-size:12px}
@@ -231,6 +235,12 @@
 .mob-sign-colors button{width:30px;height:30px;border-radius:50%;border:2px solid transparent;box-shadow:0 0 0 1px var(--mob-line,#e4ebf2) inset}
 .mob-sign-colors button.active{border-color:var(--mob-blue,#0878d1)}
 .mob-sign-placeholder{position:absolute;inset:0;display:grid;place-items:center;color:var(--mob-muted,#6e8298);font-size:calc(14px * var(--scale));pointer-events:none}
+.mob-sign-clear-btn{position:absolute;top:12px;right:12px;display:flex;align-items:center;gap:6px;height:44px;padding:0 16px;border-radius:22px;background:#fff;border:1.5px solid var(--mob-orange-border,#f3d0a8);color:var(--mob-orange,#c96a1c);font:700 calc(13px * var(--scale)) 'DM Sans',sans-serif;box-shadow:0 6px 16px #10253f26;z-index:2}
+.mob-sign-clear-btn:disabled{opacity:.4}
+.mob-sign-name-field{display:grid;gap:8px;margin:4px 0 14px}
+.mob-sign-name-field span{font-size:calc(12.5px * var(--scale));font-weight:700;color:var(--mob-muted,#6e8298);text-transform:uppercase;letter-spacing:.3px}
+.mob-sign-name-field input{height:60px;padding:0 16px;border-radius:14px;border:1.5px solid var(--mob-blue-border,#cfe4f7);background:var(--mob-blue-soft,#eaf5ff);color:var(--mob-ink,#10253f);font:700 calc(19px * var(--scale)) 'DM Sans',sans-serif}
+.mob-sign-name-field input:focus{outline:none;border-color:var(--mob-blue,#0878d1)}
 .mob-cta.green{background:var(--mob-green,#11966d);box-shadow:none}
 .mob-cta.green:disabled{opacity:.45}
 .mob-signature-screen .mob-text-btn{margin-top:6px;text-align:center}
