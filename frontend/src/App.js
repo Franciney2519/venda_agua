@@ -1292,6 +1292,7 @@ function MobileEditEntregaModal({ entry, onClose, onSaved }) {
   const [cash, setCash] = useState(Number(entry.cash_value) || 0);
   const [mfPlan, setMfPlan] = useState(entry.mf_plan || null);
   const [mfDate, setMfDate] = useState(entry.mf_date || 'Amanhã');
+  const [signing, setSigning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -1311,20 +1312,27 @@ function MobileEditEntregaModal({ entry, onClose, onSaved }) {
   function allPix() { setPix(remaining); setCash(0); }
   function allCash() { setCash(remaining); setPix(0); }
 
-  async function submit() {
+  function goToSign() {
     setError('');
     if (Math.abs((pix + cash + compValue) - total) > 0.01) return setError('Pix + Dinheiro precisa completar o total.');
     if (totalMf > 0 && !mfPlan) return setError('Diga o que foi decidido sobre o(s) galão(ões) com microfuro.');
+    setSigning(true);
+  }
+
+  async function submit(signature, signatureName) {
     setSaving(true);
     try {
       await api.patch(`/daily-entries/${entry.id}`, {
         items: lines.map(l => ({ brand: l.brand, price: l.price, sale_type: l.sale_type, quantity: l.quantity, mf_quantity: l.mf_quantity, out_of_catalog: l.out_of_catalog })),
         pix_value: Math.round(pix * 100) / 100, cash_value: Math.round(cash * 100) / 100,
         mf_plan: totalMf > 0 ? mfPlan : undefined, mf_date: totalMf > 0 && mfPlan === 'reschedule' ? mfDate : undefined,
+        signature, signature_name: signatureName || undefined,
       }, auth());
       onSaved();
-    } catch (e) { setError(e.response?.data?.detail || 'Não foi possível salvar a revisão.'); setSaving(false); }
+    } catch (e) { setError(e.response?.data?.detail || 'Não foi possível salvar a revisão.'); setSaving(false); setSigning(false); }
   }
+
+  if (signing) return <SignaturePad variant="mobile" customer={entry.customer} total={total} onSave={submit} onCancel={() => setSigning(false)} />;
 
   return <div className="mob-backdrop" onClick={onClose}>
     <div className="mob-sheet mob-sheet-tall" onClick={e => e.stopPropagation()}>
@@ -1379,7 +1387,7 @@ function MobileEditEntregaModal({ entry, onClose, onSaved }) {
       </div>}
 
       {error && <div className="error" data-testid="mob-edit-entrega-error">{error}</div>}
-      <button type="button" className="mob-cta" disabled={saving} data-testid="mob-edit-entrega-save" onClick={submit}>Salvar revisão</button>
+      <button type="button" className="mob-cta" disabled={saving} data-testid="mob-edit-entrega-save" onClick={goToSign}>Assinar e salvar revisão</button>
     </div>
   </div>
 }
