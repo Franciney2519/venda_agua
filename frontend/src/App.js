@@ -112,7 +112,7 @@ function useMediaQuery(query) {
   return matches;
 }
 const nav = [['/', 'Visão geral', LayoutDashboard], ['/viagens', 'Viagens', Truck], ['/comprovantes', 'Comprovantes', FileText], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/marcas', 'Cadastro de Produto', Droplets], ['/marcas-extras', 'Marcas Extras', AlertTriangle], ['/usuarios', 'Cadastro de Usuário', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
-const driverNav = [['/', 'Visão geral', LayoutDashboard], ['/controle-diario', 'Controle Diário', CalendarCheck], ['/financeiro', 'Financeiro', WalletCards]];
+const driverNav = [['/', 'Visão geral', LayoutDashboard], ['/financeiro', 'Financeiro', WalletCards]];
 
 function Shell({ user, onLogout, notifications, children }) {
   const [open, setOpen] = useState(false);
@@ -515,7 +515,7 @@ function Finance({ data, setData, create, user }) {
     <div className="stats">
       <Stat label="Recebido hoje" value={money(summary?.received_today)} detail="Pix + Dinheiro do Controle Diário" Icon={CircleDollarSign} tone="green" />
       <Stat label="Despesas hoje" value={money(summary?.expenses_today_total)} detail="Já lançadas pelos entregadores" Icon={WalletCards} tone="orange" />
-      <Stat label="Saldo do dia" value={money(summary?.balance_today)} detail="Recebido − despesas de hoje" Icon={ArrowUpRight} />
+      <Stat label="Saldo do dia" value={money(summary?.balance_today)} detail="Pix + Dinheiro (sem a prazo) − despesas lançadas hoje" Icon={ArrowUpRight} />
       <Stat label="A prazo pendente" value={money(summary?.comp_pending_total)} detail="Vendas ainda não recebidas" Icon={Clock3} tone="orange" />
     </div>
     {isAdmin && <section className="panel table-panel" style={{ marginBottom: 22 }}>
@@ -555,157 +555,6 @@ function Customers({ items, create, onEdit }) {
     {filtered.length === 0 && <p className="muted">Nenhum cliente encontrado.</p>}
     </div></> }
 
-const DAILY_ENTRY_FIELDS = ['customer', 'brand', 'quantity', 'price', 'mf_quantity', 'comp_value', 'comp_days', 'pix_value', 'cash_value'];
-
-const EXPENSE_CATEGORIES = ['Alimentação', 'Combustível', 'Internet', 'Outros'];
-
-function DailyExpensesTab({ user, date }) {
-  const [items, setItems] = useState([]);
-  const [draft, setDraft, clearDraft] = useDraft(`hydro_expense_draft_${user.id}_${date}`, { category: EXPENSE_CATEGORIES[0], amount: '' });
-  const { category, amount } = draft;
-  const setCategory = c => setDraft({ ...draft, category: c });
-  const setAmount = a => setDraft({ ...draft, amount: a });
-  const [error, setError] = useState('');
-
-  async function load() {
-    const { data } = await api.get('/expenses', auth());
-    setItems(data.filter(x => (x.driver || '') === user.name && (x.created_at || '').slice(0, 10) === date));
-  }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { load(); }, [date]);
-
-  async function submit(e) {
-    e.preventDefault(); setError('');
-    if (!amount || Number(amount) <= 0) return setError('Informe um valor válido.');
-    try {
-      const { data } = await api.post('/expenses', { type: category, driver: user.name, amount: Number(amount), status: 'approved' }, auth());
-      setItems([data, ...items]); clearDraft();
-    } catch (e) { setError(e.response?.data?.detail || 'Não foi possível lançar.'); }
-  }
-  async function remove(id) { await api.delete(`/expenses/${id}`, auth()).catch(() => { }); setItems(items.filter(x => x.id !== id)); }
-
-  const total = items.reduce((s, x) => s + Number(x.amount || 0), 0);
-  return <section className="panel table-panel">
-    <form className="daily-entry-form" style={{ gridTemplateColumns: '1fr 1fr auto' }} onSubmit={submit}>
-      <label>Categoria<select value={category} data-testid="expense-category-input" onChange={e => setCategory(e.target.value)}>{EXPENSE_CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></label>
-      <label>Valor<input type="number" step="0.01" value={amount} data-testid="expense-amount-input" onChange={e => setAmount(e.target.value)} /></label>
-      <button className="primary" data-testid="expense-add-button"><Plus size={15} /> Lançar despesa</button>
-    </form>
-    {error && <div className="error" data-testid="expense-form-error">{error}</div>}
-    <div className="table-wrap"><table><thead><tr><th>CATEGORIA</th><th>VALOR</th><th /></tr></thead><tbody>
-      {items.map(x => <tr key={x.id} data-testid={`expense-row-${x.id}`}>
-        <td><b>{x.type}</b></td><td>{money(x.amount)}</td>
-        <td><button className="action-btn reject" data-testid={`expense-delete-${x.id}`} onClick={() => remove(x.id)}><Trash2 size={13} /></button></td>
-      </tr>)}
-      {items.length === 0 && <tr><td colSpan={3} className="muted" style={{ padding: 16 }}>Nenhuma despesa lançada nesta data.</td></tr>}
-    </tbody>
-    {items.length > 0 && <tfoot><tr><td><b>Total</b></td><td><b>{money(total)}</b></td><td /></tr></tfoot>}
-    </table></div>
-  </section>
-}
-
-function DailyControl({ user, customers }) {
-  const [date, setDate] = useState(todayISO(0));
-  const [tab, setTab] = useState('entries');
-  const [entries, setEntries] = useState([]);
-  const [expensesTotal, setExpensesTotal] = useState(0);
-  const [form, setForm] = useDraft(`hydro_daily_draft_${user.id}_${date}`, { trip_number: '1' });
-  const [error, setError] = useState('');
-
-  async function load() { const { data } = await api.get('/daily-entries', { ...auth(), params: user.role === 'driver' ? { date, driver: user.name } : { date } }); setEntries(data); }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { load(); }, [date]);
-  useEffect(() => { api.get('/expenses', auth()).then(({ data }) => setExpensesTotal(data.filter(x => (x.driver || '') === user.name && (x.created_at || '').slice(0, 10) === date).reduce((s, x) => s + Number(x.amount || 0), 0))); }, [date, tab, user.name]);
-
-  function customerBrands(c) { return c?.brands?.length ? c.brands : (c?.brand ? [{ brand: c.brand, price: c.price }] : []); }
-
-  function pickCustomer(name) {
-    const c = customers.find(x => x.name === name);
-    const opts = customerBrands(c);
-    const first = opts[0];
-    setForm({ ...form, customer: name, brand: first?.brand || '', price: first?.price ?? '' });
-  }
-  function pickBrand(brandName) {
-    const c = customers.find(x => x.name === form.customer);
-    const opt = customerBrands(c).find(b => b.brand === brandName);
-    setForm({ ...form, brand: brandName, price: opt?.price ?? form.price });
-  }
-  const selectedCustomer = customers.find(x => x.name === form.customer);
-  const customerFound = !!selectedCustomer;
-  const brandOptions = customerBrands(selectedCustomer);
-  const expectedTotal = Math.max(0, (Number(form.quantity || 0) - Number(form.mf_quantity || 0)) * Number(form.price || 0));
-  const remainingForCash = Math.max(0, expectedTotal - Number(form.comp_value || 0));
-  function setPix(v) { const pix = Number(v) || 0; setForm({ ...form, pix_value: v, cash_value: v === '' ? form.cash_value : String(Math.max(0, remainingForCash - pix)) }); }
-  function setCash(v) { const cash = Number(v) || 0; setForm({ ...form, cash_value: v, pix_value: v === '' ? form.pix_value : String(Math.max(0, remainingForCash - cash)) }); }
-
-  async function submit(e) {
-    e.preventDefault(); setError('');
-    if (!form.customer || !form.quantity) return setError('Informe ao menos cliente e quantidade.');
-    const payload = { ...form, date };
-    DAILY_ENTRY_FIELDS.filter(k => k !== 'customer' && k !== 'brand').forEach(k => { if (payload[k] !== undefined && payload[k] !== '') payload[k] = Number(payload[k]) });
-    try {
-      const { data } = await api.post('/daily-entries', payload, auth());
-      setEntries([data, ...entries]);
-      setForm({ trip_number: form.trip_number });
-    } catch (e) { setError(e.response?.data?.detail || 'Não foi possível lançar.'); }
-  }
-
-  async function remove(id) { await api.delete(`/daily-entries/${id}`, auth()); setEntries(entries.filter(x => x.id !== id)); }
-
-  const totals = entries.reduce((s, e) => ({ qty: s.qty + Number(e.quantity || 0), pix: s.pix + Number(e.pix_value || 0), cash: s.cash + Number(e.cash_value || 0), total: s.total + Number(e.total || 0) }), { qty: 0, pix: 0, cash: 0, total: 0 });
-
-  const received = totals.total;
-  const balance = received - expensesTotal;
-  return <><Head eyebrow="OPERAÇÃO DIÁRIA" title="Controle Diário" subtitle="Lance cada cliente atendido na viagem e as despesas do dia, igual ao controle de papel." />
-    <div className="report-toolbar">
-      <div className="report-filters">
-        <label>Data<input type="date" value={date} data-testid="daily-date-input" onChange={e => setDate(e.target.value)} /></label>
-        <label>Nº Viagem<input value={form.trip_number || ''} data-testid="daily-trip-input" onChange={e => setForm({ ...form, trip_number: e.target.value })} /></label>
-      </div>
-    </div>
-    <div className="stats">
-      <Stat label="Recebido hoje" value={money(received)} detail="Pix + Dinheiro + a prazo" Icon={CircleDollarSign} tone="green" />
-      <Stat label="Despesas do dia" value={money(expensesTotal)} detail="Alimentação, combustível, internet..." Icon={WalletCards} tone="orange" />
-      <Stat label="Saldo a repassar" value={money(balance)} detail="Recebido − despesas" Icon={ArrowUpRight} />
-    </div>
-    <div className="filter-row">
-      <button className={tab === 'entries' ? 'active' : ''} data-testid="daily-tab-entries" onClick={() => setTab('entries')}>Lançamentos</button>
-      <button className={tab === 'expenses' ? 'active' : ''} data-testid="daily-tab-expenses" onClick={() => setTab('expenses')}>Despesas do Dia</button>
-    </div>
-    {tab === 'expenses' ? <DailyExpensesTab user={user} date={date} /> : <section className="panel table-panel">
-      <form className="daily-entry-form" onSubmit={submit}>
-        <label>Cliente<CustomerCombobox customers={customers} value={form.customer || ''} onPick={pickCustomer} testId="daily-customer-input" /></label>
-        <label>Marca{brandOptions.length > 1
-          ? <select value={form.brand || ''} data-testid="daily-brand-select" onChange={e => pickBrand(e.target.value)}>{brandOptions.map(b => <option key={b.brand} value={b.brand}>{b.brand}</option>)}</select>
-          : <input value={form.brand || ''} readOnly={customerFound} placeholder={customerFound ? '' : 'Cliente sem cadastro'} data-testid="daily-brand-input" onChange={e => setForm({ ...form, brand: e.target.value })} />}
-        </label>
-        <label>Qtd programada<input type="number" value={form.quantity || ''} data-testid="daily-quantity-input" onChange={e => setForm({ ...form, quantity: e.target.value })} /></label>
-        <label>Valor água<input type="number" step="0.01" value={form.price || ''} readOnly={customerFound} placeholder={customerFound ? '' : 'Cliente sem cadastro'} data-testid="daily-price-input" onChange={e => setForm({ ...form, price: e.target.value })} /></label>
-        <label>MF (não entregue)<input type="number" value={form.mf_quantity || ''} data-testid="daily-mf-input" onChange={e => setForm({ ...form, mf_quantity: e.target.value })} /></label>
-        <label>Valor a prazo<input type="number" step="0.01" value={form.comp_value || ''} data-testid="daily-comp-value-input" onChange={e => setForm({ ...form, comp_value: e.target.value })} /></label>
-        <label>Prazo<select data-testid="daily-comp-days-input" value={form.comp_days || '15'} onChange={e => setForm({ ...form, comp_days: e.target.value })}><option value="15">15 dias</option><option value="30">30 dias</option></select></label>
-        <label>Pix<input type="number" step="0.01" value={form.pix_value || ''} data-testid="daily-pix-input" onChange={e => setPix(e.target.value)} /></label>
-        <label>Dinheiro<input type="number" step="0.01" value={form.cash_value || ''} data-testid="daily-cash-input" onChange={e => setCash(e.target.value)} /></label>
-        <button className="primary" data-testid="daily-add-button"><Plus size={15} /> Lançar</button>
-      </form>
-      {expectedTotal > 0 && <p className="muted" style={{ padding: '0 22px 14px' }} data-testid="daily-expected-total">Total a receber deste lançamento: <b>{money(expectedTotal)}</b>{form.comp_value ? ` (${money(remainingForCash)} em Pix/Dinheiro + ${money(Number(form.comp_value))} a prazo)` : ''}</p>}
-      {error && <div className="error" data-testid="daily-form-error">{error}</div>}
-      <div className="table-wrap"><table><thead><tr><th>CLIENTE</th><th>MARCA</th><th>QTD PROG.</th><th>MF</th><th>QTD ENTREGUE</th><th>VALOR ÁGUA</th><th>A PRAZO</th><th>PIX</th><th>DINHEIRO</th><th>TOTAL</th><th /></tr></thead><tbody>
-        {entries.map(e => <tr key={e.id} data-testid={`daily-row-${e.id}`}>
-          <td><b>{e.customer}</b></td><td>{e.brand}</td><td>{e.quantity}</td>
-          <td>{e.mf_quantity ? <span className="tag orange">{e.mf_quantity} un.</span> : '—'}</td>
-          <td>{e.billed_quantity ?? e.quantity}</td><td>{money(e.price)}</td>
-          <td>{e.comp_value ? `${money(e.comp_value)} · ${e.comp_days}d${e.received ? ' · recebido' : ''}` : '—'}</td>
-          <td>{e.pix_value ? money(e.pix_value) : '—'}</td><td>{e.cash_value ? money(e.cash_value) : '—'}</td>
-          <td><b>{money(e.total)}</b></td>
-          <td><button className="action-btn reject" data-testid={`daily-delete-${e.id}`} onClick={() => remove(e.id)}><Trash2 size={13} /></button></td>
-        </tr>)}
-        {entries.length === 0 && <tr><td colSpan={11} className="muted" style={{ padding: 16 }}>Nenhum lançamento nesta data.</td></tr>}
-      </tbody>
-      {entries.length > 0 && <tfoot><tr><td colSpan={4}><b>Totais</b></td><td><b>{totals.qty}</b></td><td /><td /><td>{money(totals.pix)}</td><td>{money(totals.cash)}</td><td><b>{money(totals.total)}</b></td><td /></tr></tfoot>}
-      </table></div>
-    </section>}</>
-}
 
 function UsersPage({ me }) {
   const [items, setItems] = useState([]);
@@ -838,9 +687,9 @@ function DailyClosing() {
       </div>
     </div>
     <div className="stats">
-      <Stat label="Receita bruta" value={money(totals.revenue)} detail="Entregas concluídas" Icon={CircleDollarSign} tone="green" />
-      <Stat label="Despesas aprovadas" value={money(totals.expenses_approved)} detail="Descontadas do dia" Icon={Wallet} tone="orange" />
-      <Stat label="Saldo líquido" value={money(totals.balance)} detail="Receita − Despesas" Icon={ArrowUpRight} tone="" />
+      <Stat label="Receita bruta" value={money(totals.revenue)} detail="Total das entregas, incluindo a prazo" Icon={CircleDollarSign} tone="green" />
+      <Stat label="Despesas aprovadas" value={money(totals.expenses_approved)} detail="Só as já aprovadas pelo admin" Icon={Wallet} tone="orange" />
+      <Stat label="Saldo líquido" value={money(totals.balance)} detail="Receita bruta − despesas aprovadas" Icon={ArrowUpRight} tone="" />
       <Stat label="Lançamentos" value={totals.deliveries_total || 0} detail="Registrados no Controle Diário" Icon={Truck} />
     </div>
     <section className="panel table-panel" data-testid="closing-panel">
@@ -1082,6 +931,8 @@ function Viagens({ customers }) {
   const emExecucao = viagens.filter(v => v.status === 'execucao').length;
   const finalizadas = viagens.filter(v => v.status === 'finalizada');
   const totalBruto = finalizadas.reduce((s, v) => s + Number(v.total_bruto || 0), 0);
+  const despesasTotal = finalizadas.reduce((s, v) => s + Number(v.despesas_total || 0), 0);
+  const saldoLiquido = totalBruto - despesasTotal;
 
   return <><Head eyebrow="LOGÍSTICA" title="Viagens" subtitle="Planeje a rota do entregador — turno, rota, carga e os clientes dessa viagem." />
     <section className="panel table-panel" style={{ marginBottom: 22 }}>
@@ -1130,22 +981,24 @@ function Viagens({ customers }) {
       <Stat label="Viagens no dia" value={viagens.length} detail={`Limite de 4 por entregador`} Icon={Truck} />
       <Stat label="Em execução" value={emExecucao} detail="Rotas em andamento agora" Icon={CircleDollarSign} tone="green" />
       <Stat label="Finalizadas" value={finalizadas.length} detail="Rotas concluídas no dia" Icon={CalendarCheck} />
-      <Stat label="Receita das rotas finalizadas" value={money(totalBruto)} detail="Somatório do total bruto" Icon={WalletCards} tone="orange" />
+      <Stat label="Saldo líquido das rotas" value={money(saldoLiquido)} detail={`Receita ${money(totalBruto)} − despesas ${money(despesasTotal)}`} Icon={WalletCards} tone="orange" />
     </div>
-    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>ENTREGADOR</th><th>Nº</th><th>TURNO</th><th>ROTA</th><th>CLIENTES</th><th>CARGA</th><th>ENTREGAS</th><th>TOTAL BRUTO</th><th>SITUAÇÃO</th></tr></thead><tbody>
+    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>ENTREGADOR</th><th>VIAGEM DO DIA</th><th>TURNO</th><th>ROTA</th><th>CLIENTES</th><th>CARGA</th><th>ENTREGAS</th><th>RECEITA</th><th>DESPESAS</th><th>SALDO</th><th>SITUAÇÃO</th></tr></thead><tbody>
       {viagens.map(v => <tr key={v.id} data-testid={`viagem-row-${v.id}`}>
         <td><b>{v.codigo_viagem}</b></td>
         <td>{v.driver}</td>
-        <td>{v.numero}</td>
+        <td>{v.numero}/4</td>
         <td>{TURNO_LABELS[v.turno]}</td>
         <td>{String(v.rota).padStart(3, '0')}</td>
         <td>{v.clientes?.length ? <span title={v.clientes.map(c => `${c.name}${c.brand ? ` (${c.brand}${c.quantity ? ` x${c.quantity}` : ''})` : ''}`).join(', ')}>{v.clientes.length}</span> : '—'}</td>
         <td>{v.carga_total ?? '—'}</td>
         <td>{v.entregas ?? '—'}{v.problemas ? <small className="muted"> · {v.problemas} c/ MF</small> : ''}</td>
         <td>{v.total_bruto != null ? money(v.total_bruto) : '—'}</td>
+        <td>{v.despesas_total != null ? money(v.despesas_total) : '—'}</td>
+        <td>{v.saldo_liquido != null ? <b className={v.saldo_liquido >= 0 ? 'green-text' : 'orange-text'}>{money(v.saldo_liquido)}</b> : '—'}</td>
         <td><span className={`tag ${VIAGEM_STATUS_TAG[v.status]}`}>{VIAGEM_STATUS_LABEL[v.status]}</span></td>
       </tr>)}
-      {viagens.length === 0 && <tr><td colSpan={10} className="muted" style={{ padding: 16 }}>Nenhuma viagem registrada nessa data.</td></tr>}
+      {viagens.length === 0 && <tr><td colSpan={12} className="muted" style={{ padding: 16 }}>Nenhuma viagem registrada nessa data.</td></tr>}
     </tbody></table></div></section>
   </>
 }
@@ -1481,7 +1334,7 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
             <button type="button" className="mob-text-btn" data-testid={`mob-viagem-excluir-${v.id}`} onClick={() => onDelete(v)}>Excluir</button>
           </div>}
           {v.status === 'execucao' && <button type="button" className="mob-outline-btn" data-testid={`mob-viagem-finalizar-${v.id}`} onClick={() => handleFinalizar(v)}>Finalizar</button>}
-          {v.status === 'finalizada' && <small className="muted">{money(v.total_bruto)} · {v.entregas || 0} entregas{v.problemas ? ` · ${v.problemas} c/ MF` : ''}</small>}
+          {v.status === 'finalizada' && <small className="muted">Saldo {money(v.saldo_liquido ?? v.total_bruto)} · {v.entregas || 0} entregas{v.problemas ? ` · ${v.problemas} c/ MF` : ''}</small>}
         </div>)}
       </div>
     </div>
@@ -1825,7 +1678,7 @@ function MobileCaixaTab({ entries, expensesTotal, date, onAddExpense, onCloseDay
 
 const MOBILE_EXPENSE_CATEGORIES = [['Combustível', Fuel], ['Alimentação', Utensils], ['Pedágio', Receipt], ['Manutenção', Wrench], ['Outros', MoreHorizontal]];
 
-function MobileDespesasTab({ user, date }) {
+function MobileDespesasTab({ user, date, viagemId }) {
   const [items, setItems] = useState([]);
   const [category, setCategory] = useState('Combustível');
   const [amount, setAmount] = useState('');
@@ -1841,7 +1694,7 @@ function MobileDespesasTab({ user, date }) {
     setError('');
     if (!amount || Number(amount) <= 0) return setError('Informe um valor válido.');
     try {
-      const { data } = await api.post('/expenses', { type: category, driver: user.name, amount: Number(amount), notes: note, status: 'approved' }, auth());
+      const { data } = await api.post('/expenses', { type: category, driver: user.name, amount: Number(amount), notes: note, status: 'approved', viagem_id: viagemId || undefined }, auth());
       setItems([data, ...items]); setAmount(''); setNote('');
       setToast('Despesa lançada'); setTimeout(() => setToast(''), 2200);
     } catch (e) { setError(e.response?.data?.detail || 'Não foi possível lançar.'); }
@@ -2008,7 +1861,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
       {tab === 'clientes' && <MobileClientesTab customers={customers} entries={entries} orders={orders} onStartOrder={startOrder} date={date} onOpenPicker={() => requireViagem(() => setPicker(true))} onOpenCustomer={c => requireViagem(() => { setSheetOrder(null); setSheetCustomer(c); })} search={search} setSearch={setSearch} viagemAtiva={viagemAtiva} viagens={viagensComProgresso} onOpenViagens={() => setShowViagens(true)} />}
       {tab === 'diario' && <MobileDiarioTab entries={entries} date={date} />}
       {tab === 'caixa' && <MobileCaixaTab entries={entries} expensesTotal={expensesTotal} date={date} onAddExpense={() => setTab('despesas')} onCloseDay={() => { setToast('Dia fechado!'); setTimeout(() => setToast(''), 2200); }} />}
-      {tab === 'despesas' && <MobileDespesasTab user={user} date={date} />}
+      {tab === 'despesas' && <MobileDespesasTab user={user} date={date} viagemId={viagemAtiva?.id} />}
       {tab === 'ajustes' && <MobileAjustesTab user={user} theme={theme} setTheme={setTheme} textScale={textScale} setTextScale={setTextScale} onLogout={onLogout} />}
     </main>
     <MobileBottomNav tab={tab} setTab={setTab} />
@@ -2051,7 +1904,6 @@ function App() {
   return <Shell user={user} onLogout={logout} notifications={notifications}>
     <Routes>
       <Route path="/" element={<Dashboard data={data} onRefresh={loadDashboard} refreshing={refreshing} />} />
-      <Route path="/controle-diario" element={user.role === 'driver' ? <DailyControl user={user} customers={customers} /> : <Navigate to="/" replace />} />
       <Route path="/estoque" element={<Stock data={data} setData={setData} create={setModal} />} />
       <Route path="/financeiro" element={<Finance data={data} setData={setData} create={setModal} user={user} />} />
       <Route path="/provisao" element={adminOnly(<Receivables />)} />

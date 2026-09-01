@@ -98,6 +98,12 @@ def now_local(): return datetime.now(MANAUS_TZ)
 def today_local(): return now_local().date().isoformat()
 def local_day_start_utc(day_str): return datetime.fromisoformat(day_str).replace(tzinfo=MANAUS_TZ).astimezone(timezone.utc).isoformat()
 def local_day_end_utc(day_str): return (datetime.fromisoformat(day_str).replace(tzinfo=MANAUS_TZ) + timedelta(days=1) - timedelta(microseconds=1)).astimezone(timezone.utc).isoformat()
+
+async def expenses_for_day(day_str, driver=None):
+    """Despesas lançadas no dia local (por created_at), com o mesmo recorte de fuso em todo o app."""
+    query = {"created_at": {"$gte": local_day_start_utc(day_str), "$lte": local_day_end_utc(day_str)}}
+    if driver: query["driver"] = driver
+    return await db.expenses.find(query, {"_id": 0}).to_list(2000)
 def entry_total(e): return float(e.get("total") or 0)
 async def next_sequence(name):
     doc = await db.counters.find_one_and_update({"_id": name}, {"$inc": {"seq": 1}}, upsert=True, return_document=ReturnDocument.AFTER)
@@ -514,11 +520,14 @@ async def finalizar_viagem(item_id: str, user=Depends(current_user)):
     v = await _own_viagem_or_404(item_id, user)
     if v["status"] == "finalizada": raise HTTPException(400, "Viagem já está finalizada")
     entregas = await db.daily_entries.find({"viagem_id": item_id}, {"_id": 0}).to_list(2000)
+    despesas = await db.expenses.find({"viagem_id": item_id, "status": {"$ne": "rejected"}}, {"_id": 0}).to_list(500)
     total_bruto = sum(entry_total(e) for e in entregas)
+    despesas_total = sum(float(d.get("amount") or 0) for d in despesas)
     quantidade_entregue = sum(float(e.get("billed_quantity") or 0) for e in entregas)
     problemas = sum(1 for e in entregas if float(e.get("mf_quantity") or 0) > 0)
     values = {"status": "finalizada", "total_bruto": total_bruto, "quantidade_entregue": quantidade_entregue,
-              "entregas": len(entregas), "problemas": problemas, "updated_at": now()}
+              "entregas": len(entregas), "problemas": problemas, "despesas_total": despesas_total,
+              "saldo_liquido": total_bruto - despesas_total, "updated_at": now()}
     await db.viagens.update_one({"id": item_id}, {"$set": values})
     return await db.viagens.find_one({"id": item_id}, {"_id": 0})
 
@@ -528,41 +537,6 @@ async def delete_viagem(item_id: str, user=Depends(current_user)):
     if v["status"] != "planejada": raise HTTPException(400, f"Só é possível excluir viagens planejadas (esta está {v['status']})")
     await db.viagens.delete_one({"id": item_id})
     return {"message": "Excluída", "codigo_viagem": v["codigo_viagem"]}
-
-@api.get("/service-orders")
-async def service_orders(user=Depends(current_user)):
-    query = {} if user.get("role") == "admin" else {"driver": user["name"]}
-    return await db.service_orders.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
-
-@api.post("/service-orders")
-async def add_service_order(data: ResourceInput, user=Depends(admin_user)):
-    if not data.customer or not data.driver: raise HTTPException(400, "Informe o cliente e o entregador")
-    doc = data.model_dump(exclude_none=True)
-    doc["status"] = "pending"
-    doc.update({"id": str(uuid.uuid4()), "created_at": now(), "created_by": user["id"]})
-    await db.service_orders.insert_one(doc); doc.pop("_id", None)
-    await log_activity("service_order_created", user, {"id": doc["id"], "name": doc.get("customer")}, {"driver": doc.get("driver")})
-    return doc
-
-@api.patch("/service-orders/{item_id}")
-async def update_service_order(item_id: str, data: ResourceInput, user=Depends(current_user)):
-    target = await db.service_orders.find_one({"id": item_id}, {"_id": 0})
-    if not target: raise HTTPException(404, "Ordem de serviço não encontrada")
-    if user.get("role") != "admin" and target.get("driver") != user["name"]: raise HTTPException(403, "Sem permissão")
-    values = data.model_dump(exclude_unset=True)
-    if user.get("role") != "admin": values = {k: v for k, v in values.items() if k == "status"}
-    await db.service_orders.update_one({"id": item_id}, {"$set": values})
-    doc = await db.service_orders.find_one({"id": item_id}, {"_id": 0})
-    if values.get("status") == "done":
-        await log_activity("service_order_done", user, {"id": item_id, "name": doc.get("customer")})
-    return doc
-
-@api.delete("/service-orders/{item_id}")
-async def delete_service_order(item_id: str, user=Depends(admin_user)):
-    target = await db.service_orders.find_one({"id": item_id}, {"_id": 0})
-    if not target: raise HTTPException(404, "Ordem de serviço não encontrada")
-    await db.service_orders.delete_one({"id": item_id})
-    return {"message": "Excluída"}
 
 @api.get("/finance/summary")
 async def finance_summary(driver: Optional[str] = None, user=Depends(current_user)):
@@ -581,9 +555,7 @@ async def finance_summary(driver: Optional[str] = None, user=Depends(current_use
     comp_pending_total = sum(float(e.get("comp_value") or 0) for e in all_comp if not e.get("received"))
     comp_received_total = sum(float(e.get("comp_value") or 0) for e in all_comp if e.get("received"))
 
-    exp_query = {"created_at": {"$gte": local_day_start_utc(today), "$lte": local_day_end_utc(today)}}
-    if scope_driver: exp_query["driver"] = scope_driver
-    todays_expenses = await db.expenses.find(exp_query, {"_id": 0}).to_list(2000)
+    todays_expenses = await expenses_for_day(today, scope_driver)
     expenses_today_total = sum(float(e.get("amount") or 0) for e in todays_expenses if e.get("status") != "rejected")
 
     all_exp_query = {} if not scope_driver else {"driver": scope_driver}
@@ -748,7 +720,7 @@ async def notifications(user=Depends(current_user)):
 async def daily_closing(date: Optional[str] = None, user=Depends(admin_user)):
     day = date or today_local()
     entries = await db.daily_entries.find({"date": day}, {"_id": 0}).to_list(1000)
-    expenses = await db.expenses.find({"created_at": {"$gte": local_day_start_utc(day), "$lte": local_day_end_utc(day)}}, {"_id": 0}).to_list(1000)
+    expenses = await expenses_for_day(day)
     drivers = {}
     for e in entries:
         name = e.get("driver") or "Sem entregador"
