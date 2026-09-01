@@ -380,7 +380,7 @@ async def promote_brand(item_id: str, data: ResourceInput, user=Depends(admin_us
     return await db.customers.find_one({"id": item_id}, {"_id": 0})
 
 @api.get("/daily-entries")
-async def daily_entries(date: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None, driver: Optional[str] = None, customer: Optional[str] = None, user=Depends(current_user)):
+async def daily_entries(date: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None, driver: Optional[str] = None, customer: Optional[str] = None, codigo_viagem: Optional[str] = None, entry_number: Optional[int] = None, user=Depends(current_user)):
     query = {}
     if date: query["date"] = date
     elif start or end:
@@ -391,6 +391,10 @@ async def daily_entries(date: Optional[str] = None, start: Optional[str] = None,
     if driver: query["driver"] = driver
     elif user.get("role") != "admin": query["driver"] = user["name"]
     if customer: query["customer"] = {"$regex": re.escape(customer), "$options": "i"}
+    if entry_number: query["entry_number"] = entry_number
+    if codigo_viagem:
+        viagem = await db.viagens.find_one({"codigo_viagem": codigo_viagem.strip()}, {"_id": 0})
+        query["viagem_id"] = viagem["id"] if viagem else "__none__"
     return await db.daily_entries.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
 
 @api.post("/daily-entries")
@@ -425,6 +429,10 @@ async def add_daily_entry(data: ResourceInput, user=Depends(current_user)):
         doc["received"] = False
     doc["entry_number"] = await next_sequence("daily_entries")
     doc.update({"id": str(uuid.uuid4()), "created_at": now(), "created_by": user["id"]})
+
+    if doc.get("viagem_id"):
+        viagem = await db.viagens.find_one({"id": doc["viagem_id"]}, {"_id": 0})
+        if viagem: doc["viagem_codigo"] = viagem.get("codigo_viagem")
 
     await apply_entry_stock_movements(doc, "venda", 1, user)
     await db.daily_entries.insert_one(doc); doc.pop("_id", None); return doc

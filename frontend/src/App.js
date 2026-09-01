@@ -111,7 +111,7 @@ function useMediaQuery(query) {
   }, [query]);
   return matches;
 }
-const nav = [['/', 'Visão geral', LayoutDashboard], ['/viagens', 'Viagens', Truck], ['/comprovantes', 'Comprovantes', FileText], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/marcas', 'Marcas de Água', Droplets], ['/marcas-extras', 'Marcas Extras', AlertTriangle], ['/usuarios', 'Usuários', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
+const nav = [['/', 'Visão geral', LayoutDashboard], ['/viagens', 'Viagens', Truck], ['/comprovantes', 'Comprovantes', FileText], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/marcas', 'Cadastro de Produto', Droplets], ['/marcas-extras', 'Marcas Extras', AlertTriangle], ['/usuarios', 'Cadastro de Usuário', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
 const driverNav = [['/', 'Visão geral', LayoutDashboard], ['/controle-diario', 'Controle Diário', CalendarCheck], ['/financeiro', 'Financeiro', WalletCards]];
 
 function Shell({ user, onLogout, notifications, children }) {
@@ -379,7 +379,7 @@ function ProductModal({ onClose, onSave, product }) {
 
   function pickBrand(brandName) {
     const b = brands.find(x => x.name === brandName);
-    setForm({ ...form, brand: brandName, name: form.name || brandName, cost_price: form.cost_price || (b?.cost_price ?? '') });
+    setForm({ ...form, brand: brandName, name: brandName || form.name, cost_price: form.cost_price || (b?.cost_price ?? '') });
   }
 
   async function submit(e) {
@@ -401,12 +401,12 @@ function ProductModal({ onClose, onSave, product }) {
     <button type="button" className="modal-close" onClick={onClose} data-testid="modal-close-button"><X /></button>
     <p className="eyebrow">{isEdit ? 'EDITAR PRODUTO' : 'NOVO LANÇAMENTO'}</p>
     <h3>{isEdit ? `Editar ${product.name}` : 'Cadastrar produto'}</h3>
-    <label>Marca (cadastrada em Marcas de Água)<select value={form.brand} data-testid="modal-brand-input" onChange={e => pickBrand(e.target.value)}>
+    <label>Marca (cadastrada em Cadastro de Produto)<select value={form.brand} data-testid="modal-brand-input" onChange={e => pickBrand(e.target.value)}>
       <option value="">Sem marca / outro produto</option>
       {brands.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
     </select></label>
-    {brands.length === 0 && <p className="muted" style={{ marginTop: -8 }}>Nenhuma marca cadastrada ainda — cadastre em <b>Marcas de Água</b> primeiro para vinculá-la ao estoque.</p>}
-    <label>Nome do produto<input required value={form.name} data-testid="modal-name-input" onChange={e => setForm({ ...form, name: e.target.value })} /></label>
+    {brands.length === 0 && <p className="muted" style={{ marginTop: -8 }}>Nenhuma marca cadastrada ainda — cadastre em <b>Cadastro de Produto</b> primeiro para vinculá-la ao estoque.</p>}
+    <label>Nome do produto{form.brand && <small className="muted"> · puxado da marca selecionada</small>}<input required disabled={!!form.brand} value={form.name} data-testid="modal-name-input" onChange={e => setForm({ ...form, name: e.target.value })} /></label>
     <label>Categoria<select value={form.category} data-testid="modal-category-input" onChange={e => setForm({ ...form, category: e.target.value })}>
       <option>Retornável</option><option>Descartável</option>
     </select></label>
@@ -719,7 +719,7 @@ function UsersPage({ me }) {
   async function toggleActive(u) { await api.patch(`/users/${u.id}`, { active: !u.active }, auth()); load(); }
   async function changeRole(u, role) { await api.patch(`/users/${u.id}`, { role }, auth()); load(); }
   async function del(u) { if (!window.confirm(`Excluir ${u.name}?`)) return; await api.delete(`/users/${u.id}`, auth()); load(); }
-  return <><Head eyebrow="ACESSOS" title="Usuários" subtitle="Aprove cadastros, gerencie perfis e reset de senhas." action="Novo usuário" onAction={() => setModal({ mode: 'create' })} />
+  return <><Head eyebrow="ACESSOS" title="Cadastro de Usuário" subtitle="Aprove cadastros, gerencie perfis e reset de senhas." action="Novo usuário" onAction={() => setModal({ mode: 'create' })} />
     <div className="filter-row"><button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')} data-testid="users-filter-all">Todos</button><button className={filter === 'pending' ? 'active' : ''} onClick={() => setFilter('pending')} data-testid="users-filter-pending">Pendentes ({items.filter(x => x.status === 'pending').length})</button><button className={filter === 'active' ? 'active' : ''} onClick={() => setFilter('active')} data-testid="users-filter-active">Ativos</button><button className={filter === 'inactive' ? 'active' : ''} onClick={() => setFilter('inactive')} data-testid="users-filter-inactive">Inativos</button></div>
     <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>USUÁRIO</th><th>E-MAIL</th><th>PERFIL</th><th>STATUS</th><th>AÇÕES</th></tr></thead><tbody>
       {filtered.map(u => {
@@ -940,7 +940,7 @@ function BrandsCatalog() {
     setBrands(brands.map(x => x.id === b.id ? data : x)); setEditingCost(null);
   }
 
-  return <><Head eyebrow="CADASTRO" title="Marcas de Água" subtitle="Catálogo de marcas com código e custo de compra, usado no cadastro de clientes, nos lançamentos e no cálculo de lucro por marca." />
+  return <><Head eyebrow="CADASTRO" title="Cadastro de Produto" subtitle="Catálogo de marcas com código e custo de compra, usado no cadastro de clientes, nos lançamentos e no cálculo de lucro por marca." />
     <section className="panel table-panel" style={{ marginBottom: 22 }}>
       <form className="daily-entry-form" style={{ gridTemplateColumns: '.6fr 1.2fr .8fr auto' }} onSubmit={submit}>
         <label>Código<input placeholder="ex: 0001" value={form.code} data-testid="brand-code-input" onChange={e => setForm({ ...form, code: e.target.value })} /></label>
@@ -1177,13 +1177,18 @@ function Receipts({ customers }) {
   const [start, setStart] = useState(todayISO(-7));
   const [end, setEnd] = useState(todayISO(0));
   const [customer, setCustomer] = useState('');
+  const [codigoViagem, setCodigoViagem] = useState('');
+  const [entryNumber, setEntryNumber] = useState('');
   const [loading, setLoading] = useState(false);
   const [viewing, setViewing] = useState(null);
 
   async function load() {
     setLoading(true);
     try {
-      const params = { start, end }; if (customer.trim()) params.customer = customer.trim();
+      const params = { start, end };
+      if (customer.trim()) params.customer = customer.trim();
+      if (codigoViagem.trim()) params.codigo_viagem = codigoViagem.trim();
+      if (entryNumber.trim()) params.entry_number = Number(entryNumber.trim());
       const { data } = await api.get('/daily-entries', { ...auth(), params });
       setEntries(data);
     } finally { setLoading(false); }
@@ -1191,21 +1196,24 @@ function Receipts({ customers }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [start, end]);
 
-  return <><Head eyebrow="AUDITORIA" title="Comprovantes de Entrega" subtitle="Busque um lançamento por cliente e período para conferir a assinatura, caso o cliente reclame que não recebeu." />
+  return <><Head eyebrow="AUDITORIA" title="Comprovantes de Entrega" subtitle="Busque um lançamento por cliente, período, viagem ou nº de sequência para conferir a assinatura." />
     <div className="report-toolbar">
       <div className="report-filters">
         <label>De<input type="date" value={start} max={end} data-testid="receipts-start-date" onChange={e => setStart(e.target.value)} /></label>
         <label>Até<input type="date" value={end} min={start} data-testid="receipts-end-date" onChange={e => setEnd(e.target.value)} /></label>
         <label>Cliente<input value={customer} placeholder="Buscar por nome" data-testid="receipts-customer-input" onChange={e => setCustomer(e.target.value)} onKeyDown={e => e.key === 'Enter' && load()} /></label>
+        <label>Código da viagem<input value={codigoViagem} placeholder="ex: 001092026001" data-testid="receipts-viagem-input" onChange={e => setCodigoViagem(e.target.value)} onKeyDown={e => e.key === 'Enter' && load()} /></label>
+        <label className="os-field-narrow">Nº entrega<input value={entryNumber} placeholder="ex: 7" data-testid="receipts-entry-number-input" onChange={e => setEntryNumber(e.target.value)} onKeyDown={e => e.key === 'Enter' && load()} /></label>
         <button type="button" className="ghost-btn" data-testid="receipts-search-button" onClick={load}><Search size={14} /> Buscar</button>
       </div>
       {loading && <Loader2 size={16} className="spin blue-text" />}
     </div>
-    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>Nº</th><th>DATA</th><th>CLIENTE</th><th>ENTREGADOR</th><th>PRODUTO</th><th>TOTAL</th><th>ASSINATURA</th><th /></tr></thead><tbody>
+    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>Nº</th><th>VIAGEM</th><th>DATA</th><th>CLIENTE</th><th>ENTREGADOR</th><th>PRODUTO</th><th>TOTAL</th><th>ASSINATURA</th><th /></tr></thead><tbody>
       {entries.map(e => {
         const items = e.items?.length ? e.items : (e.brand ? [{ brand: e.brand, quantity: e.billed_quantity ?? e.quantity }] : []);
         return <tr key={e.id} data-testid={`receipt-row-${e.id}`}>
           <td>{e.entry_number ? `#${e.entry_number}` : '—'}</td>
+          <td>{e.viagem_codigo ? <small>{e.viagem_codigo}</small> : <small className="muted">—</small>}</td>
           <td>{e.date}</td>
           <td><b>{e.customer}</b></td>
           <td>{e.driver}</td>
@@ -1215,7 +1223,7 @@ function Receipts({ customers }) {
           <td><button className="action-btn ghost" data-testid={`receipt-view-${e.id}`} onClick={() => setViewing(e)}><FileText size={13} /> Ver</button></td>
         </tr>
       })}
-      {entries.length === 0 && <tr><td colSpan={8} className="muted" style={{ padding: 16 }}>Nenhum lançamento encontrado no período/busca.</td></tr>}
+      {entries.length === 0 && <tr><td colSpan={9} className="muted" style={{ padding: 16 }}>Nenhum lançamento encontrado no período/busca.</td></tr>}
     </tbody></table></div></section>
     {viewing && <SignatureViewModal entry={viewing} customer={customers.find(c => c.name === viewing.customer)} onClose={() => setViewing(null)} />}
   </>
