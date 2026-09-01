@@ -1837,6 +1837,8 @@ function DriverMobileApp({ user, customers, onLogout }) {
   const entregasPorViagem = entries.reduce((acc, e) => { if (e.viagem_id) acc[e.viagem_id] = (acc[e.viagem_id] || 0) + Number(e.billed_quantity || 0); return acc; }, {});
   const viagensComProgresso = viagens.map(v => ({ ...v, quantidade_atual: entregasPorViagem[v.id] || 0 }));
   const viagemAtiva = viagensComProgresso.find(v => v.status === 'execucao');
+  const viagemClienteIds = new Set((viagemAtiva?.clientes || []).map(c => c.id));
+  const pickableCustomers = viagemClienteIds.size > 0 ? customers.filter(c => viagemClienteIds.has(c.id)) : customers;
   const entregasNaViagem = new Set(entries.filter(e => e.viagem_id === viagemAtiva?.id).map(e => e.customer));
   const orders = (viagemAtiva?.clientes || []).filter(c => !entregasNaViagem.has(c.name)).map(c => ({ id: c.id, customer: c.name, brand: c.brand, quantity: c.quantity, notes: c.notes, sale_type: c.sale_type }));
   async function createViagem(payload) { await api.post('/viagens', payload, auth()); await loadViagens(); }
@@ -1871,14 +1873,14 @@ function DriverMobileApp({ user, customers, onLogout }) {
   return <div className={`mobile-app${theme === 'dark' ? ' dark' : ''}`} style={{ '--scale': textScale }} data-testid="mobile-driver-app">
     <MobileHeader user={user} title={title} subtitle={subtitle} theme={theme} onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />
     <main className="mob-main">
-      {tab === 'clientes' && <MobileClientesTab customers={customers} entries={entries} orders={orders} onStartOrder={startOrder} date={date} onOpenPicker={() => requireViagem(() => setPicker(true))} onOpenCustomer={c => requireViagem(() => { setSheetOrder(null); setSheetCustomer(c); })} search={search} setSearch={setSearch} viagemAtiva={viagemAtiva} viagens={viagensComProgresso} onOpenViagens={() => setShowViagens(true)} />}
+      {tab === 'clientes' && <MobileClientesTab customers={pickableCustomers} entries={entries} orders={orders} onStartOrder={startOrder} date={date} onOpenPicker={() => requireViagem(() => setPicker(true))} onOpenCustomer={c => requireViagem(() => { setSheetOrder(null); setSheetCustomer(c); })} search={search} setSearch={setSearch} viagemAtiva={viagemAtiva} viagens={viagensComProgresso} onOpenViagens={() => setShowViagens(true)} />}
       {tab === 'diario' && <MobileDiarioTab entries={entries} date={date} />}
       {tab === 'caixa' && <MobileCaixaTab entries={entries} expensesTotal={expensesTotal} date={date} onAddExpense={() => setTab('despesas')} onCloseDay={() => { setToast('Dia fechado!'); setTimeout(() => setToast(''), 2200); }} />}
       {tab === 'despesas' && <MobileDespesasTab user={user} date={date} viagemId={viagemAtiva?.id} />}
       {tab === 'ajustes' && <MobileAjustesTab user={user} theme={theme} setTheme={setTheme} textScale={textScale} setTextScale={setTextScale} onLogout={onLogout} />}
     </main>
     <MobileBottomNav tab={tab} setTab={setTab} />
-    {picker && <MobilePickerSheet customers={customers} onClose={() => setPicker(false)} onPick={pickCustomer} onNewCustomer={newCustomer} />}
+    {picker && <MobilePickerSheet customers={pickableCustomers} onClose={() => setPicker(false)} onPick={pickCustomer} onNewCustomer={newCustomer} />}
     {showViagens && <MobileViagensSheet viagens={viagensComProgresso} customers={customers} onClose={() => setShowViagens(false)} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} />}
     {sheetCustomer && <MobileLaunchPanel customer={sheetCustomer} prefillOrder={sheetOrder} user={user} date={date} viagemId={viagemAtiva?.id} onClose={() => { setSheetCustomer(null); setSheetOrder(null); }} onComplete={onEntryComplete} />}
     {postDelivery && <MobileReceiptPrompt entry={postDelivery} customer={customers.find(c => c.name === postDelivery.customer)} onSavePhone={p => savePhoneForCustomerName(postDelivery.customer, p)} onClose={() => setPostDelivery(null)} />}
