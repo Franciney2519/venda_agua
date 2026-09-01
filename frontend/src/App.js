@@ -112,7 +112,7 @@ function useMediaQuery(query) {
   return matches;
 }
 const nav = [['/', 'Visão geral', LayoutDashboard], ['/viagens', 'Viagens', Truck], ['/comprovantes', 'Comprovantes', FileText], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/marcas', 'Cadastro de Produto', Droplets], ['/marcas-extras', 'Marcas Extras', AlertTriangle], ['/usuarios', 'Cadastro de Usuário', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
-const driverNav = [['/', 'Visão geral', LayoutDashboard], ['/financeiro', 'Financeiro', WalletCards]];
+const driverNav = [['/', 'Visão geral', LayoutDashboard], ['/viagens', 'Viagens', Truck], ['/financeiro', 'Financeiro', WalletCards]];
 
 function Shell({ user, onLogout, notifications, children }) {
   const [open, setOpen] = useState(false);
@@ -885,7 +885,8 @@ function CustomerCombobox({ customers, value, onPick, testId }) {
 const VIAGEM_STATUS_LABEL = { planejada: 'Planejada', execucao: 'Em execução', finalizada: 'Finalizada' };
 const VIAGEM_STATUS_TAG = { planejada: 'orange', execucao: 'blue', finalizada: 'green' };
 
-function Viagens({ customers }) {
+function Viagens({ customers, user }) {
+  const isAdmin = user?.role === 'admin';
   const [viagens, setViagens] = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [date, setDate] = useState(todayISO(0));
@@ -902,7 +903,7 @@ function Viagens({ customers }) {
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [date]);
-  useEffect(() => { api.get('/users', auth()).then(({ data }) => setDrivers(data.filter(u => u.role === 'driver' && u.active !== false))); }, []);
+  useEffect(() => { if (isAdmin) api.get('/users', auth()).then(({ data }) => setDrivers(data.filter(u => u.role === 'driver' && u.active !== false))); }, [isAdmin]);
 
   function pickClienteAtual(name) {
     const c = customers.find(x => x.name === name);
@@ -921,14 +922,20 @@ function Viagens({ customers }) {
 
   async function submit(e) {
     e.preventDefault(); setError('');
-    if (!form.driver) return setError('Selecione o entregador.');
+    if (isAdmin && !form.driver) return setError('Selecione o entregador.');
     try {
-      await api.post('/viagens', { turno: Number(form.turno), rota: Number(form.rota), carga_total: form.carga_total ? Number(form.carga_total) : undefined, driver: form.driver, clientes: clientesRota, date }, auth());
+      const payload = { turno: Number(form.turno), rota: Number(form.rota), carga_total: form.carga_total ? Number(form.carga_total) : undefined, clientes: clientesRota, date };
+      if (isAdmin) payload.driver = form.driver;
+      await api.post('/viagens', payload, auth());
       setForm({ driver: form.driver, turno: 0, rota: 1, carga_total: '' });
       setClientesRota([]);
       await load();
     } catch (e) { setError(e.response?.data?.detail || 'Não foi possível criar a viagem.'); }
   }
+
+  async function iniciar(v) { try { await api.post(`/viagens/${v.id}/iniciar`, {}, auth()); await load(); } catch (e) { setError(e.response?.data?.detail || 'Não foi possível iniciar.'); } }
+  async function finalizar(v) { try { await api.post(`/viagens/${v.id}/finalizar`, {}, auth()); await load(); } catch (e) { setError(e.response?.data?.detail || 'Não foi possível finalizar.'); } }
+  async function remove(v) { if (!window.confirm(`Excluir a viagem ${v.codigo_viagem}?`)) return; try { await api.delete(`/viagens/${v.id}`, auth()); await load(); } catch (e) { setError(e.response?.data?.detail || 'Não foi possível excluir.'); } }
 
   const emExecucao = viagens.filter(v => v.status === 'execucao').length;
   const finalizadas = viagens.filter(v => v.status === 'finalizada');
@@ -936,10 +943,10 @@ function Viagens({ customers }) {
   const despesasTotal = finalizadas.reduce((s, v) => s + Number(v.despesas_total || 0), 0);
   const saldoLiquido = totalBruto - despesasTotal;
 
-  return <><Head eyebrow="LOGÍSTICA" title="Viagens" subtitle="Planeje a rota do entregador — turno, rota, carga e os clientes dessa viagem." />
+  return <><Head eyebrow="LOGÍSTICA" title="Viagens" subtitle={isAdmin ? "Planeje a rota do entregador — turno, rota, carga e os clientes dessa viagem." : "Crie sua viagem do dia, inicie, lance as entregas e finalize."} />
     <section className="panel table-panel" style={{ marginBottom: 22 }}>
       <form className="os-form" onSubmit={submit}>
-        <label>Entregador<select required value={form.driver} data-testid="viagem-driver-select" onChange={e => setForm({ ...form, driver: e.target.value })}><option value="">Selecione</option>{drivers.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}</select></label>
+        {isAdmin && <label>Entregador<select required value={form.driver} data-testid="viagem-driver-select" onChange={e => setForm({ ...form, driver: e.target.value })}><option value="">Selecione</option>{drivers.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}</select></label>}
         <label>Turno<select value={form.turno} data-testid="viagem-turno-select" onChange={e => setForm({ ...form, turno: e.target.value })}><option value={0}>Manhã</option><option value={1}>Tarde</option></select></label>
         <label>Rota<select value={form.rota} data-testid="viagem-rota-select" onChange={e => setForm({ ...form, rota: e.target.value })}><option value={1}>001</option><option value={2}>002</option></select></label>
         <label className="os-field-narrow">Carga total<input type="number" value={form.carga_total} data-testid="viagem-carga-input" onChange={e => setForm({ ...form, carga_total: e.target.value })} /></label>
@@ -985,7 +992,7 @@ function Viagens({ customers }) {
       <Stat label="Finalizadas" value={finalizadas.length} detail="Rotas concluídas no dia" Icon={CalendarCheck} />
       <Stat label="Saldo líquido das rotas" value={money(saldoLiquido)} detail={`Receita ${money(totalBruto)} − despesas ${money(despesasTotal)}`} Icon={WalletCards} tone="orange" />
     </div>
-    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>ENTREGADOR</th><th>VIAGEM DO DIA</th><th>TURNO</th><th>ROTA</th><th>CLIENTES</th><th>CARGA</th><th>ENTREGAS</th><th>RECEITA</th><th>DESPESAS</th><th>SALDO</th><th>SITUAÇÃO</th></tr></thead><tbody>
+    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>ENTREGADOR</th><th>VIAGEM DO DIA</th><th>TURNO</th><th>ROTA</th><th>CLIENTES</th><th>CARGA</th><th>ENTREGAS</th><th>RECEITA</th><th>DESPESAS</th><th>SALDO</th><th>SITUAÇÃO</th><th /></tr></thead><tbody>
       {viagens.map(v => <tr key={v.id} data-testid={`viagem-row-${v.id}`}>
         <td><b>{v.codigo_viagem}</b></td>
         <td>{v.driver}</td>
@@ -999,8 +1006,12 @@ function Viagens({ customers }) {
         <td>{v.despesas_total != null ? money(v.despesas_total) : '—'}</td>
         <td>{v.saldo_liquido != null ? <b className={v.saldo_liquido >= 0 ? 'green-text' : 'orange-text'}>{money(v.saldo_liquido)}</b> : '—'}</td>
         <td><span className={`tag ${VIAGEM_STATUS_TAG[v.status]}`}>{VIAGEM_STATUS_LABEL[v.status]}</span></td>
+        <td><div className="row-actions">
+          {v.status === 'planejada' && <><button className="action-btn ghost" data-testid={`viagem-iniciar-${v.id}`} onClick={() => iniciar(v)}><Check size={13} /> Iniciar</button><button className="action-btn reject" data-testid={`viagem-excluir-${v.id}`} onClick={() => remove(v)}><Trash2 size={13} /></button></>}
+          {v.status === 'execucao' && <button className="action-btn ghost" data-testid={`viagem-finalizar-${v.id}`} onClick={() => finalizar(v)}><Check size={13} /> Finalizar</button>}
+        </div></td>
       </tr>)}
-      {viagens.length === 0 && <tr><td colSpan={12} className="muted" style={{ padding: 16 }}>Nenhuma viagem registrada nessa data.</td></tr>}
+      {viagens.length === 0 && <tr><td colSpan={13} className="muted" style={{ padding: 16 }}>Nenhuma viagem registrada nessa data.</td></tr>}
     </tbody></table></div></section>
   </>
 }
@@ -1909,7 +1920,7 @@ function App() {
       <Route path="/estoque" element={<Stock data={data} setData={setData} create={setModal} />} />
       <Route path="/financeiro" element={<Finance data={data} setData={setData} create={setModal} user={user} />} />
       <Route path="/provisao" element={adminOnly(<Receivables />)} />
-      <Route path="/viagens" element={adminOnly(<Viagens customers={customers} />)} />
+      <Route path="/viagens" element={<Viagens customers={customers} user={user} />} />
       <Route path="/comprovantes" element={adminOnly(<Receipts customers={customers} />)} />
       <Route path="/marcas" element={adminOnly(<BrandsCatalog />)} />
       <Route path="/marcas-extras" element={adminOnly(<OutOfCatalogBrands />)} />
