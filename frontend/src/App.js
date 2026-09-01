@@ -1855,7 +1855,12 @@ function DriverMobileApp({ user, customers, onLogout }) {
   }); }
   useEffect(() => { api.get('/expenses', auth()).then(({ data }) => setExpensesTotal(data.filter(x => (x.driver || '') === user.name && (x.created_at || '').slice(0, 10) === date && x.status !== 'rejected').reduce((s, x) => s + Number(x.amount || 0), 0))); }, [date, tab, user.name]);
 
-  function pickCustomer(c) { setPicker(false); setSheetOrder(null); setSheetCustomer(c); }
+  function pickCustomer(c) {
+    setPicker(false); setSheetOrder(null); setSheetCustomer(c);
+    if (viagemAtiva && c.id && !viagemClienteIds.has(c.id)) {
+      api.post(`/viagens/${viagemAtiva.id}/clientes`, { id: c.id, name: c.name }, auth()).then(loadViagens);
+    }
+  }
   function newCustomer() { setPicker(false); setSheetOrder(null); setSheetCustomer({ id: null, name: '', address: '', brands: [] }); }
 
   function onEntryComplete(entry) {
@@ -1880,7 +1885,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
       {tab === 'ajustes' && <MobileAjustesTab user={user} theme={theme} setTheme={setTheme} textScale={textScale} setTextScale={setTextScale} onLogout={onLogout} />}
     </main>
     <MobileBottomNav tab={tab} setTab={setTab} />
-    {picker && <MobilePickerSheet customers={pickableCustomers} onClose={() => setPicker(false)} onPick={pickCustomer} onNewCustomer={newCustomer} />}
+    {picker && <MobilePickerSheet customers={customers} onClose={() => setPicker(false)} onPick={pickCustomer} onNewCustomer={newCustomer} />}
     {showViagens && <MobileViagensSheet viagens={viagensComProgresso} customers={customers} onClose={() => setShowViagens(false)} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} />}
     {sheetCustomer && <MobileLaunchPanel customer={sheetCustomer} prefillOrder={sheetOrder} user={user} date={date} viagemId={viagemAtiva?.id} onClose={() => { setSheetCustomer(null); setSheetOrder(null); }} onComplete={onEntryComplete} />}
     {postDelivery && <MobileReceiptPrompt entry={postDelivery} customer={customers.find(c => c.name === postDelivery.customer)} onSavePhone={p => savePhoneForCustomerName(postDelivery.customer, p)} onClose={() => setPostDelivery(null)} />}

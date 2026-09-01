@@ -518,6 +518,17 @@ async def _own_viagem_or_404(item_id, user):
     if user.get("role") != "admin" and v.get("driver") != user["name"]: raise HTTPException(403, "Sem permissão")
     return v
 
+@api.post("/viagens/{item_id}/clientes")
+async def add_viagem_cliente(item_id: str, data: dict, user=Depends(current_user)):
+    v = await _own_viagem_or_404(item_id, user)
+    if v["status"] == "finalizada": raise HTTPException(400, "Viagem já está finalizada")
+    if not data.get("id") or not data.get("name"): raise HTTPException(400, "Informe o cliente")
+    if any(c.get("id") == data["id"] for c in (v.get("clientes") or [])):
+        return v
+    cliente = {"id": data["id"], "name": data["name"], "brand": data.get("brand"), "quantity": data.get("quantity"), "sale_type": data.get("sale_type"), "notes": data.get("notes")}
+    await db.viagens.update_one({"id": item_id}, {"$push": {"clientes": cliente}}, upsert=False)
+    return await db.viagens.find_one({"id": item_id}, {"_id": 0})
+
 @api.post("/viagens/{item_id}/iniciar")
 async def iniciar_viagem(item_id: str, user=Depends(current_user)):
     v = await _own_viagem_or_404(item_id, user)
