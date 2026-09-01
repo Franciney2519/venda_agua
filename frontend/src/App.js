@@ -948,7 +948,7 @@ function Viagens({ customers, user }) {
       <form className="os-form" onSubmit={submit}>
         {isAdmin && <label>Entregador<select required value={form.driver} data-testid="viagem-driver-select" onChange={e => setForm({ ...form, driver: e.target.value })}><option value="">Selecione</option>{drivers.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}</select></label>}
         <label>Turno<select value={form.turno} data-testid="viagem-turno-select" onChange={e => setForm({ ...form, turno: e.target.value })}><option value={0}>Manhã</option><option value={1}>Tarde</option></select></label>
-        <label>Rota<select value={form.rota} data-testid="viagem-rota-select" onChange={e => setForm({ ...form, rota: e.target.value })}><option value={1}>001</option><option value={2}>002</option></select></label>
+        <label>Rota<select value={form.rota} data-testid="viagem-rota-select" onChange={e => setForm({ ...form, rota: e.target.value })}>{ROTA_OPTIONS.map(n => <option key={n} value={n}>{String(n).padStart(3, '0')}</option>)}</select></label>
         <label className="os-field-narrow">Carga total<input type="number" value={form.carga_total} data-testid="viagem-carga-input" onChange={e => setForm({ ...form, carga_total: e.target.value })} /></label>
       </form>
 
@@ -987,7 +987,7 @@ function Viagens({ customers, user }) {
       {loading && <Loader2 size={16} className="spin blue-text" />}
     </div>
     <div className="stats">
-      <Stat label="Viagens no dia" value={viagens.length} detail={`Limite de 4 por entregador`} Icon={Truck} />
+      <Stat label="Viagens no dia" value={viagens.length} detail={`Limite de ${VIAGENS_POR_DIA} por entregador`} Icon={Truck} />
       <Stat label="Em execução" value={emExecucao} detail="Rotas em andamento agora" Icon={CircleDollarSign} tone="green" />
       <Stat label="Finalizadas" value={finalizadas.length} detail="Rotas concluídas no dia" Icon={CalendarCheck} />
       <Stat label="Saldo líquido das rotas" value={money(saldoLiquido)} detail={`Receita ${money(totalBruto)} − despesas ${money(despesasTotal)}`} Icon={WalletCards} tone="orange" />
@@ -996,7 +996,7 @@ function Viagens({ customers, user }) {
       {viagens.map(v => <tr key={v.id} data-testid={`viagem-row-${v.id}`}>
         <td><b>{v.codigo_viagem}</b></td>
         <td>{v.driver}</td>
-        <td>{v.numero}/4</td>
+        <td>{v.numero}/{VIAGENS_POR_DIA}</td>
         <td>{TURNO_LABELS[v.turno]}</td>
         <td>{String(v.rota).padStart(3, '0')}</td>
         <td>{v.clientes?.length ? <span title={v.clientes.map(c => `${c.name}${c.brand ? ` (${c.brand}${c.quantity ? ` x${c.quantity}` : ''})` : ''}`).join(', ')}>{v.clientes.length}</span> : '—'}</td>
@@ -1239,6 +1239,9 @@ function MobilePickerRow({ c, onClick }) {
 }
 
 const TURNO_LABELS = { 0: 'Manhã', 1: 'Tarde' };
+const VIAGENS_POR_TURNO = 6;
+const VIAGENS_POR_DIA = VIAGENS_POR_TURNO * 2;
+const ROTA_OPTIONS = Array.from({ length: VIAGENS_POR_TURNO }, (_, i) => i + 1);
 
 function MobileTripBanner({ viagemAtiva, viagens, onOpen }) {
   const carga = viagemAtiva?.carga_total;
@@ -1316,7 +1319,7 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
     <div className="mob-sheet mob-sheet-tall" onClick={e => e.stopPropagation()}>
       <div className="mob-sheet-handle" />
       <div className="mob-sheet-head">
-        <div><h3>Viagens do dia</h3><p>{viagens.length}/4 rotas · máx. 2 por turno</p></div>
+        <div><h3>Viagens do dia</h3><p>{viagens.length}/{VIAGENS_POR_DIA} rotas · máx. {VIAGENS_POR_TURNO} por turno</p></div>
         <button type="button" className="mob-close" data-testid="mob-viagens-close" onClick={onClose}><X size={18} /></button>
       </div>
 
@@ -1326,8 +1329,7 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
           <option value={1}>Tarde</option>
         </select></label>
         <label>Rota<select value={rota} data-testid="mob-viagem-rota" onChange={e => setRota(Number(e.target.value))}>
-          <option value={1}>001</option>
-          <option value={2}>002</option>
+          {ROTA_OPTIONS.map(n => <option key={n} value={n}>{String(n).padStart(3, '0')}</option>)}
         </select></label>
         <label>Carga total (opcional)<input type="number" inputMode="numeric" value={cargaTotal} data-testid="mob-viagem-carga" onChange={e => setCargaTotal(e.target.value)} /></label>
         <label>Clientes desta rota (opcional){selectedClientes.length > 0 ? ` · ${selectedClientes.length} selecionado(s)` : ''}

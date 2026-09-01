@@ -469,7 +469,7 @@ async def delete_daily_entry(item_id: str, user=Depends(current_user)):
     return {"message": "Excluído"}
 
 TURNO_LABELS = {0: "Manhã", 1: "Tarde"}
-VIAGENS_POR_TURNO = 2
+VIAGENS_POR_TURNO = 6
 VIAGENS_POR_DIA = VIAGENS_POR_TURNO * len(TURNO_LABELS)
 
 def gerar_codigo_viagem(turno: int, date_str: str, rota: int) -> str:
