@@ -322,7 +322,13 @@ async def expenses(user=Depends(current_user)): return await list_resource("expe
 @api.post("/expenses")
 async def add_expense(data: ResourceInput, user=Depends(current_user)):
     if user.get("role") != "admin": data.driver = user["name"]
-    return await create_resource("expenses", data, user)
+    doc = await create_resource("expenses", data, user)
+    if doc.get("viagem_id"):
+        viagem = await db.viagens.find_one({"id": doc["viagem_id"]}, {"_id": 0})
+        if viagem:
+            await db.expenses.update_one({"id": doc["id"]}, {"$set": {"viagem_codigo": viagem.get("codigo_viagem")}})
+            doc["viagem_codigo"] = viagem.get("codigo_viagem")
+    return doc
 @api.patch("/expenses/{item_id}")
 async def update_expense(item_id: str, data: ResourceInput, user=Depends(admin_user)):
     target = await db.expenses.find_one({"id": item_id}, {"_id": 0})
@@ -454,8 +460,38 @@ async def add_daily_entry(data: ResourceInput, user=Depends(current_user)):
     await db.daily_entries.insert_one(doc); doc.pop("_id", None); return doc
 
 @api.patch("/daily-entries/{item_id}")
-async def update_daily_entry(item_id: str, data: ResourceInput, user=Depends(admin_user)):
+async def update_daily_entry(item_id: str, data: ResourceInput, user=Depends(current_user)):
+    target = await db.daily_entries.find_one({"id": item_id}, {"_id": 0})
+    if not target: raise HTTPException(404, "Lançamento não encontrado")
+    if user.get("role") != "admin" and target.get("created_by") != user["id"]: raise HTTPException(403, "Sem permissão")
     values = data.model_dump(exclude_unset=True)
+
+    if "items" in values or "quantity" in values:
+        # Revisão de uma entrega já lançada: recalcula totais, valida o pagamento
+        # e ajusta o estoque pela diferença (desfaz o efeito antigo, aplica o novo).
+        merged = {**target, **values}
+        items = merged.get("items")
+        if items:
+            billed_qty = sum(float(it.get("quantity") or 0) for it in items)
+            mf_total = sum(float(it.get("mf_quantity") or 0) for it in items)
+            total = sum(float(it.get("quantity") or 0) * float(it.get("price") or 0) for it in items)
+        else:
+            qty = float(merged.get("quantity") or 0)
+            mf_total = float(merged.get("mf_quantity") or 0)
+            billed_qty = max(0.0, qty - mf_total)
+            total = billed_qty * float(merged.get("price") or 0)
+        merged["billed_quantity"] = billed_qty
+        merged["mf_quantity"] = mf_total
+        merged["total"] = total
+        comp_value = float(merged.get("comp_value") or 0)
+        pix_value = float(merged.get("pix_value") or 0)
+        cash_value = float(merged.get("cash_value") or 0)
+        if round(pix_value + cash_value + comp_value, 2) != round(total, 2):
+            raise HTTPException(400, f"Pix + Dinheiro + A prazo (R$ {pix_value + cash_value + comp_value:.2f}) precisa somar o total do lançamento (R$ {total:.2f})")
+        await apply_entry_stock_movements(target, "estorno", -1, user)
+        await apply_entry_stock_movements(merged, "venda", 1, user)
+        values = {k: v for k, v in merged.items() if k not in ("id", "created_at", "created_by")}
+
     await db.daily_entries.update_one({"id": item_id}, {"$set": values})
     doc = await db.daily_entries.find_one({"id": item_id}, {"_id": 0}); return doc
 
