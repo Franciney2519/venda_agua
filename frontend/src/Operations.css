@@ -102,6 +102,17 @@
 .mob-viagem-form label{display:grid;gap:6px;font-size:calc(12px * var(--scale));font-weight:700;color:var(--mob-muted)}
 .mob-viagem-form label:last-of-type,.mob-viagem-form .error,.mob-viagem-form .mob-cta{grid-column:1 / -1}
 .mob-viagem-form select,.mob-viagem-form input{padding:11px;border-radius:10px;border:1px solid var(--mob-line);background:var(--mob-surface);font-size:calc(14px * var(--scale));color:var(--mob-ink)}
+.mob-viagem-clients{display:grid;gap:8px}
+.mob-viagem-client-chips{display:flex;flex-wrap:wrap;gap:6px}
+.mob-viagem-client-chip{display:flex;align-items:center;gap:6px;background:var(--mob-blue-soft);color:var(--mob-blue);border-radius:20px;padding:5px 6px 5px 10px;font-size:calc(11.5px * var(--scale));font-weight:700}
+.mob-viagem-client-chip button{display:grid;place-items:center;width:16px;height:16px;border-radius:50%;background:var(--mob-blue);color:#fff}
+.mob-viagem-client-list{max-height:180px;overflow-y:auto;border:1px solid var(--mob-line);border-radius:10px}
+.mob-viagem-client-row{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border-bottom:1px solid var(--mob-line);background:none;text-align:left}
+.mob-viagem-client-row:last-child{border-bottom:0}
+.mob-viagem-client-row.active{background:var(--mob-blue-soft)}
+.mob-viagem-client-row .mob-customer-avatar{width:32px;height:32px;font-size:calc(12px * var(--scale))}
+.mob-viagem-client-row .mob-customer-info{flex:1;min-width:0}
+.mob-viagem-client-row .mob-customer-info b{font-size:calc(13px * var(--scale))}
 .mob-viagem-row{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--mob-line)}
 .mob-viagem-row:last-child{border-bottom:0}
 .mob-viagem-row>div:first-child{flex:1}

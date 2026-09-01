@@ -90,6 +90,7 @@ class ViagemInput(BaseModel):
     carga_total: Optional[int] = None
     notes: Optional[str] = None
     driver: Optional[str] = None  # admin only: criar viagem para outro entregador
+    clientes: Optional[List[dict]] = None  # clientes do cadastro incluídos nesta rota
 
 MANAUS_TZ = timezone(timedelta(hours=-4))  # America/Manaus, no DST
 def now(): return datetime.now(timezone.utc).isoformat()
@@ -471,7 +472,7 @@ async def create_viagem(data: ViagemInput, user=Depends(current_user)):
     doc = {
         "id": str(uuid.uuid4()), "codigo_viagem": codigo, "driver": driver_name, "numero": numero,
         "turno": data.turno, "rota": data.rota, "date": date_str, "carga_total": data.carga_total,
-        "notes": data.notes, "status": "planejada",
+        "notes": data.notes, "clientes": data.clientes or [], "status": "planejada",
         "created_at": now(), "created_by": user["id"], "updated_at": now(),
     }
     await db.viagens.insert_one(doc); doc.pop("_id", None)

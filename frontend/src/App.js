@@ -1078,19 +1078,20 @@ function Viagens() {
       <Stat label="Finalizadas" value={finalizadas.length} detail="Rotas concluídas no dia" Icon={CalendarCheck} />
       <Stat label="Receita das rotas finalizadas" value={money(totalBruto)} detail="Somatório do total bruto" Icon={WalletCards} tone="orange" />
     </div>
-    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>ENTREGADOR</th><th>Nº</th><th>TURNO</th><th>ROTA</th><th>CARGA</th><th>ENTREGAS</th><th>TOTAL BRUTO</th><th>SITUAÇÃO</th></tr></thead><tbody>
+    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>ENTREGADOR</th><th>Nº</th><th>TURNO</th><th>ROTA</th><th>CLIENTES</th><th>CARGA</th><th>ENTREGAS</th><th>TOTAL BRUTO</th><th>SITUAÇÃO</th></tr></thead><tbody>
       {viagens.map(v => <tr key={v.id} data-testid={`viagem-row-${v.id}`}>
         <td><b>{v.codigo_viagem}</b></td>
         <td>{v.driver}</td>
         <td>{v.numero}</td>
         <td>{TURNO_LABELS[v.turno]}</td>
         <td>{String(v.rota).padStart(3, '0')}</td>
+        <td>{v.clientes?.length ? <span title={v.clientes.map(c => c.name).join(', ')}>{v.clientes.length}</span> : '—'}</td>
         <td>{v.carga_total ?? '—'}</td>
         <td>{v.entregas ?? '—'}{v.problemas ? <small className="muted"> · {v.problemas} c/ MF</small> : ''}</td>
         <td>{v.total_bruto != null ? money(v.total_bruto) : '—'}</td>
         <td><span className={`tag ${VIAGEM_STATUS_TAG[v.status]}`}>{VIAGEM_STATUS_LABEL[v.status]}</span></td>
       </tr>)}
-      {viagens.length === 0 && <tr><td colSpan={9} className="muted" style={{ padding: 16 }}>Nenhuma viagem registrada nessa data.</td></tr>}
+      {viagens.length === 0 && <tr><td colSpan={10} className="muted" style={{ padding: 16 }}>Nenhuma viagem registrada nessa data.</td></tr>}
     </tbody></table></div></section>
   </>
 }
@@ -1410,22 +1411,53 @@ function MobileTripBanner({ viagemAtiva, viagens, onOpen }) {
   </button>
 }
 
-function MobileViagensSheet({ viagens, onClose, onCreate, onIniciar, onFinalizar, onDelete }) {
+function MobileViagemClientPicker({ customers, selected, onToggle }) {
+  const [q, setQ] = useState('');
+  const query = q.trim().toLowerCase();
+  const filtered = customers
+    .filter(c => !query || c.name.toLowerCase().includes(query) || (c.code || '').toLowerCase().includes(query))
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
+  return <div className="mob-viagem-clients">
+    <div className="mob-search"><Search size={15} /><input placeholder="Buscar cliente cadastrado" value={q} data-testid="mob-viagem-client-search" onChange={e => setQ(e.target.value)} /></div>
+    {selected.length > 0 && <div className="mob-viagem-client-chips">
+      {selected.map(c => <span className="mob-viagem-client-chip" key={c.id} data-testid={`mob-viagem-client-chip-${c.id}`}>{c.name}<button type="button" onClick={() => onToggle(c)}><X size={12} /></button></span>)}
+    </div>}
+    <div className="mob-viagem-client-list">
+      {filtered.slice(0, 30).map(c => {
+        const isSelected = selected.some(x => x.id === c.id);
+        const brands = brandListOf(c);
+        return <button type="button" key={c.id} className={`mob-viagem-client-row${isSelected ? ' active' : ''}`} data-testid={`mob-viagem-client-${c.id}`} onClick={() => onToggle(c)}>
+          <span className="mob-customer-avatar">{c.name?.[0] || '?'}</span>
+          <span className="mob-customer-info"><b>{c.name}{c.code && <span className="mob-tag neutral" style={{ marginLeft: 6 }}>#{c.code}</span>}</b><small>{brands.length ? brands.map(b => b.brand).join(', ') : 'sem marca cadastrada'}</small></span>
+          {isSelected ? <Check size={18} color="var(--mob-blue)" /> : <Plus size={18} color="var(--mob-muted)" />}
+        </button>
+      })}
+      {filtered.length === 0 && <p className="muted" style={{ padding: '10px 4px' }}>Nenhum cliente encontrado.</p>}
+    </div>
+  </div>
+}
+
+function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, onFinalizar, onDelete }) {
   const [turno, setTurno] = useState(0);
   const [rota, setRota] = useState(1);
   const [cargaTotal, setCargaTotal] = useState('');
+  const [selectedClientes, setSelectedClientes] = useState([]);
   const [error, setError] = useState('');
   const statusLabel = { planejada: 'Planejada', execucao: 'Em execução', finalizada: 'Finalizada' };
   const statusTag = { planejada: 'orange', execucao: 'blue', finalizada: 'green' };
 
+  function toggleCliente(c) { setSelectedClientes(prev => prev.some(x => x.id === c.id) ? prev.filter(x => x.id !== c.id) : [...prev, { id: c.id, name: c.name }]); }
+
   async function submit() {
     setError('');
-    try { await onCreate({ turno, rota, carga_total: cargaTotal ? Number(cargaTotal) : undefined }); setCargaTotal(''); }
-    catch (e) { setError(e.response?.data?.detail || 'Não foi possível criar a viagem.'); }
+    try {
+      await onCreate({ turno, rota, carga_total: cargaTotal ? Number(cargaTotal) : undefined, clientes: selectedClientes });
+      setCargaTotal(''); setSelectedClientes([]);
+    } catch (e) { setError(e.response?.data?.detail || 'Não foi possível criar a viagem.'); }
   }
 
   return <div className="mob-backdrop" onClick={onClose}>
-    <div className="mob-sheet" onClick={e => e.stopPropagation()}>
+    <div className="mob-sheet mob-sheet-tall" onClick={e => e.stopPropagation()}>
       <div className="mob-sheet-handle" />
       <div className="mob-sheet-head">
         <div><h3>Viagens do dia</h3><p>{viagens.length}/4 rotas · máx. 2 por turno</p></div>
@@ -1442,6 +1474,9 @@ function MobileViagensSheet({ viagens, onClose, onCreate, onIniciar, onFinalizar
           <option value={2}>002</option>
         </select></label>
         <label>Carga total (opcional)<input type="number" inputMode="numeric" value={cargaTotal} data-testid="mob-viagem-carga" onChange={e => setCargaTotal(e.target.value)} /></label>
+        <label>Clientes desta rota (opcional){selectedClientes.length > 0 ? ` · ${selectedClientes.length} selecionado(s)` : ''}
+          <MobileViagemClientPicker customers={customers} selected={selectedClientes} onToggle={toggleCliente} />
+        </label>
         {error && <div className="error" data-testid="mob-viagem-error">{error}</div>}
         <button type="button" className="mob-cta" data-testid="mob-viagem-create" onClick={submit}><Plus size={18} /> Criar viagem</button>
       </div>
@@ -1449,7 +1484,7 @@ function MobileViagensSheet({ viagens, onClose, onCreate, onIniciar, onFinalizar
       <div className="mob-sheet-list">
         {viagens.length === 0 && <p className="muted" style={{ padding: 16 }}>Nenhuma viagem criada hoje ainda.</p>}
         {viagens.map(v => <div className="mob-viagem-row" key={v.id} data-testid={`mob-viagem-${v.id}`}>
-          <div><b>{TURNO_LABELS[v.turno]} · rota {String(v.rota).padStart(3, '0')}</b><small>{v.codigo_viagem}{v.carga_total ? ` · ${v.carga_total} un` : ''}</small></div>
+          <div><b>{TURNO_LABELS[v.turno]} · rota {String(v.rota).padStart(3, '0')}</b><small>{v.codigo_viagem}{v.carga_total ? ` · ${v.carga_total} un` : ''}{v.clientes?.length ? ` · ${v.clientes.length} clientes` : ''}</small></div>
           <span className={`tag ${statusTag[v.status]}`}>{statusLabel[v.status]}</span>
           {v.status === 'planejada' && <div className="mob-row-actions">
             <button type="button" className="mob-outline-btn" data-testid={`mob-viagem-iniciar-${v.id}`} onClick={() => onIniciar(v)}>Iniciar</button>
@@ -1987,7 +2022,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
     </main>
     <MobileBottomNav tab={tab} setTab={setTab} />
     {picker && <MobilePickerSheet customers={customers} onClose={() => setPicker(false)} onPick={pickCustomer} onNewCustomer={newCustomer} />}
-    {showViagens && <MobileViagensSheet viagens={viagens} onClose={() => setShowViagens(false)} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} />}
+    {showViagens && <MobileViagensSheet viagens={viagens} customers={customers} onClose={() => setShowViagens(false)} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} />}
     {sheetCustomer && <MobileLaunchPanel customer={sheetCustomer} prefillOrder={sheetOrder} user={user} date={date} viagemId={viagemAtiva?.id} onClose={() => { setSheetCustomer(null); setSheetOrder(null); }} onComplete={onEntryComplete} />}
     {postDelivery && <MobileReceiptPrompt entry={postDelivery} customer={customers.find(c => c.name === postDelivery.customer)} onSavePhone={p => savePhoneForCustomerName(postDelivery.customer, p)} onClose={() => setPostDelivery(null)} />}
     <MobileToast text={toast} />
