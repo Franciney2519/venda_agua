@@ -111,7 +111,7 @@ function useMediaQuery(query) {
   }, [query]);
   return matches;
 }
-const nav = [['/', 'Visão geral', LayoutDashboard], ['/ordens-servico', 'Ordens de Serviço', Truck], ['/comprovantes', 'Comprovantes', FileText], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/marcas', 'Marcas de Água', Droplets], ['/marcas-extras', 'Marcas Extras', AlertTriangle], ['/usuarios', 'Usuários', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
+const nav = [['/', 'Visão geral', LayoutDashboard], ['/viagens', 'Viagens', Truck], ['/ordens-servico', 'Ordens de Serviço', Truck], ['/comprovantes', 'Comprovantes', FileText], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/marcas', 'Marcas de Água', Droplets], ['/marcas-extras', 'Marcas Extras', AlertTriangle], ['/usuarios', 'Usuários', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
 const driverNav = [['/', 'Visão geral', LayoutDashboard], ['/controle-diario', 'Controle Diário', CalendarCheck], ['/financeiro', 'Financeiro', WalletCards]];
 
 function Shell({ user, onLogout, notifications, children }) {
@@ -1045,6 +1045,56 @@ function CustomerCombobox({ customers, value, onPick, testId }) {
   </div>
 }
 
+const VIAGEM_STATUS_LABEL = { planejada: 'Planejada', execucao: 'Em execução', finalizada: 'Finalizada' };
+const VIAGEM_STATUS_TAG = { planejada: 'orange', execucao: 'blue', finalizada: 'green' };
+
+function Viagens() {
+  const [viagens, setViagens] = useState([]);
+  const [date, setDate] = useState(todayISO(0));
+  const [loading, setLoading] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try { const { data } = await api.get('/viagens', { ...auth(), params: { date } }); setViagens(data.viagens); }
+    finally { setLoading(false); }
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [date]);
+
+  const emExecucao = viagens.filter(v => v.status === 'execucao').length;
+  const finalizadas = viagens.filter(v => v.status === 'finalizada');
+  const totalBruto = finalizadas.reduce((s, v) => s + Number(v.total_bruto || 0), 0);
+
+  return <><Head eyebrow="LOGÍSTICA" title="Viagens" subtitle="Rotas do dia por entregador, com código único de viagem." />
+    <div className="report-toolbar">
+      <div className="report-filters">
+        <label>Data<input type="date" value={date} data-testid="viagens-date-input" onChange={e => setDate(e.target.value)} /></label>
+      </div>
+      {loading && <Loader2 size={16} className="spin blue-text" />}
+    </div>
+    <div className="stats">
+      <Stat label="Viagens no dia" value={viagens.length} detail={`Limite de 4 por entregador`} Icon={Truck} />
+      <Stat label="Em execução" value={emExecucao} detail="Rotas em andamento agora" Icon={CircleDollarSign} tone="green" />
+      <Stat label="Finalizadas" value={finalizadas.length} detail="Rotas concluídas no dia" Icon={CalendarCheck} />
+      <Stat label="Receita das rotas finalizadas" value={money(totalBruto)} detail="Somatório do total bruto" Icon={WalletCards} tone="orange" />
+    </div>
+    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>ENTREGADOR</th><th>Nº</th><th>TURNO</th><th>ROTA</th><th>CARGA</th><th>ENTREGAS</th><th>TOTAL BRUTO</th><th>SITUAÇÃO</th></tr></thead><tbody>
+      {viagens.map(v => <tr key={v.id} data-testid={`viagem-row-${v.id}`}>
+        <td><b>{v.codigo_viagem}</b></td>
+        <td>{v.driver}</td>
+        <td>{v.numero}</td>
+        <td>{TURNO_LABELS[v.turno]}</td>
+        <td>{String(v.rota).padStart(3, '0')}</td>
+        <td>{v.carga_total ?? '—'}</td>
+        <td>{v.entregas ?? '—'}{v.problemas ? <small className="muted"> · {v.problemas} c/ MF</small> : ''}</td>
+        <td>{v.total_bruto != null ? money(v.total_bruto) : '—'}</td>
+        <td><span className={`tag ${VIAGEM_STATUS_TAG[v.status]}`}>{VIAGEM_STATUS_LABEL[v.status]}</span></td>
+      </tr>)}
+      {viagens.length === 0 && <tr><td colSpan={9} className="muted" style={{ padding: 16 }}>Nenhuma viagem registrada nessa data.</td></tr>}
+    </tbody></table></div></section>
+  </>
+}
+
 function ServiceOrders({ customers }) {
   const [orders, setOrders] = useState([]);
   const [drivers, setDrivers] = useState([]);
@@ -1348,7 +1398,72 @@ function MobilePickerRow({ c, onClick }) {
   </button>
 }
 
-function MobileClientesTab({ customers, entries, orders, onStartOrder, date, onOpenPicker, onOpenCustomer, search, setSearch }) {
+const TURNO_LABELS = { 0: 'Manhã', 1: 'Tarde' };
+
+function MobileTripBanner({ viagemAtiva, viagens, onOpen }) {
+  return <button type="button" className="mob-trip-banner" data-testid="mob-trip-banner" onClick={onOpen}>
+    <Truck size={18} />
+    {viagemAtiva
+      ? <div><b>Viagem em execução · {TURNO_LABELS[viagemAtiva.turno]} · rota {String(viagemAtiva.rota).padStart(3, '0')}</b><small>{viagemAtiva.codigo_viagem}</small></div>
+      : <div><b>Nenhuma viagem em execução</b><small>{viagens?.length ? `${viagens.length} viagem(ns) hoje` : 'Toque para criar a viagem do dia'}</small></div>}
+    <ChevronRight size={18} />
+  </button>
+}
+
+function MobileViagensSheet({ viagens, onClose, onCreate, onIniciar, onFinalizar, onDelete }) {
+  const [turno, setTurno] = useState(0);
+  const [rota, setRota] = useState(1);
+  const [cargaTotal, setCargaTotal] = useState('');
+  const [error, setError] = useState('');
+  const statusLabel = { planejada: 'Planejada', execucao: 'Em execução', finalizada: 'Finalizada' };
+  const statusTag = { planejada: 'orange', execucao: 'blue', finalizada: 'green' };
+
+  async function submit() {
+    setError('');
+    try { await onCreate({ turno, rota, carga_total: cargaTotal ? Number(cargaTotal) : undefined }); setCargaTotal(''); }
+    catch (e) { setError(e.response?.data?.detail || 'Não foi possível criar a viagem.'); }
+  }
+
+  return <div className="mob-backdrop" onClick={onClose}>
+    <div className="mob-sheet" onClick={e => e.stopPropagation()}>
+      <div className="mob-sheet-handle" />
+      <div className="mob-sheet-head">
+        <div><h3>Viagens do dia</h3><p>{viagens.length}/4 rotas · máx. 2 por turno</p></div>
+        <button type="button" className="mob-close" data-testid="mob-viagens-close" onClick={onClose}><X size={18} /></button>
+      </div>
+
+      <div className="mob-viagem-form">
+        <label>Turno<select value={turno} data-testid="mob-viagem-turno" onChange={e => setTurno(Number(e.target.value))}>
+          <option value={0}>Manhã</option>
+          <option value={1}>Tarde</option>
+        </select></label>
+        <label>Rota<select value={rota} data-testid="mob-viagem-rota" onChange={e => setRota(Number(e.target.value))}>
+          <option value={1}>001</option>
+          <option value={2}>002</option>
+        </select></label>
+        <label>Carga total (opcional)<input type="number" inputMode="numeric" value={cargaTotal} data-testid="mob-viagem-carga" onChange={e => setCargaTotal(e.target.value)} /></label>
+        {error && <div className="error" data-testid="mob-viagem-error">{error}</div>}
+        <button type="button" className="mob-cta" data-testid="mob-viagem-create" onClick={submit}><Plus size={18} /> Criar viagem</button>
+      </div>
+
+      <div className="mob-sheet-list">
+        {viagens.length === 0 && <p className="muted" style={{ padding: 16 }}>Nenhuma viagem criada hoje ainda.</p>}
+        {viagens.map(v => <div className="mob-viagem-row" key={v.id} data-testid={`mob-viagem-${v.id}`}>
+          <div><b>{TURNO_LABELS[v.turno]} · rota {String(v.rota).padStart(3, '0')}</b><small>{v.codigo_viagem}{v.carga_total ? ` · ${v.carga_total} un` : ''}</small></div>
+          <span className={`tag ${statusTag[v.status]}`}>{statusLabel[v.status]}</span>
+          {v.status === 'planejada' && <div className="mob-row-actions">
+            <button type="button" className="mob-outline-btn" data-testid={`mob-viagem-iniciar-${v.id}`} onClick={() => onIniciar(v)}>Iniciar</button>
+            <button type="button" className="mob-text-btn" data-testid={`mob-viagem-excluir-${v.id}`} onClick={() => onDelete(v)}>Excluir</button>
+          </div>}
+          {v.status === 'execucao' && <button type="button" className="mob-outline-btn" data-testid={`mob-viagem-finalizar-${v.id}`} onClick={() => onFinalizar(v)}>Finalizar</button>}
+          {v.status === 'finalizada' && <small className="muted">{money(v.total_bruto)} · {v.entregas || 0} entregas{v.problemas ? ` · ${v.problemas} c/ MF` : ''}</small>}
+        </div>)}
+      </div>
+    </div>
+  </div>
+}
+
+function MobileClientesTab({ customers, entries, orders, onStartOrder, date, onOpenPicker, onOpenCustomer, search, setSearch, viagemAtiva, viagens, onOpenViagens }) {
   const todaysEntries = entries.filter(e => e.date === date);
   const doneNames = new Set(todaysEntries.map(e => e.customer));
   const receivedToday = todaysEntries.reduce((s, e) => s + Number(e.pix_value || 0) + Number(e.cash_value || 0), 0);
@@ -1356,6 +1471,7 @@ function MobileClientesTab({ customers, entries, orders, onStartOrder, date, onO
   const goal = customers.length || 1;
   const progress = Math.min(100, (doneNames.size / goal) * 100);
   return <div className="mob-screen">
+    <MobileTripBanner viagemAtiva={viagemAtiva} viagens={viagens} onOpen={onOpenViagens} />
     {orders?.length > 0 && <div className="mob-orders-card" data-testid="mob-pending-orders">
       <p className="mob-eyebrow">ORDENS DE SERVIÇO · {orders.length} PENDENTE{orders.length > 1 ? 'S' : ''}</p>
       {orders.map(o => <div className="mob-order-row" key={o.id} data-testid={`mob-order-${o.id}`}>
@@ -1396,7 +1512,7 @@ function MobilePickerSheet({ customers, onClose, onPick, onNewCustomer }) {
   </div>
 }
 
-function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillOrder }) {
+function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillOrder, viagemId }) {
   const draftKey = `hydro_draft_${customer.id || 'novo_' + (customer.name || 'cliente')}`;
   const draft = useMemo(() => { try { return JSON.parse(localStorage.getItem(draftKey)); } catch { return null; } }, [draftKey]);
 
@@ -1490,7 +1606,7 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
       pix_value: Math.round(pix * 100) / 100, cash_value: Math.round(cash * 100) / 100,
       comp_value: compValue, comp_days: compOn ? compDays : undefined,
       mf_plan: totalMf > 0 ? mfPlan : undefined, mf_date: totalMf > 0 && mfPlan === 'reschedule' ? mfDate : undefined,
-      signature, signature_name: signatureName || undefined,
+      signature, signature_name: signatureName || undefined, viagem_id: viagemId || undefined,
     };
     try {
       const { data } = await api.post('/daily-entries', payload, auth());
@@ -1815,6 +1931,8 @@ function DriverMobileApp({ user, customers, onLogout }) {
   const [orders, setOrders] = useState([]);
   const [postDelivery, setPostDelivery] = useState(null);
   const [toast, setToast] = useState('');
+  const [viagens, setViagens] = useState([]);
+  const [showViagens, setShowViagens] = useState(false);
   const date = todayISO(0);
   async function savePhoneForCustomerName(name, phone) {
     const c = customers.find(x => x.name === name);
@@ -1823,9 +1941,16 @@ function DriverMobileApp({ user, customers, onLogout }) {
 
   async function loadEntries() { const { data } = await api.get('/daily-entries', { ...auth(), params: { driver: user.name } }); setEntries(data); }
   async function loadOrders() { const { data } = await api.get('/service-orders', auth()); setOrders(data.filter(o => (o.status || 'pending') === 'pending')); }
+  async function loadViagens() { const { data } = await api.get('/viagens', { ...auth(), params: { date } }); setViagens(data.viagens); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { loadEntries(); loadOrders(); }, []);
+  useEffect(() => { loadEntries(); loadOrders(); loadViagens(); }, []);
   async function completeOrder(o) { await api.patch(`/service-orders/${o.id}`, { status: 'done' }, auth()); setOrders(orders.filter(x => x.id !== o.id)); }
+
+  const viagemAtiva = viagens.find(v => v.status === 'execucao');
+  async function createViagem(payload) { await api.post('/viagens', payload, auth()); await loadViagens(); }
+  async function iniciarViagem(v) { await api.post(`/viagens/${v.id}/iniciar`, {}, auth()); await loadViagens(); }
+  async function finalizarViagem(v) { await api.post(`/viagens/${v.id}/finalizar`, {}, auth()); await loadViagens(); }
+  async function deleteViagem(v) { if (!window.confirm(`Excluir a viagem ${v.codigo_viagem}?`)) return; await api.delete(`/viagens/${v.id}`, auth()); await loadViagens(); }
 
   function startOrder(o) {
     const existing = customers.find(c => c.name.toLowerCase() === (o.customer || '').toLowerCase());
@@ -1846,13 +1971,13 @@ function DriverMobileApp({ user, customers, onLogout }) {
     setTimeout(() => setToast(''), 2200);
   }
 
-  const titles = { clientes: ['Clientes de hoje', 'Selecione o cliente e lance a quantidade'], diario: ['Controle Diário', 'Hoje · viagem 1'], caixa: ['Caixa do dia', 'Fechamento do entregador'], despesas: ['Despesas', 'Registre os gastos do dia'], ajustes: ['Ajustes', 'Tema, texto e conta'] };
+  const titles = { clientes: ['Clientes de hoje', 'Selecione o cliente e lance a quantidade'], diario: ['Controle Diário', viagemAtiva ? `Hoje · ${viagemAtiva.codigo_viagem}` : 'Hoje · sem viagem em execução'], caixa: ['Caixa do dia', 'Fechamento do entregador'], despesas: ['Despesas', 'Registre os gastos do dia'], ajustes: ['Ajustes', 'Tema, texto e conta'] };
   const [title, subtitle] = titles[tab];
 
   return <div className={`mobile-app${theme === 'dark' ? ' dark' : ''}`} style={{ '--scale': textScale }} data-testid="mobile-driver-app">
     <MobileHeader user={user} title={title} subtitle={subtitle} theme={theme} onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />
     <main className="mob-main">
-      {tab === 'clientes' && <MobileClientesTab customers={customers} entries={entries} orders={orders} onStartOrder={startOrder} date={date} onOpenPicker={() => setPicker(true)} onOpenCustomer={c => { setSheetOrder(null); setSheetCustomer(c); }} search={search} setSearch={setSearch} />}
+      {tab === 'clientes' && <MobileClientesTab customers={customers} entries={entries} orders={orders} onStartOrder={startOrder} date={date} onOpenPicker={() => setPicker(true)} onOpenCustomer={c => { setSheetOrder(null); setSheetCustomer(c); }} search={search} setSearch={setSearch} viagemAtiva={viagemAtiva} viagens={viagens} onOpenViagens={() => setShowViagens(true)} />}
       {tab === 'diario' && <MobileDiarioTab entries={entries} date={date} />}
       {tab === 'caixa' && <MobileCaixaTab entries={entries} expensesTotal={expensesTotal} date={date} onAddExpense={() => setTab('despesas')} onCloseDay={() => { setToast('Dia fechado!'); setTimeout(() => setToast(''), 2200); }} />}
       {tab === 'despesas' && <MobileDespesasTab user={user} date={date} />}
@@ -1860,7 +1985,8 @@ function DriverMobileApp({ user, customers, onLogout }) {
     </main>
     <MobileBottomNav tab={tab} setTab={setTab} />
     {picker && <MobilePickerSheet customers={customers} onClose={() => setPicker(false)} onPick={pickCustomer} onNewCustomer={newCustomer} />}
-    {sheetCustomer && <MobileLaunchPanel customer={sheetCustomer} prefillOrder={sheetOrder} user={user} date={date} onClose={() => { setSheetCustomer(null); setSheetOrder(null); }} onComplete={onEntryComplete} />}
+    {showViagens && <MobileViagensSheet viagens={viagens} onClose={() => setShowViagens(false)} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} />}
+    {sheetCustomer && <MobileLaunchPanel customer={sheetCustomer} prefillOrder={sheetOrder} user={user} date={date} viagemId={viagemAtiva?.id} onClose={() => { setSheetCustomer(null); setSheetOrder(null); }} onComplete={onEntryComplete} />}
     {postDelivery && <MobileReceiptPrompt entry={postDelivery} customer={customers.find(c => c.name === postDelivery.customer)} onSavePhone={p => savePhoneForCustomerName(postDelivery.customer, p)} onClose={() => setPostDelivery(null)} />}
     <MobileToast text={toast} />
   </div>
@@ -1901,6 +2027,7 @@ function App() {
       <Route path="/estoque" element={<Stock data={data} setData={setData} create={setModal} />} />
       <Route path="/financeiro" element={<Finance data={data} setData={setData} create={setModal} user={user} />} />
       <Route path="/provisao" element={adminOnly(<Receivables />)} />
+      <Route path="/viagens" element={adminOnly(<Viagens />)} />
       <Route path="/ordens-servico" element={adminOnly(<ServiceOrders customers={customers} />)} />
       <Route path="/comprovantes" element={adminOnly(<Receipts customers={customers} />)} />
       <Route path="/marcas" element={adminOnly(<BrandsCatalog />)} />

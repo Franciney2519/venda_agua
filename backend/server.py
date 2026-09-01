@@ -81,6 +81,15 @@ class ResourceInput(BaseModel):
     units_per_package: Optional[float] = None
     sale_type: Optional[str] = None
     active: Optional[bool] = None
+    viagem_id: Optional[str] = None
+
+class ViagemInput(BaseModel):
+    turno: int  # 0 = manhã, 1 = tarde
+    rota: int
+    date: Optional[str] = None
+    carga_total: Optional[int] = None
+    notes: Optional[str] = None
+    driver: Optional[str] = None  # admin only: criar viagem para outro entregador
 
 MANAUS_TZ = timezone(timedelta(hours=-4))  # America/Manaus, no DST
 def now(): return datetime.now(timezone.utc).isoformat()
@@ -433,6 +442,83 @@ async def delete_daily_entry(item_id: str, user=Depends(current_user)):
     await apply_entry_stock_movements(target, "estorno", -1, user)
     await db.daily_entries.delete_one({"id": item_id})
     return {"message": "Excluído"}
+
+TURNO_LABELS = {0: "Manhã", 1: "Tarde"}
+VIAGENS_POR_TURNO = 2
+VIAGENS_POR_DIA = VIAGENS_POR_TURNO * len(TURNO_LABELS)
+
+def gerar_codigo_viagem(turno: int, date_str: str, rota: int) -> str:
+    d = datetime.fromisoformat(date_str)
+    return f"{turno}{d.day:02d}{d.month:02d}{d.year:04d}{str(rota).zfill(3)}"
+
+@api.post("/viagens")
+async def create_viagem(data: ViagemInput, user=Depends(current_user)):
+    if data.turno not in TURNO_LABELS: raise HTTPException(400, "Turno inválido (use 0 para manhã ou 1 para tarde)")
+    if data.rota < 1: raise HTTPException(400, "Informe uma rota válida")
+    driver_name = user["name"]
+    if data.driver and user.get("role") == "admin": driver_name = data.driver
+    date_str = data.date or today_local()
+
+    count_turno = await db.viagens.count_documents({"driver": driver_name, "date": date_str, "turno": data.turno})
+    if count_turno >= VIAGENS_POR_TURNO:
+        raise HTTPException(400, f"Máximo de {VIAGENS_POR_TURNO} rotas no turno da {TURNO_LABELS[data.turno].lower()} ({date_str}) — já existem {count_turno}.")
+
+    codigo = gerar_codigo_viagem(data.turno, date_str, data.rota)
+    if await db.viagens.find_one({"codigo_viagem": codigo}):
+        raise HTTPException(409, f"Já existe uma viagem com o código {codigo}")
+
+    numero = await db.viagens.count_documents({"driver": driver_name, "date": date_str}) + 1
+    doc = {
+        "id": str(uuid.uuid4()), "codigo_viagem": codigo, "driver": driver_name, "numero": numero,
+        "turno": data.turno, "rota": data.rota, "date": date_str, "carga_total": data.carga_total,
+        "notes": data.notes, "status": "planejada",
+        "created_at": now(), "created_by": user["id"], "updated_at": now(),
+    }
+    await db.viagens.insert_one(doc); doc.pop("_id", None)
+    await log_activity("viagem_criada", user, {"id": doc["id"], "name": codigo}, {"driver": driver_name, "turno": data.turno, "rota": data.rota})
+    return doc
+
+@api.get("/viagens")
+async def list_viagens(date: Optional[str] = None, driver: Optional[str] = None, user=Depends(current_user)):
+    query = {}
+    if user.get("role") != "admin": query["driver"] = user["name"]
+    elif driver: query["driver"] = driver
+    if date: query["date"] = date
+    viagens = await db.viagens.find(query, {"_id": 0}).sort("numero", 1).to_list(500)
+    return {"total": len(viagens), "limite": VIAGENS_POR_DIA, "viagens": viagens}
+
+async def _own_viagem_or_404(item_id, user):
+    v = await db.viagens.find_one({"id": item_id}, {"_id": 0})
+    if not v: raise HTTPException(404, "Viagem não encontrada")
+    if user.get("role") != "admin" and v.get("driver") != user["name"]: raise HTTPException(403, "Sem permissão")
+    return v
+
+@api.post("/viagens/{item_id}/iniciar")
+async def iniciar_viagem(item_id: str, user=Depends(current_user)):
+    v = await _own_viagem_or_404(item_id, user)
+    if v["status"] != "planejada": raise HTTPException(400, f"Viagem já está {v['status']}")
+    await db.viagens.update_one({"id": item_id}, {"$set": {"status": "execucao", "updated_at": now()}})
+    return await db.viagens.find_one({"id": item_id}, {"_id": 0})
+
+@api.post("/viagens/{item_id}/finalizar")
+async def finalizar_viagem(item_id: str, user=Depends(current_user)):
+    v = await _own_viagem_or_404(item_id, user)
+    if v["status"] == "finalizada": raise HTTPException(400, "Viagem já está finalizada")
+    entregas = await db.daily_entries.find({"viagem_id": item_id}, {"_id": 0}).to_list(2000)
+    total_bruto = sum(entry_total(e) for e in entregas)
+    quantidade_entregue = sum(float(e.get("billed_quantity") or 0) for e in entregas)
+    problemas = sum(1 for e in entregas if float(e.get("mf_quantity") or 0) > 0)
+    values = {"status": "finalizada", "total_bruto": total_bruto, "quantidade_entregue": quantidade_entregue,
+              "entregas": len(entregas), "problemas": problemas, "updated_at": now()}
+    await db.viagens.update_one({"id": item_id}, {"$set": values})
+    return await db.viagens.find_one({"id": item_id}, {"_id": 0})
+
+@api.delete("/viagens/{item_id}")
+async def delete_viagem(item_id: str, user=Depends(current_user)):
+    v = await _own_viagem_or_404(item_id, user)
+    if v["status"] != "planejada": raise HTTPException(400, f"Só é possível excluir viagens planejadas (esta está {v['status']})")
+    await db.viagens.delete_one({"id": item_id})
+    return {"message": "Excluída", "codigo_viagem": v["codigo_viagem"]}
 
 @api.get("/service-orders")
 async def service_orders(user=Depends(current_user)):
