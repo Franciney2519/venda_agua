@@ -111,7 +111,7 @@ function useMediaQuery(query) {
   }, [query]);
   return matches;
 }
-const nav = [['/', 'Visão geral', LayoutDashboard], ['/viagens', 'Viagens', Truck], ['/ordens-servico', 'Ordens de Serviço', Truck], ['/comprovantes', 'Comprovantes', FileText], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/marcas', 'Marcas de Água', Droplets], ['/marcas-extras', 'Marcas Extras', AlertTriangle], ['/usuarios', 'Usuários', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
+const nav = [['/', 'Visão geral', LayoutDashboard], ['/viagens', 'Viagens', Truck], ['/comprovantes', 'Comprovantes', FileText], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/marcas', 'Marcas de Água', Droplets], ['/marcas-extras', 'Marcas Extras', AlertTriangle], ['/usuarios', 'Usuários', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
 const driverNav = [['/', 'Visão geral', LayoutDashboard], ['/controle-diario', 'Controle Diário', CalendarCheck], ['/financeiro', 'Financeiro', WalletCards]];
 
 function Shell({ user, onLogout, notifications, children }) {
@@ -992,20 +992,6 @@ function OutOfCatalogBrands() {
     </tbody></table></div></section></>
 }
 
-function whatsappLinkFor(order, driverUser) {
-  const phone = (driverUser?.phone || '').replace(/\D/g, '');
-  if (!phone) return null;
-  const lines = [
-    'Nova ordem de serviço de entrega:',
-    `Cliente: ${order.customer}`,
-    order.address ? `Endereço: ${order.address}` : null,
-    `Produto: ${order.brand || '—'}`,
-    order.quantity ? `Quantidade: ${order.quantity}` : null,
-    order.notes ? `Obs: ${order.notes}` : null,
-  ].filter(Boolean);
-  return `https://wa.me/${phone}?text=${encodeURIComponent(lines.join('\n'))}`;
-}
-
 function CustomerCombobox({ customers, value, onPick, testId }) {
   const [query, setQuery] = useState(value || '');
   const [open, setOpen] = useState(false);
@@ -1048,10 +1034,15 @@ function CustomerCombobox({ customers, value, onPick, testId }) {
 const VIAGEM_STATUS_LABEL = { planejada: 'Planejada', execucao: 'Em execução', finalizada: 'Finalizada' };
 const VIAGEM_STATUS_TAG = { planejada: 'orange', execucao: 'blue', finalizada: 'green' };
 
-function Viagens() {
+function Viagens({ customers }) {
   const [viagens, setViagens] = useState([]);
+  const [drivers, setDrivers] = useState([]);
   const [date, setDate] = useState(todayISO(0));
   const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({ driver: '', turno: 0, rota: 1, carga_total: '' });
+  const [clientesRota, setClientesRota] = useState([]);
+  const [clienteAtual, setClienteAtual] = useState({ customer: '', brand: '', quantity: '', sale_type: 'exchange', notes: '' });
+  const [error, setError] = useState('');
 
   async function load() {
     setLoading(true);
@@ -1060,12 +1051,75 @@ function Viagens() {
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [date]);
+  useEffect(() => { api.get('/users', auth()).then(({ data }) => setDrivers(data.filter(u => u.role === 'driver' && u.active !== false))); }, []);
+
+  function pickClienteAtual(name) {
+    const c = customers.find(x => x.name === name);
+    const brandOpts = brandListOf(c);
+    setClienteAtual({ ...clienteAtual, customer: name, brand: brandOpts[0]?.brand || '' });
+  }
+  const brandOptionsAtual = brandListOf(customers.find(x => x.name === clienteAtual.customer));
+
+  function addClienteRota() {
+    const c = customers.find(x => x.name === clienteAtual.customer);
+    if (!c) return;
+    setClientesRota([...clientesRota, { id: c.id, name: c.name, brand: clienteAtual.brand || undefined, quantity: clienteAtual.quantity ? Number(clienteAtual.quantity) : undefined, sale_type: clienteAtual.sale_type, notes: clienteAtual.notes || undefined }]);
+    setClienteAtual({ customer: '', brand: '', quantity: '', sale_type: 'exchange', notes: '' });
+  }
+  function removeClienteRota(id) { setClientesRota(clientesRota.filter(c => c.id !== id)); }
+
+  async function submit(e) {
+    e.preventDefault(); setError('');
+    if (!form.driver) return setError('Selecione o entregador.');
+    try {
+      await api.post('/viagens', { turno: Number(form.turno), rota: Number(form.rota), carga_total: form.carga_total ? Number(form.carga_total) : undefined, driver: form.driver, clientes: clientesRota, date }, auth());
+      setForm({ driver: form.driver, turno: 0, rota: 1, carga_total: '' });
+      setClientesRota([]);
+      await load();
+    } catch (e) { setError(e.response?.data?.detail || 'Não foi possível criar a viagem.'); }
+  }
 
   const emExecucao = viagens.filter(v => v.status === 'execucao').length;
   const finalizadas = viagens.filter(v => v.status === 'finalizada');
   const totalBruto = finalizadas.reduce((s, v) => s + Number(v.total_bruto || 0), 0);
 
-  return <><Head eyebrow="LOGÍSTICA" title="Viagens" subtitle="Rotas do dia por entregador, com código único de viagem." />
+  return <><Head eyebrow="LOGÍSTICA" title="Viagens" subtitle="Planeje a rota do entregador — turno, rota, carga e os clientes dessa viagem." />
+    <section className="panel table-panel" style={{ marginBottom: 22 }}>
+      <form className="os-form" onSubmit={submit}>
+        <label>Entregador<select required value={form.driver} data-testid="viagem-driver-select" onChange={e => setForm({ ...form, driver: e.target.value })}><option value="">Selecione</option>{drivers.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}</select></label>
+        <label>Turno<select value={form.turno} data-testid="viagem-turno-select" onChange={e => setForm({ ...form, turno: e.target.value })}><option value={0}>Manhã</option><option value={1}>Tarde</option></select></label>
+        <label>Rota<select value={form.rota} data-testid="viagem-rota-select" onChange={e => setForm({ ...form, rota: e.target.value })}><option value={1}>001</option><option value={2}>002</option></select></label>
+        <label className="os-field-narrow">Carga total<input type="number" value={form.carga_total} data-testid="viagem-carga-input" onChange={e => setForm({ ...form, carga_total: e.target.value })} /></label>
+      </form>
+
+      <div className="os-form" style={{ paddingTop: 0 }}>
+        <label>Cliente da rota<CustomerCombobox customers={customers} value={clienteAtual.customer} onPick={pickClienteAtual} testId="viagem-cliente-input" /></label>
+        <label>Produto{brandOptionsAtual.length > 0
+          ? <select value={clienteAtual.brand} data-testid="viagem-cliente-brand-select" onChange={e => setClienteAtual({ ...clienteAtual, brand: e.target.value })}>{brandOptionsAtual.map(b => <option key={b.brand} value={b.brand}>{b.brand} · {money(b.price)}</option>)}</select>
+          : <input placeholder="ex: Minalar 20L" value={clienteAtual.brand} data-testid="viagem-cliente-brand-input" onChange={e => setClienteAtual({ ...clienteAtual, brand: e.target.value })} />}
+        </label>
+        <label className="os-field-narrow">Qtd<input type="number" value={clienteAtual.quantity} data-testid="viagem-cliente-qtd-input" onChange={e => setClienteAtual({ ...clienteAtual, quantity: e.target.value })} /></label>
+        <label>Tipo<select value={clienteAtual.sale_type} data-testid="viagem-cliente-saletype-select" onChange={e => setClienteAtual({ ...clienteAtual, sale_type: e.target.value })}>
+          <option value="exchange">Somente água</option>
+          <option value="full">Venda completa</option>
+        </select></label>
+        <label>Observações<input value={clienteAtual.notes} data-testid="viagem-cliente-notes-input" onChange={e => setClienteAtual({ ...clienteAtual, notes: e.target.value })} /></label>
+        <button type="button" className="ghost-btn" data-testid="viagem-add-cliente-button" disabled={!clienteAtual.customer} onClick={addClienteRota}><Plus size={14} /> Adicionar à rota</button>
+      </div>
+
+      {clientesRota.length > 0 && <div style={{ padding: '0 23px 16px' }}>
+        {clientesRota.map(c => <span className="tag blue" key={c.id} style={{ marginRight: 8, marginBottom: 6, display: 'inline-flex', alignItems: 'center', gap: 6 }} data-testid={`viagem-cliente-chip-${c.id}`}>
+          {c.name}{c.brand ? ` · ${c.brand}` : ''}{c.quantity ? ` · ${c.quantity}` : ''}
+          <button type="button" onClick={() => removeClienteRota(c.id)} style={{ background: 'none', padding: 0, display: 'flex' }}><X size={12} /></button>
+        </span>)}
+      </div>}
+
+      <div style={{ padding: '0 23px 20px' }}>
+        {error && <div className="error" data-testid="viagem-form-error" style={{ marginBottom: 12 }}>{error}</div>}
+        <button className="primary" data-testid="viagem-submit-button" onClick={submit}><Plus size={15} /> Criar viagem</button>
+      </div>
+    </section>
+
     <div className="report-toolbar">
       <div className="report-filters">
         <label>Data<input type="date" value={date} data-testid="viagens-date-input" onChange={e => setDate(e.target.value)} /></label>
@@ -1085,7 +1139,7 @@ function Viagens() {
         <td>{v.numero}</td>
         <td>{TURNO_LABELS[v.turno]}</td>
         <td>{String(v.rota).padStart(3, '0')}</td>
-        <td>{v.clientes?.length ? <span title={v.clientes.map(c => c.name).join(', ')}>{v.clientes.length}</span> : '—'}</td>
+        <td>{v.clientes?.length ? <span title={v.clientes.map(c => `${c.name}${c.brand ? ` (${c.brand}${c.quantity ? ` x${c.quantity}` : ''})` : ''}`).join(', ')}>{v.clientes.length}</span> : '—'}</td>
         <td>{v.carga_total ?? '—'}</td>
         <td>{v.entregas ?? '—'}{v.problemas ? <small className="muted"> · {v.problemas} c/ MF</small> : ''}</td>
         <td>{v.total_bruto != null ? money(v.total_bruto) : '—'}</td>
@@ -1094,95 +1148,6 @@ function Viagens() {
       {viagens.length === 0 && <tr><td colSpan={10} className="muted" style={{ padding: 16 }}>Nenhuma viagem registrada nessa data.</td></tr>}
     </tbody></table></div></section>
   </>
-}
-
-function ServiceOrders({ customers }) {
-  const [orders, setOrders] = useState([]);
-  const [drivers, setDrivers] = useState([]);
-  const [form, setForm] = useState({ customer: '', address: '', brand: '', quantity: '', sale_type: 'exchange', driver: '', notes: '' });
-  const [error, setError] = useState('');
-  const [filter, setFilter] = useState('pending');
-
-  async function load() { const { data } = await api.get('/service-orders', auth()); setOrders(data); }
-  useEffect(() => {
-    load();
-    api.get('/users', auth()).then(({ data }) => setDrivers(data.filter(u => u.role === 'driver' && u.active !== false)));
-  }, []);
-
-  function pickCustomer(name) {
-    const c = customers.find(x => x.name === name);
-    const brandOpts = brandListOf(c);
-    setForm({ ...form, customer: name, address: c?.address || form.address, brand: brandOpts[0]?.brand || '' });
-  }
-  const selectedCustomer = customers.find(x => x.name === form.customer);
-  const brandOptions = brandListOf(selectedCustomer);
-
-  async function submit(e) {
-    e.preventDefault(); setError('');
-    if (!form.customer.trim() || !form.driver) return setError('Selecione o cliente e o entregador.');
-    try {
-      const payload = { ...form, quantity: form.quantity ? Number(form.quantity) : undefined };
-      const { data } = await api.post('/service-orders', payload, auth());
-      setOrders([data, ...orders]);
-      setForm({ customer: '', address: '', brand: '', quantity: '', sale_type: 'exchange', driver: form.driver, notes: '' });
-    } catch (e) { setError(e.response?.data?.detail || 'Não foi possível criar a ordem.'); }
-  }
-
-  async function setStatus(o, status) { const { data } = await api.patch(`/service-orders/${o.id}`, { status }, auth()); setOrders(orders.map(x => x.id === o.id ? data : x)); }
-  async function remove(o) { if (!window.confirm(`Excluir a ordem de serviço de ${o.customer}?`)) return; await api.delete(`/service-orders/${o.id}`, auth()); setOrders(orders.filter(x => x.id !== o.id)); }
-
-  const filtered = orders.filter(o => filter === 'all' || (o.status || 'pending') === filter);
-  const statusLabel = { pending: 'Pendente', done: 'Concluída', cancelled: 'Cancelada' };
-  const statusTag = { pending: 'orange', done: 'green', cancelled: 'gray' };
-
-  return <><Head eyebrow="LOGÍSTICA" title="Ordens de Serviço" subtitle="Solicitações de entrega recebidas pelo admin, direcionadas para o entregador." />
-    <section className="panel table-panel" style={{ marginBottom: 22 }}>
-      <form className="os-form" onSubmit={submit}>
-        <label>Cliente<CustomerCombobox customers={customers} value={form.customer} onPick={pickCustomer} testId="os-customer-input" /></label>
-        <label>Endereço<input value={form.address} data-testid="os-address-input" onChange={e => setForm({ ...form, address: e.target.value })} /></label>
-        <label>Produto{brandOptions.length > 0
-          ? <select value={form.brand} data-testid="os-product-select" onChange={e => setForm({ ...form, brand: e.target.value })}>{brandOptions.map(b => <option key={b.brand} value={b.brand}>{b.brand} · {money(b.price)}</option>)}</select>
-          : <input placeholder="ex: Minalar 20L" value={form.brand} data-testid="os-product-input" onChange={e => setForm({ ...form, brand: e.target.value })} />}
-        </label>
-        <label className="os-field-narrow">Qtd<input type="number" value={form.quantity} data-testid="os-quantity-input" onChange={e => setForm({ ...form, quantity: e.target.value })} /></label>
-        <label>Tipo de venda<select value={form.sale_type} data-testid="os-sale-type-select" onChange={e => setForm({ ...form, sale_type: e.target.value })}>
-          <option value="exchange">Somente água (troca de vasilhame)</option>
-          <option value="full">Venda completa (vasilhame + água)</option>
-        </select></label>
-        <label>Entregador<select required value={form.driver} data-testid="os-driver-select" onChange={e => setForm({ ...form, driver: e.target.value })}><option value="">Selecione</option>{drivers.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}</select></label>
-        <label>Observações<input value={form.notes} data-testid="os-notes-input" onChange={e => setForm({ ...form, notes: e.target.value })} /></label>
-        {error && <div className="error" data-testid="os-form-error">{error}</div>}
-        <button className="primary os-submit" data-testid="os-submit-button"><Plus size={15} /> Criar ordem de serviço</button>
-      </form>
-    </section>
-
-    <div className="filter-row">
-      <button className={filter === 'pending' ? 'active' : ''} onClick={() => setFilter('pending')} data-testid="os-filter-pending">Pendentes</button>
-      <button className={filter === 'done' ? 'active' : ''} onClick={() => setFilter('done')} data-testid="os-filter-done">Concluídas</button>
-      <button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')} data-testid="os-filter-all">Todas</button>
-    </div>
-
-    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CLIENTE</th><th>PRODUTO</th><th>QTD</th><th>ENTREGADOR</th><th>SITUAÇÃO</th><th /></tr></thead><tbody>
-      {filtered.map(o => {
-        const driverUser = drivers.find(d => d.name === o.driver);
-        const link = whatsappLinkFor(o, driverUser);
-        const status = o.status || 'pending';
-        return <tr key={o.id} data-testid={`os-row-${o.id}`}>
-          <td><b>{o.customer}</b>{o.address && <small>{o.address}</small>}{o.notes && <small className="muted">{o.notes}</small>}</td>
-          <td>{o.brand || '—'}{o.sale_type === 'full' && <span className="tag" style={{ marginLeft: 6 }}>completa</span>}</td>
-          <td>{o.quantity || '—'}</td>
-          <td>{o.driver}</td>
-          <td><span className={`tag ${statusTag[status]}`}>{statusLabel[status]}</span></td>
-          <td><div className="row-actions">
-            {link ? <a className="action-btn approve" href={link} target="_blank" rel="noreferrer" data-testid={`os-whatsapp-${o.id}`}>WhatsApp</a> : <span className="muted" style={{ fontSize: 11 }} title="Cadastre o telefone do entregador em Usuários">Sem telefone</span>}
-            {status === 'pending' && <button className="action-btn ghost" data-testid={`os-done-${o.id}`} onClick={() => setStatus(o, 'done')}><Check size={13} /> Concluir</button>}
-            {status !== 'cancelled' && status !== 'done' && <button className="action-btn reject" data-testid={`os-cancel-${o.id}`} onClick={() => setStatus(o, 'cancelled')}><XCircle size={13} /> Cancelar</button>}
-            <button className="action-btn reject" data-testid={`os-delete-${o.id}`} onClick={() => remove(o)}><Trash2 size={13} /></button>
-          </div></td>
-        </tr>
-      })}
-      {filtered.length === 0 && <tr><td colSpan={6} className="muted" style={{ padding: 16 }}>Nenhuma ordem de serviço encontrada.</td></tr>}
-    </tbody></table></div></section></>
 }
 
 function SignatureViewModal({ entry, customer, onClose }) {
@@ -1525,7 +1490,7 @@ function MobileClientesTab({ customers, entries, orders, onStartOrder, date, onO
   return <div className="mob-screen">
     <MobileTripBanner viagemAtiva={viagemAtiva} viagens={viagens} onOpen={onOpenViagens} />
     {orders?.length > 0 && <div className="mob-orders-card" data-testid="mob-pending-orders">
-      <p className="mob-eyebrow">ORDENS DE SERVIÇO · {orders.length} PENDENTE{orders.length > 1 ? 'S' : ''}</p>
+      <p className="mob-eyebrow">CLIENTES DA ROTA · {orders.length} PENDENTE{orders.length > 1 ? 'S' : ''}</p>
       {orders.map(o => <div className="mob-order-row" key={o.id} data-testid={`mob-order-${o.id}`}>
         <div><b>{o.customer}</b><small>{o.brand || 'Produto a combinar'}{o.quantity ? ` · ${o.quantity} un` : ''}</small>{o.address && <small>{o.address}</small>}{o.notes && <small>{o.notes}</small>}</div>
         <button type="button" className="mob-outline-btn" data-testid={`mob-order-launch-${o.id}`} onClick={() => onStartOrder(o)}>Lançar entrega</button>
@@ -1980,7 +1945,6 @@ function DriverMobileApp({ user, customers, onLogout }) {
   const [search, setSearch] = useState('');
   const [entries, setEntries] = useState([]);
   const [expensesTotal, setExpensesTotal] = useState(0);
-  const [orders, setOrders] = useState([]);
   const [postDelivery, setPostDelivery] = useState(null);
   const [toast, setToast] = useState('');
   const [viagens, setViagens] = useState([]);
@@ -1992,15 +1956,15 @@ function DriverMobileApp({ user, customers, onLogout }) {
   }
 
   async function loadEntries() { const { data } = await api.get('/daily-entries', { ...auth(), params: { driver: user.name } }); setEntries(data); }
-  async function loadOrders() { const { data } = await api.get('/service-orders', auth()); setOrders(data.filter(o => (o.status || 'pending') === 'pending')); }
   async function loadViagens() { const { data } = await api.get('/viagens', { ...auth(), params: { date } }); setViagens(data.viagens); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { loadEntries(); loadOrders(); loadViagens(); }, []);
-  async function completeOrder(o) { await api.patch(`/service-orders/${o.id}`, { status: 'done' }, auth()); setOrders(orders.filter(x => x.id !== o.id)); }
+  useEffect(() => { loadEntries(); loadViagens(); }, []);
 
   const entregasPorViagem = entries.reduce((acc, e) => { if (e.viagem_id) acc[e.viagem_id] = (acc[e.viagem_id] || 0) + Number(e.billed_quantity || 0); return acc; }, {});
   const viagensComProgresso = viagens.map(v => ({ ...v, quantidade_atual: entregasPorViagem[v.id] || 0 }));
   const viagemAtiva = viagensComProgresso.find(v => v.status === 'execucao');
+  const entregasNaViagem = new Set(entries.filter(e => e.viagem_id === viagemAtiva?.id).map(e => e.customer));
+  const orders = (viagemAtiva?.clientes || []).filter(c => !entregasNaViagem.has(c.name)).map(c => ({ id: c.id, customer: c.name, brand: c.brand, quantity: c.quantity, notes: c.notes, sale_type: c.sale_type }));
   async function createViagem(payload) { await api.post('/viagens', payload, auth()); await loadViagens(); }
   async function iniciarViagem(v) { await api.post(`/viagens/${v.id}/iniciar`, {}, auth()); await loadViagens(); }
   async function finalizarViagem(v) { await api.post(`/viagens/${v.id}/finalizar`, {}, auth()); await loadViagens(); }
@@ -2020,7 +1984,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
 
   function onEntryComplete(entry) {
     setEntries([entry, ...entries]);
-    if (sheetOrder) { completeOrder(sheetOrder); setSheetOrder(null); }
+    setSheetOrder(null);
     setSheetCustomer(null);
     setPostDelivery(entry);
     setToast('Entrega registrada!');
@@ -2083,8 +2047,7 @@ function App() {
       <Route path="/estoque" element={<Stock data={data} setData={setData} create={setModal} />} />
       <Route path="/financeiro" element={<Finance data={data} setData={setData} create={setModal} user={user} />} />
       <Route path="/provisao" element={adminOnly(<Receivables />)} />
-      <Route path="/viagens" element={adminOnly(<Viagens />)} />
-      <Route path="/ordens-servico" element={adminOnly(<ServiceOrders customers={customers} />)} />
+      <Route path="/viagens" element={adminOnly(<Viagens customers={customers} />)} />
       <Route path="/comprovantes" element={adminOnly(<Receipts customers={customers} />)} />
       <Route path="/marcas" element={adminOnly(<BrandsCatalog />)} />
       <Route path="/marcas-extras" element={adminOnly(<OutOfCatalogBrands />)} />
