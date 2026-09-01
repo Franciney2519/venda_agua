@@ -1402,10 +1402,15 @@ function MobilePickerRow({ c, onClick }) {
 const TURNO_LABELS = { 0: 'Manhã', 1: 'Tarde' };
 
 function MobileTripBanner({ viagemAtiva, viagens, onOpen }) {
+  const carga = viagemAtiva?.carga_total;
+  const atual = viagemAtiva?.quantidade_atual || 0;
+  const pct = carga ? Math.min(100, Math.round((atual / carga) * 100)) : 0;
   return <button type="button" className={`mob-trip-banner${viagemAtiva ? '' : ' pending'}`} data-testid="mob-trip-banner" onClick={onOpen}>
     <Truck size={18} />
     {viagemAtiva
-      ? <div><b>Viagem em execução · {TURNO_LABELS[viagemAtiva.turno]} · rota {String(viagemAtiva.rota).padStart(3, '0')}</b><small>{viagemAtiva.codigo_viagem}</small></div>
+      ? <div><b>Viagem em execução · {TURNO_LABELS[viagemAtiva.turno]} · rota {String(viagemAtiva.rota).padStart(3, '0')}</b><small>{viagemAtiva.codigo_viagem}{carga ? ` · ${atual}/${carga} un carregadas` : ''}</small>
+          {carga && <div className="mob-trip-progress"><div style={{ width: `${pct}%` }} className={atual > carga ? 'over' : ''} /></div>}
+        </div>
       : <div><b>Nenhuma viagem em execução</b><small>{viagens?.length ? 'Toque para iniciar uma viagem e liberar os lançamentos' : 'Toque para criar a viagem do dia antes de lançar'}</small></div>}
     <ChevronRight size={18} />
   </button>
@@ -1448,6 +1453,18 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
 
   function toggleCliente(c) { setSelectedClientes(prev => prev.some(x => x.id === c.id) ? prev.filter(x => x.id !== c.id) : [...prev, { id: c.id, name: c.name }]); }
 
+  function handleFinalizar(v) {
+    const atual = v.quantidade_atual || 0;
+    if (v.carga_total && atual !== v.carga_total) {
+      const diff = v.carga_total - atual;
+      const msg = diff > 0
+        ? `Faltam ${diff} unidade(s) para bater com a carga total (${atual}/${v.carga_total}). Finalizar mesmo assim?`
+        : `Foram lançadas ${-diff} unidade(s) a mais que a carga total (${atual}/${v.carga_total}). Finalizar mesmo assim?`;
+      if (!window.confirm(msg)) return;
+    }
+    onFinalizar(v);
+  }
+
   async function submit() {
     setError('');
     try {
@@ -1484,13 +1501,13 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
       <div className="mob-sheet-list">
         {viagens.length === 0 && <p className="muted" style={{ padding: 16 }}>Nenhuma viagem criada hoje ainda.</p>}
         {viagens.map(v => <div className="mob-viagem-row" key={v.id} data-testid={`mob-viagem-${v.id}`}>
-          <div><b>{TURNO_LABELS[v.turno]} · rota {String(v.rota).padStart(3, '0')}</b><small>{v.codigo_viagem}{v.carga_total ? ` · ${v.carga_total} un` : ''}{v.clientes?.length ? ` · ${v.clientes.length} clientes` : ''}</small></div>
+          <div><b>{TURNO_LABELS[v.turno]} · rota {String(v.rota).padStart(3, '0')}</b><small>{v.codigo_viagem}{v.carga_total ? ` · ${v.status === 'execucao' ? `${v.quantidade_atual || 0}/` : ''}${v.carga_total} un` : ''}{v.clientes?.length ? ` · ${v.clientes.length} clientes` : ''}</small></div>
           <span className={`tag ${statusTag[v.status]}`}>{statusLabel[v.status]}</span>
           {v.status === 'planejada' && <div className="mob-row-actions">
             <button type="button" className="mob-outline-btn" data-testid={`mob-viagem-iniciar-${v.id}`} onClick={() => onIniciar(v)}>Iniciar</button>
             <button type="button" className="mob-text-btn" data-testid={`mob-viagem-excluir-${v.id}`} onClick={() => onDelete(v)}>Excluir</button>
           </div>}
-          {v.status === 'execucao' && <button type="button" className="mob-outline-btn" data-testid={`mob-viagem-finalizar-${v.id}`} onClick={() => onFinalizar(v)}>Finalizar</button>}
+          {v.status === 'execucao' && <button type="button" className="mob-outline-btn" data-testid={`mob-viagem-finalizar-${v.id}`} onClick={() => handleFinalizar(v)}>Finalizar</button>}
           {v.status === 'finalizada' && <small className="muted">{money(v.total_bruto)} · {v.entregas || 0} entregas{v.problemas ? ` · ${v.problemas} c/ MF` : ''}</small>}
         </div>)}
       </div>
@@ -1981,7 +1998,9 @@ function DriverMobileApp({ user, customers, onLogout }) {
   useEffect(() => { loadEntries(); loadOrders(); loadViagens(); }, []);
   async function completeOrder(o) { await api.patch(`/service-orders/${o.id}`, { status: 'done' }, auth()); setOrders(orders.filter(x => x.id !== o.id)); }
 
-  const viagemAtiva = viagens.find(v => v.status === 'execucao');
+  const entregasPorViagem = entries.reduce((acc, e) => { if (e.viagem_id) acc[e.viagem_id] = (acc[e.viagem_id] || 0) + Number(e.billed_quantity || 0); return acc; }, {});
+  const viagensComProgresso = viagens.map(v => ({ ...v, quantidade_atual: entregasPorViagem[v.id] || 0 }));
+  const viagemAtiva = viagensComProgresso.find(v => v.status === 'execucao');
   async function createViagem(payload) { await api.post('/viagens', payload, auth()); await loadViagens(); }
   async function iniciarViagem(v) { await api.post(`/viagens/${v.id}/iniciar`, {}, auth()); await loadViagens(); }
   async function finalizarViagem(v) { await api.post(`/viagens/${v.id}/finalizar`, {}, auth()); await loadViagens(); }
@@ -2014,7 +2033,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
   return <div className={`mobile-app${theme === 'dark' ? ' dark' : ''}`} style={{ '--scale': textScale }} data-testid="mobile-driver-app">
     <MobileHeader user={user} title={title} subtitle={subtitle} theme={theme} onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />
     <main className="mob-main">
-      {tab === 'clientes' && <MobileClientesTab customers={customers} entries={entries} orders={orders} onStartOrder={startOrder} date={date} onOpenPicker={() => requireViagem(() => setPicker(true))} onOpenCustomer={c => requireViagem(() => { setSheetOrder(null); setSheetCustomer(c); })} search={search} setSearch={setSearch} viagemAtiva={viagemAtiva} viagens={viagens} onOpenViagens={() => setShowViagens(true)} />}
+      {tab === 'clientes' && <MobileClientesTab customers={customers} entries={entries} orders={orders} onStartOrder={startOrder} date={date} onOpenPicker={() => requireViagem(() => setPicker(true))} onOpenCustomer={c => requireViagem(() => { setSheetOrder(null); setSheetCustomer(c); })} search={search} setSearch={setSearch} viagemAtiva={viagemAtiva} viagens={viagensComProgresso} onOpenViagens={() => setShowViagens(true)} />}
       {tab === 'diario' && <MobileDiarioTab entries={entries} date={date} />}
       {tab === 'caixa' && <MobileCaixaTab entries={entries} expensesTotal={expensesTotal} date={date} onAddExpense={() => setTab('despesas')} onCloseDay={() => { setToast('Dia fechado!'); setTimeout(() => setToast(''), 2200); }} />}
       {tab === 'despesas' && <MobileDespesasTab user={user} date={date} />}
@@ -2022,7 +2041,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
     </main>
     <MobileBottomNav tab={tab} setTab={setTab} />
     {picker && <MobilePickerSheet customers={customers} onClose={() => setPicker(false)} onPick={pickCustomer} onNewCustomer={newCustomer} />}
-    {showViagens && <MobileViagensSheet viagens={viagens} customers={customers} onClose={() => setShowViagens(false)} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} />}
+    {showViagens && <MobileViagensSheet viagens={viagensComProgresso} customers={customers} onClose={() => setShowViagens(false)} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} />}
     {sheetCustomer && <MobileLaunchPanel customer={sheetCustomer} prefillOrder={sheetOrder} user={user} date={date} viagemId={viagemAtiva?.id} onClose={() => { setSheetCustomer(null); setSheetOrder(null); }} onComplete={onEntryComplete} />}
     {postDelivery && <MobileReceiptPrompt entry={postDelivery} customer={customers.find(c => c.name === postDelivery.customer)} onSavePhone={p => savePhoneForCustomerName(postDelivery.customer, p)} onClose={() => setPostDelivery(null)} />}
     <MobileToast text={toast} />
