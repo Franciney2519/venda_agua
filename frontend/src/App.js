@@ -1284,14 +1284,31 @@ function MobileViagemClientPicker({ customers, selected, onToggle }) {
   </div>
 }
 
-function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, onFinalizar, onDelete }) {
+function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, onFinalizar, onDelete, onEntriesChanged }) {
   const [turno, setTurno] = useState(0);
   const [rota, setRota] = useState(1);
   const [cargaTotal, setCargaTotal] = useState('');
   const [selectedClientes, setSelectedClientes] = useState([]);
   const [error, setError] = useState('');
+  const [expanded, setExpanded] = useState(null);
+  const [viagemEntries, setViagemEntries] = useState([]);
+  const [loadingEntries, setLoadingEntries] = useState(false);
   const statusLabel = { planejada: 'Planejada', execucao: 'Em execução', finalizada: 'Finalizada' };
   const statusTag = { planejada: 'orange', execucao: 'blue', finalizada: 'green' };
+
+  async function toggleEntregas(v) {
+    if (expanded === v.id) { setExpanded(null); return; }
+    setExpanded(v.id); setLoadingEntries(true);
+    try { const { data } = await api.get('/daily-entries', { ...auth(), params: { codigo_viagem: v.codigo_viagem } }); setViagemEntries(data); }
+    finally { setLoadingEntries(false); }
+  }
+
+  async function removeEntrega(entry) {
+    if (!window.confirm(`Excluir a entrega de ${entry.customer} (${money(entry.total)})?`)) return;
+    await api.delete(`/daily-entries/${entry.id}`, auth());
+    setViagemEntries(viagemEntries.filter(x => x.id !== entry.id));
+    onEntriesChanged?.();
+  }
 
   function toggleCliente(c) { setSelectedClientes(prev => prev.some(x => x.id === c.id) ? prev.filter(x => x.id !== c.id) : [...prev, { id: c.id, name: c.name }]); }
 
@@ -1341,15 +1358,26 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
 
       <div className="mob-sheet-list">
         {viagens.length === 0 && <p className="muted" style={{ padding: 16 }}>Nenhuma viagem criada hoje ainda.</p>}
-        {viagens.map(v => <div className="mob-viagem-row" key={v.id} data-testid={`mob-viagem-${v.id}`}>
-          <div><b>{TURNO_LABELS[v.turno]} · rota {String(v.rota).padStart(3, '0')}</b><small>{v.codigo_viagem}{v.carga_total ? ` · ${v.status === 'execucao' ? `${v.quantidade_atual || 0}/` : ''}${v.carga_total} un` : ''}{v.clientes?.length ? ` · ${v.clientes.length} clientes` : ''}</small></div>
-          <span className={`tag ${statusTag[v.status]}`}>{statusLabel[v.status]}</span>
-          {v.status === 'planejada' && <div className="mob-row-actions">
-            <button type="button" className="mob-outline-btn" data-testid={`mob-viagem-iniciar-${v.id}`} onClick={() => onIniciar(v)}>Iniciar</button>
-            <button type="button" className="mob-text-btn" data-testid={`mob-viagem-excluir-${v.id}`} onClick={() => onDelete(v)}>Excluir</button>
+        {viagens.map(v => <div className="mob-viagem-block" key={v.id}>
+          <div className="mob-viagem-row" data-testid={`mob-viagem-${v.id}`}>
+            <div><b>{TURNO_LABELS[v.turno]} · rota {String(v.rota).padStart(3, '0')}</b><small>{v.codigo_viagem}{v.carga_total ? ` · ${v.status === 'execucao' ? `${v.quantidade_atual || 0}/` : ''}${v.carga_total} un` : ''}{v.clientes?.length ? ` · ${v.clientes.length} clientes` : ''}</small></div>
+            <span className={`tag ${statusTag[v.status]}`}>{statusLabel[v.status]}</span>
+            {v.status === 'planejada' && <div className="mob-row-actions">
+              <button type="button" className="mob-outline-btn" data-testid={`mob-viagem-iniciar-${v.id}`} onClick={() => onIniciar(v)}>Iniciar</button>
+              <button type="button" className="mob-text-btn" data-testid={`mob-viagem-excluir-${v.id}`} onClick={() => onDelete(v)}>Excluir</button>
+            </div>}
+            {v.status === 'execucao' && <button type="button" className="mob-outline-btn" data-testid={`mob-viagem-finalizar-${v.id}`} onClick={() => handleFinalizar(v)}>Finalizar</button>}
+            {v.status === 'finalizada' && <small className="muted">Saldo {money(v.saldo_liquido ?? v.total_bruto)} · {v.entregas || 0} entregas{v.problemas ? ` · ${v.problemas} c/ MF` : ''}</small>}
+          </div>
+          {v.status !== 'planejada' && <button type="button" className="mob-text-btn" data-testid={`mob-viagem-ver-entregas-${v.id}`} onClick={() => toggleEntregas(v)} style={{ padding: '0 0 10px 4px' }}>{expanded === v.id ? 'Ocultar entregas' : 'Ver entregas desta viagem'}</button>}
+          {expanded === v.id && <div className="mob-viagem-entregas">
+            {loadingEntries && <Loader2 size={16} className="spin blue-text" />}
+            {!loadingEntries && viagemEntries.length === 0 && <p className="muted" style={{ padding: '6px 4px' }}>Nenhuma entrega lançada nesta viagem ainda.</p>}
+            {!loadingEntries && viagemEntries.map(e => <div className="mob-viagem-entrega-row" key={e.id} data-testid={`mob-viagem-entrega-${e.id}`}>
+              <div><b>{e.customer}</b><small>{(e.items?.length ? e.items : [{ brand: e.brand, quantity: e.billed_quantity ?? e.quantity }]).map(it => `${it.quantity} ${it.brand}`).join(' + ')} · {money(e.total)}</small></div>
+              <button type="button" className="mob-text-btn" data-testid={`mob-viagem-entrega-excluir-${e.id}`} onClick={() => removeEntrega(e)}><Trash2 size={14} /></button>
+            </div>)}
           </div>}
-          {v.status === 'execucao' && <button type="button" className="mob-outline-btn" data-testid={`mob-viagem-finalizar-${v.id}`} onClick={() => handleFinalizar(v)}>Finalizar</button>}
-          {v.status === 'finalizada' && <small className="muted">Saldo {money(v.saldo_liquido ?? v.total_bruto)} · {v.entregas || 0} entregas{v.problemas ? ` · ${v.problemas} c/ MF` : ''}</small>}
         </div>)}
       </div>
     </div>
@@ -1365,6 +1393,7 @@ function MobileClientesTab({ customers, entries, orders, onStartOrder, date, onO
   const progress = Math.min(100, (doneNames.size / goal) * 100);
   return <div className="mob-screen">
     <MobileTripBanner viagemAtiva={viagemAtiva} viagens={viagens} onOpen={onOpenViagens} />
+    <button type="button" className="mob-outline-btn wide" data-testid="mob-new-trip-button" onClick={onOpenViagens}><Plus size={16} /> Nova viagem</button>
     {orders?.length > 0 && <div className="mob-orders-card" data-testid="mob-pending-orders">
       <p className="mob-eyebrow">CLIENTES DA ROTA · {orders.length} PENDENTE{orders.length > 1 ? 'S' : ''}</p>
       {orders.map(o => <div className="mob-order-row" key={o.id} data-testid={`mob-order-${o.id}`}>
@@ -1888,7 +1917,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
     </main>
     <MobileBottomNav tab={tab} setTab={setTab} />
     {picker && <MobilePickerSheet customers={customers} onClose={() => setPicker(false)} onPick={pickCustomer} onNewCustomer={newCustomer} />}
-    {showViagens && <MobileViagensSheet viagens={viagensComProgresso} customers={customers} onClose={() => setShowViagens(false)} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} />}
+    {showViagens && <MobileViagensSheet viagens={viagensComProgresso} customers={customers} onClose={() => setShowViagens(false)} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} onEntriesChanged={() => { loadEntries(); loadViagens(); }} />}
     {sheetCustomer && <MobileLaunchPanel customer={sheetCustomer} prefillOrder={sheetOrder} user={user} date={date} viagemId={viagemAtiva?.id} onClose={() => { setSheetCustomer(null); setSheetOrder(null); }} onComplete={onEntryComplete} />}
     {postDelivery && <MobileReceiptPrompt entry={postDelivery} customer={customers.find(c => c.name === postDelivery.customer)} onSavePhone={p => savePhoneForCustomerName(postDelivery.customer, p)} onClose={() => setPostDelivery(null)} />}
     <MobileToast text={toast} />
