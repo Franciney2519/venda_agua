@@ -1285,6 +1285,105 @@ function MobileViagemClientPicker({ customers, selected, onToggle }) {
   </div>
 }
 
+function MobileEditEntregaModal({ entry, onClose, onSaved }) {
+  const baseItems = (entry.items?.length ? entry.items : [{ brand: entry.brand, price: entry.price, sale_type: 'exchange', quantity: entry.billed_quantity ?? entry.quantity, mf_quantity: entry.mf_quantity }]);
+  const [lines, setLines] = useState(baseItems.map(it => ({ ...it, quantity: Number(it.quantity) || 0, mf_quantity: Number(it.mf_quantity) || 0 })));
+  const [pix, setPix] = useState(Number(entry.pix_value) || 0);
+  const [cash, setCash] = useState(Number(entry.cash_value) || 0);
+  const [mfPlan, setMfPlan] = useState(entry.mf_plan || null);
+  const [mfDate, setMfDate] = useState(entry.mf_date || 'Amanhã');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const compValue = Number(entry.comp_value) || 0;
+  const total = lines.reduce((s, l) => s + l.quantity * l.price, 0);
+  const remaining = Math.max(0, Math.round((total - compValue) * 100) / 100);
+  const totalMf = lines.reduce((s, l) => s + l.mf_quantity, 0);
+
+  function incQty(i) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, quantity: l.quantity + 1 } : l)); }
+  function decQty(i) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, quantity: Math.max(0, l.quantity - 1) } : l)); }
+  function setQty(i, raw) { const v = Math.max(0, parseInt(raw, 10) || 0); setLines(prev => prev.map((l, idx) => idx === i ? { ...l, quantity: v } : l)); }
+  function incMf(i) { setLines(prev => prev.map((l, idx) => idx === i && l.quantity > 0 ? { ...l, quantity: l.quantity - 1, mf_quantity: l.mf_quantity + 1 } : l)); }
+  function decMf(i) { setLines(prev => prev.map((l, idx) => idx === i && l.mf_quantity > 0 ? { ...l, quantity: l.quantity + 1, mf_quantity: l.mf_quantity - 1 } : l)); }
+
+  function setPixVal(raw) { const v = Math.min(Math.max(0, Number(raw) || 0), remaining); setPix(v); setCash(Math.round((remaining - v) * 100) / 100); }
+  function setCashVal(raw) { const v = Math.min(Math.max(0, Number(raw) || 0), remaining); setCash(v); setPix(Math.round((remaining - v) * 100) / 100); }
+  function allPix() { setPix(remaining); setCash(0); }
+  function allCash() { setCash(remaining); setPix(0); }
+
+  async function submit() {
+    setError('');
+    if (Math.abs((pix + cash + compValue) - total) > 0.01) return setError('Pix + Dinheiro precisa completar o total.');
+    if (totalMf > 0 && !mfPlan) return setError('Diga o que foi decidido sobre o(s) galão(ões) com microfuro.');
+    setSaving(true);
+    try {
+      await api.patch(`/daily-entries/${entry.id}`, {
+        items: lines.map(l => ({ brand: l.brand, price: l.price, sale_type: l.sale_type, quantity: l.quantity, mf_quantity: l.mf_quantity, out_of_catalog: l.out_of_catalog })),
+        pix_value: Math.round(pix * 100) / 100, cash_value: Math.round(cash * 100) / 100,
+        mf_plan: totalMf > 0 ? mfPlan : undefined, mf_date: totalMf > 0 && mfPlan === 'reschedule' ? mfDate : undefined,
+      }, auth());
+      onSaved();
+    } catch (e) { setError(e.response?.data?.detail || 'Não foi possível salvar a revisão.'); setSaving(false); }
+  }
+
+  return <div className="mob-backdrop" onClick={onClose}>
+    <div className="mob-sheet mob-sheet-tall" onClick={e => e.stopPropagation()}>
+      <div className="mob-sheet-handle" />
+      <div className="mob-sheet-head">
+        <div><h3>Revisar entrega</h3><p>{entry.customer}{entry.entry_number ? ` · Nº ${entry.entry_number}` : ''}</p></div>
+        <button type="button" className="mob-close" data-testid="mob-edit-entrega-close" onClick={onClose}><X size={18} /></button>
+      </div>
+
+      {lines.map((l, i) => <div className="mob-line active" key={i} data-testid={`mob-edit-line-${i}`}>
+        <div className="mob-line-top">
+          <div className="mob-line-info"><b>{l.brand}{l.sale_type === 'full' && <span className="mob-tag" style={{ marginLeft: 6 }}>venda completa</span>}</b><small>R$ {Number(l.price).toFixed(2)} por galão</small><span className="mob-line-subtotal">{money(l.quantity * l.price)}</span></div>
+          <div className="mob-counter">
+            <button type="button" data-testid={`mob-edit-qty-minus-${i}`} onClick={() => decQty(i)}><Minus size={18} /></button>
+            <input type="number" inputMode="numeric" min="0" value={l.quantity} data-testid={`mob-edit-qty-input-${i}`} onChange={e => setQty(i, e.target.value)} onFocus={e => e.target.select()} />
+            <button type="button" className="fill" data-testid={`mob-edit-qty-plus-${i}`} onClick={() => incQty(i)}><Plus size={20} /></button>
+          </div>
+        </div>
+        <div className="mob-line-mf">
+          <span>MF · microfuro</span>
+          <div className="mob-counter small">
+            <button type="button" data-testid={`mob-edit-mf-minus-${i}`} onClick={() => decMf(i)}><Minus size={14} /></button>
+            <span>{l.mf_quantity}</span>
+            <button type="button" className="mf" data-testid={`mob-edit-mf-plus-${i}`} onClick={() => incMf(i)}><Plus size={16} /></button>
+          </div>
+        </div>
+      </div>)}
+
+      <div className="mob-total-row"><span>TOTAL A RECEBER</span><b>{money(total)}</b></div>
+      {compValue > 0 && <p className="mob-help">Inclui {money(compValue)} já lançado a prazo — Pix + Dinheiro precisam completar {money(remaining)}.</p>}
+
+      <div className="mob-split-shortcuts">
+        <button type="button" data-testid="mob-edit-all-pix" onClick={allPix}>Tudo Pix</button>
+        <button type="button" data-testid="mob-edit-all-cash" onClick={allCash}>Tudo dinheiro</button>
+      </div>
+      <div className="mob-pix-cash">
+        <label className="mob-pix"><span>Pix</span><input type="number" step="0.01" value={pix || ''} data-testid="mob-edit-pix-input" onChange={e => setPixVal(e.target.value)} /></label>
+        <label className="mob-cash"><span>Dinheiro</span><input type="number" step="0.01" value={cash || ''} data-testid="mob-edit-cash-input" onChange={e => setCashVal(e.target.value)} /></label>
+      </div>
+
+      {totalMf > 0 && <div className="mob-mf-decision" data-testid="mob-edit-mf-decision">
+        <b>{totalMf} galão{totalMf > 1 ? 'ões' : ''} com microfuro</b>
+        <p>O que foi decidido sobre esses galões?</p>
+        <div className="mob-mf-options">
+          <button type="button" className={mfPlan === 'reschedule' ? 'active' : ''} data-testid="mob-edit-mf-reschedule" onClick={() => setMfPlan('reschedule')}><Truck size={22} /> Entregar outro dia</button>
+          <button type="button" className={mfPlan === 'swap' ? 'active' : ''} data-testid="mob-edit-mf-swap" onClick={() => setMfPlan('swap')}><Check size={22} /> Trocar agora no caminhão</button>
+          <button type="button" className={mfPlan === 'refused' ? 'active' : ''} data-testid="mob-edit-mf-refused" onClick={() => setMfPlan('refused')}><XCircle size={22} /> Cliente não quis</button>
+        </div>
+        {mfPlan === 'reschedule' && <div className="mob-days-toggle">
+          {['Amanhã', 'Em 2 dias', 'Próxima rota'].map(d => <button type="button" key={d} className={mfDate === d ? 'active' : ''} data-testid={`mob-edit-mf-date-${d}`} onClick={() => setMfDate(d)}>{d}</button>)}
+        </div>}
+      </div>}
+
+      {error && <div className="error" data-testid="mob-edit-entrega-error">{error}</div>}
+      <button type="button" className="mob-cta" disabled={saving} data-testid="mob-edit-entrega-save" onClick={submit}>Salvar revisão</button>
+    </div>
+  </div>
+}
+
 function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, onFinalizar, onDelete, onEntriesChanged }) {
   const [turno, setTurno] = useState(0);
   const [rota, setRota] = useState(1);
@@ -1294,20 +1393,32 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
   const [expanded, setExpanded] = useState(null);
   const [viagemEntries, setViagemEntries] = useState([]);
   const [loadingEntries, setLoadingEntries] = useState(false);
+  const [editingEntry, setEditingEntry] = useState(null);
   const statusLabel = { planejada: 'Planejada', execucao: 'Em execução', finalizada: 'Finalizada' };
   const statusTag = { planejada: 'orange', execucao: 'blue', finalizada: 'green' };
 
+  async function loadViagemEntries(codigoViagem) {
+    setLoadingEntries(true);
+    try { const { data } = await api.get('/daily-entries', { ...auth(), params: { codigo_viagem: codigoViagem } }); setViagemEntries(data); }
+    finally { setLoadingEntries(false); }
+  }
+
   async function toggleEntregas(v) {
     if (expanded === v.id) { setExpanded(null); return; }
-    setExpanded(v.id); setLoadingEntries(true);
-    try { const { data } = await api.get('/daily-entries', { ...auth(), params: { codigo_viagem: v.codigo_viagem } }); setViagemEntries(data); }
-    finally { setLoadingEntries(false); }
+    setExpanded(v.id);
+    await loadViagemEntries(v.codigo_viagem);
   }
 
   async function removeEntrega(entry) {
     if (!window.confirm(`Excluir a entrega de ${entry.customer} (${money(entry.total)})?`)) return;
     await api.delete(`/daily-entries/${entry.id}`, auth());
     setViagemEntries(viagemEntries.filter(x => x.id !== entry.id));
+    onEntriesChanged?.();
+  }
+
+  function handleEntregaSaved(codigoViagem) {
+    setEditingEntry(null);
+    loadViagemEntries(codigoViagem);
     onEntriesChanged?.();
   }
 
@@ -1376,12 +1487,16 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
             {!loadingEntries && viagemEntries.length === 0 && <p className="muted" style={{ padding: '6px 4px' }}>Nenhuma entrega lançada nesta viagem ainda.</p>}
             {!loadingEntries && viagemEntries.map(e => <div className="mob-viagem-entrega-row" key={e.id} data-testid={`mob-viagem-entrega-${e.id}`}>
               <div><b>{e.customer}</b><small>{(e.items?.length ? e.items : [{ brand: e.brand, quantity: e.billed_quantity ?? e.quantity }]).map(it => `${it.quantity} ${it.brand}`).join(' + ')} · {money(e.total)}</small></div>
-              <button type="button" className="mob-text-btn" data-testid={`mob-viagem-entrega-excluir-${e.id}`} onClick={() => removeEntrega(e)}><Trash2 size={14} /></button>
+              <div className="mob-row-actions">
+                <button type="button" className="mob-text-btn" data-testid={`mob-viagem-entrega-editar-${e.id}`} onClick={() => setEditingEntry(e)}><Pencil size={14} /></button>
+                <button type="button" className="mob-text-btn" data-testid={`mob-viagem-entrega-excluir-${e.id}`} onClick={() => removeEntrega(e)}><Trash2 size={14} /></button>
+              </div>
             </div>)}
           </div>}
         </div>)}
       </div>
     </div>
+    {editingEntry && <MobileEditEntregaModal entry={editingEntry} onClose={() => setEditingEntry(null)} onSaved={() => handleEntregaSaved(editingEntry.viagem_codigo)} />}
   </div>
 }
 
