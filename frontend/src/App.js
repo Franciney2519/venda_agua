@@ -1401,11 +1401,11 @@ function MobilePickerRow({ c, onClick }) {
 const TURNO_LABELS = { 0: 'Manhã', 1: 'Tarde' };
 
 function MobileTripBanner({ viagemAtiva, viagens, onOpen }) {
-  return <button type="button" className="mob-trip-banner" data-testid="mob-trip-banner" onClick={onOpen}>
+  return <button type="button" className={`mob-trip-banner${viagemAtiva ? '' : ' pending'}`} data-testid="mob-trip-banner" onClick={onOpen}>
     <Truck size={18} />
     {viagemAtiva
       ? <div><b>Viagem em execução · {TURNO_LABELS[viagemAtiva.turno]} · rota {String(viagemAtiva.rota).padStart(3, '0')}</b><small>{viagemAtiva.codigo_viagem}</small></div>
-      : <div><b>Nenhuma viagem em execução</b><small>{viagens?.length ? `${viagens.length} viagem(ns) hoje` : 'Toque para criar a viagem do dia'}</small></div>}
+      : <div><b>Nenhuma viagem em execução</b><small>{viagens?.length ? 'Toque para iniciar uma viagem e liberar os lançamentos' : 'Toque para criar a viagem do dia antes de lançar'}</small></div>}
     <ChevronRight size={18} />
   </button>
 }
@@ -1483,9 +1483,9 @@ function MobileClientesTab({ customers, entries, orders, onStartOrder, date, onO
       <div className="mob-summary-row"><span>{doneNames.size} cliente{doneNames.size !== 1 ? 's' : ''} lançado{doneNames.size !== 1 ? 's' : ''} hoje</span><b data-testid="mob-received-today">{money(receivedToday)}</b></div>
       <div className="mob-progress"><div style={{ width: `${progress}%` }} /></div>
     </div>
-    <button type="button" className="mob-cta" data-testid="mob-new-delivery-button" onClick={onOpenPicker}><Plus size={20} /> Nova entrega</button>
+    <button type="button" className="mob-cta" data-testid="mob-new-delivery-button" onClick={onOpenPicker}><Plus size={20} /> {viagemAtiva ? 'Nova entrega' : 'Iniciar viagem para lançar'}</button>
     <div className="mob-search"><Search size={16} /><input placeholder="Buscar por nome ou código" value={search} data-testid="mob-search-input" onChange={e => setSearch(e.target.value)} /></div>
-    <div className="mob-customer-list">
+    <div className={`mob-customer-list${viagemAtiva ? '' : ' mob-customer-list-locked'}`}>
       {filtered.map(c => <MobileStopRow key={c.id} c={c} done={doneNames.has(c.name)} onClick={() => onOpenCustomer(c)} />)}
       {filtered.length === 0 && <p className="muted" style={{ padding: 16 }}>Nenhum cliente encontrado.</p>}
     </div>
@@ -1952,11 +1952,13 @@ function DriverMobileApp({ user, customers, onLogout }) {
   async function finalizarViagem(v) { await api.post(`/viagens/${v.id}/finalizar`, {}, auth()); await loadViagens(); }
   async function deleteViagem(v) { if (!window.confirm(`Excluir a viagem ${v.codigo_viagem}?`)) return; await api.delete(`/viagens/${v.id}`, auth()); await loadViagens(); }
 
-  function startOrder(o) {
+  function requireViagem(action) { if (!viagemAtiva) { setShowViagens(true); return; } action(); }
+
+  function startOrder(o) { requireViagem(() => {
     const existing = customers.find(c => c.name.toLowerCase() === (o.customer || '').toLowerCase());
     setSheetCustomer(existing || { id: null, name: o.customer, address: o.address || '', brands: [] });
     setSheetOrder(o);
-  }
+  }); }
   useEffect(() => { api.get('/expenses', auth()).then(({ data }) => setExpensesTotal(data.filter(x => (x.driver || '') === user.name && (x.created_at || '').slice(0, 10) === date && x.status !== 'rejected').reduce((s, x) => s + Number(x.amount || 0), 0))); }, [date, tab, user.name]);
 
   function pickCustomer(c) { setPicker(false); setSheetOrder(null); setSheetCustomer(c); }
@@ -1977,7 +1979,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
   return <div className={`mobile-app${theme === 'dark' ? ' dark' : ''}`} style={{ '--scale': textScale }} data-testid="mobile-driver-app">
     <MobileHeader user={user} title={title} subtitle={subtitle} theme={theme} onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />
     <main className="mob-main">
-      {tab === 'clientes' && <MobileClientesTab customers={customers} entries={entries} orders={orders} onStartOrder={startOrder} date={date} onOpenPicker={() => setPicker(true)} onOpenCustomer={c => { setSheetOrder(null); setSheetCustomer(c); }} search={search} setSearch={setSearch} viagemAtiva={viagemAtiva} viagens={viagens} onOpenViagens={() => setShowViagens(true)} />}
+      {tab === 'clientes' && <MobileClientesTab customers={customers} entries={entries} orders={orders} onStartOrder={startOrder} date={date} onOpenPicker={() => requireViagem(() => setPicker(true))} onOpenCustomer={c => requireViagem(() => { setSheetOrder(null); setSheetCustomer(c); })} search={search} setSearch={setSearch} viagemAtiva={viagemAtiva} viagens={viagens} onOpenViagens={() => setShowViagens(true)} />}
       {tab === 'diario' && <MobileDiarioTab entries={entries} date={date} />}
       {tab === 'caixa' && <MobileCaixaTab entries={entries} expensesTotal={expensesTotal} date={date} onAddExpense={() => setTab('despesas')} onCloseDay={() => { setToast('Dia fechado!'); setTimeout(() => setToast(''), 2200); }} />}
       {tab === 'despesas' && <MobileDespesasTab user={user} date={date} />}
