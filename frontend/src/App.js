@@ -1403,7 +1403,7 @@ function MobileEditEntregaModal({ entry, onClose, onSaved }) {
   </div>
 }
 
-function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, onFinalizar, onDelete, onEntriesChanged, onAddEntrega }) {
+function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate, onIniciar, onFinalizar, onDelete, onEntriesChanged, onAddEntrega }) {
   const [turno, setTurno] = useState(0);
   const [rota, setRota] = useState(1);
   const [cargaTotal, setCargaTotal] = useState('');
@@ -1414,6 +1414,19 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
   const [selectedClientes, setSelectedClientes] = useState([]);
   const [error, setError] = useState('');
   const [confirmMsg, setConfirmMsg] = useState('');
+  const [viagensDate, setViagensDate] = useState(todayISO(0));
+  const [viagensList, setViagensList] = useState(viagensHoje);
+  const isToday = viagensDate === todayISO(0);
+  const viagens = isToday ? viagensHoje : viagensList;
+
+  async function loadForDate() {
+    if (isToday) { setViagensList(viagensHoje); return; }
+    const { data } = await api.get('/viagens', { ...auth(), params: { date: viagensDate } });
+    setViagensList(data.viagens);
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { loadForDate(); }, [viagensDate]);
+  useEffect(() => { if (isToday) setViagensList(viagensHoje); }, [viagensHoje, isToday]);
 
   useEffect(() => { api.get('/brands', auth()).then(({ data }) => setBrandsCatalog(data.filter(b => b.active !== false))).catch(() => { }); }, []);
 
@@ -1463,7 +1476,11 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
 
   function toggleCliente(c) { setSelectedClientes(prev => prev.some(x => x.id === c.id) ? prev.filter(x => x.id !== c.id) : [...prev, { id: c.id, name: c.name }]); }
 
-  function handleFinalizar(v) {
+  async function handleIniciar(v) { setError(''); try { await onIniciar(v); await loadForDate(); } catch (e) { setError(e.response?.data?.detail || e.message || 'Não foi possível iniciar a viagem.'); } }
+  async function handleExcluir(v) { setError(''); try { await onDelete(v); await loadForDate(); } catch (e) { setError(e.response?.data?.detail || e.message || 'Não foi possível excluir a viagem.'); } }
+
+  async function handleFinalizar(v) {
+    setError('');
     const atual = v.quantidade_atual || 0;
     if (v.carga_total && atual !== v.carga_total) {
       const diff = v.carga_total - atual;
@@ -1472,7 +1489,7 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
         : `Foram lançadas ${-diff} unidade(s) a mais que a carga total (${atual}/${v.carga_total}). Finalizar mesmo assim?`;
       if (!window.confirm(msg)) return;
     }
-    onFinalizar(v);
+    try { await onFinalizar(v); await loadForDate(); } catch (e) { setError(e.response?.data?.detail || e.message || 'Não foi possível finalizar a viagem.'); }
   }
 
   async function submit() {
@@ -1497,6 +1514,7 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
         <button type="button" className={viewTab === 'criar' ? 'active' : ''} data-testid="mob-viagem-tab-criar" onClick={() => setViewTab('criar')}>Criar viagem</button>
         <button type="button" className={viewTab === 'ver' ? 'active' : ''} data-testid="mob-viagem-tab-ver" onClick={() => setViewTab('ver')}>Minhas viagens{viagens.length > 0 ? ` (${viagens.length})` : ''}</button>
       </div>
+      {error && <div className="error" data-testid="mob-viagem-action-error" style={{ margin: '0 20px 14px' }}>{error}</div>}
 
       {viewTab === 'criar' && <div className="mob-viagem-form">
         <label>Turno<select value={turno} data-testid="mob-viagem-turno" onChange={e => setTurno(Number(e.target.value))}>
@@ -1524,27 +1542,30 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
         <label>Clientes desta rota (opcional){selectedClientes.length > 0 ? ` · ${selectedClientes.length} selecionado(s)` : ''}
           <MobileViagemClientPicker customers={customers} selected={selectedClientes} onToggle={toggleCliente} />
         </label>
-        {error && <div className="error" data-testid="mob-viagem-error">{error}</div>}
         {confirmMsg && <div className="mob-viagem-confirm" data-testid="mob-viagem-confirm">{confirmMsg}</div>}
         <button type="button" className="mob-cta" data-testid="mob-viagem-create" onClick={submit}><Plus size={18} /> Criar viagem</button>
       </div>}
 
       {viewTab === 'ver' && <>
+      <label className="mob-field-md" style={{ padding: '0 14px', marginBottom: 8 }}>DATA
+        <input type="date" max={todayISO(0)} value={viagensDate} data-testid="mob-viagens-date" onChange={e => setViagensDate(e.target.value)} />
+      </label>
+      {!isToday && <p className="mob-help" style={{ padding: '0 14px' }}>Vendo viagens de {viagensDate} — inicie/finalize daqui se alguma ficou pendente.</p>}
       {viagens.length > 1 && <p className="mob-help" style={{ padding: '0 14px' }}>← Arraste para o lado para ver as outras rotas</p>}
       <div className="mob-viagem-carousel">
-        {viagens.length === 0 && <p className="muted" style={{ padding: 16 }}>Nenhuma viagem criada hoje ainda.</p>}
+        {viagens.length === 0 && <p className="muted" style={{ padding: 16 }}>Nenhuma viagem criada nesse dia.</p>}
         {viagens.map(v => <div className="mob-viagem-card" key={v.id}>
           <div className="mob-viagem-row" data-testid={`mob-viagem-${v.id}`}>
             <div><b>{TURNO_LABELS[v.turno]} · rota {String(v.rota).padStart(3, '0')}</b><small>{v.codigo_viagem}{v.carga_total ? ` · ${v.status === 'execucao' ? `${v.quantidade_atual || 0}/` : ''}${v.carga_total} un` : ''}{v.clientes?.length ? ` · ${v.clientes.length} clientes` : ''}</small></div>
             <span className={`tag ${statusTag[v.status]}`}>{statusLabel[v.status]}</span>
             {v.status === 'planejada' && <div className="mob-row-actions">
-              <button type="button" className="mob-outline-btn" data-testid={`mob-viagem-iniciar-${v.id}`} onClick={() => onIniciar(v)}>Iniciar</button>
-              <button type="button" className="mob-text-btn" data-testid={`mob-viagem-excluir-${v.id}`} onClick={() => onDelete(v)}>Excluir</button>
+              <button type="button" className="mob-outline-btn" data-testid={`mob-viagem-iniciar-${v.id}`} onClick={() => handleIniciar(v)}>Iniciar</button>
+              <button type="button" className="mob-text-btn" data-testid={`mob-viagem-excluir-${v.id}`} onClick={() => handleExcluir(v)}>Excluir</button>
             </div>}
             {v.status === 'finalizada' && <small className="muted">Saldo {money(v.saldo_liquido ?? v.total_bruto)} · {v.entregas || 0} entregas{v.problemas ? ` · ${v.problemas} c/ MF` : ''}{v.carga_total ? (v.quantidade_entregue === v.carga_total ? ' · carga bateu ✓' : ` · carga ${v.carga_total} ≠ entregue ${v.quantidade_entregue ?? 0}`) : ''}{v.carga_carregada && v.carga_devolvida_total != null ? ` · ${v.carga_devolvida_total} un devolvida(s) ao estoque` : ''}</small>}
           </div>
           {v.status === 'execucao' && <div className="mob-viagem-actions">
-            <button type="button" className="mob-viagem-action-btn primary" data-testid={`mob-viagem-add-entrega-${v.id}`} onClick={() => onAddEntrega(v)}><Plus size={18} /> Nova entrega</button>
+            {isToday && <button type="button" className="mob-viagem-action-btn primary" data-testid={`mob-viagem-add-entrega-${v.id}`} onClick={() => onAddEntrega(v)}><Plus size={18} /> Nova entrega</button>}
             <button type="button" className={`mob-viagem-action-btn${expanded === v.id ? ' active' : ''}`} data-testid={`mob-viagem-ver-entregas-${v.id}`} onClick={() => toggleEntregas(v)}><FileText size={16} /> {expanded === v.id ? 'Ocultar' : 'Ver entregas'}</button>
             <button type="button" className="mob-viagem-action-btn" data-testid={`mob-viagem-finalizar-${v.id}`} onClick={() => handleFinalizar(v)}><Check size={16} /> Finalizar</button>
           </div>}
