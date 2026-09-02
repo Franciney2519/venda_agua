@@ -1261,20 +1261,22 @@ function MobileTripBanner({ viagemAtiva, viagens, onOpen }) {
 
 function MobileViagemClientPicker({ customers, selected, onToggle }) {
   const [q, setQ] = useState('');
+  const inputRef = useRef(null);
   const query = q.trim().toLowerCase();
   const filtered = customers
     .filter(c => !query || c.name.toLowerCase().includes(query) || (c.code || '').toLowerCase().includes(query))
     .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
+  function pick(c) { inputRef.current?.blur(); onToggle(c); }
   return <div className="mob-viagem-clients">
-    <div className="mob-search"><Search size={15} /><input placeholder="Buscar cliente cadastrado" value={q} data-testid="mob-viagem-client-search" onChange={e => setQ(e.target.value)} /></div>
+    <div className="mob-search"><Search size={15} /><input ref={inputRef} placeholder="Buscar cliente cadastrado" value={q} data-testid="mob-viagem-client-search" onChange={e => setQ(e.target.value)} /></div>
     {selected.length > 0 && <div className="mob-viagem-client-chips">
-      {selected.map(c => <span className="mob-viagem-client-chip" key={c.id} data-testid={`mob-viagem-client-chip-${c.id}`}>{c.name}<button type="button" onClick={() => onToggle(c)}><X size={12} /></button></span>)}
+      {selected.map(c => <span className="mob-viagem-client-chip" key={c.id} data-testid={`mob-viagem-client-chip-${c.id}`}>{c.name}<button type="button" onClick={() => pick(c)}><X size={12} /></button></span>)}
     </div>}
     <div className="mob-viagem-client-list">
       {filtered.slice(0, 30).map(c => {
         const isSelected = selected.some(x => x.id === c.id);
         const brands = brandListOf(c);
-        return <button type="button" key={c.id} className={`mob-viagem-client-row${isSelected ? ' active' : ''}`} data-testid={`mob-viagem-client-${c.id}`} onClick={() => onToggle(c)}>
+        return <button type="button" key={c.id} className={`mob-viagem-client-row${isSelected ? ' active' : ''}`} data-testid={`mob-viagem-client-${c.id}`} onMouseDown={e => e.preventDefault()} onClick={() => pick(c)}>
           <span className="mob-customer-avatar">{c.name?.[0] || '?'}</span>
           <span className="mob-customer-info"><b>{c.name}{c.code && <span className="mob-tag neutral" style={{ marginLeft: 6 }}>#{c.code}</span>}</b><small>{brands.length ? brands.map(b => b.brand).join(', ') : 'sem marca cadastrada'}</small></span>
           {isSelected ? <Check size={18} color="var(--mob-blue)" /> : <Plus size={18} color="var(--mob-muted)" />}
@@ -1480,9 +1482,10 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
         <button type="button" className="mob-cta" data-testid="mob-viagem-create" onClick={submit}><Plus size={18} /> Criar viagem</button>
       </div>
 
-      <div className="mob-sheet-list">
+      {viagens.length > 1 && <p className="mob-help" style={{ padding: '0 14px' }}>← Arraste para o lado para ver as outras rotas</p>}
+      <div className="mob-viagem-carousel">
         {viagens.length === 0 && <p className="muted" style={{ padding: 16 }}>Nenhuma viagem criada hoje ainda.</p>}
-        {viagens.map(v => <div className="mob-viagem-block" key={v.id}>
+        {viagens.map(v => <div className="mob-viagem-card" key={v.id}>
           <div className="mob-viagem-row" data-testid={`mob-viagem-${v.id}`}>
             <div><b>{TURNO_LABELS[v.turno]} · rota {String(v.rota).padStart(3, '0')}</b><small>{v.codigo_viagem}{v.carga_total ? ` · ${v.status === 'execucao' ? `${v.quantidade_atual || 0}/` : ''}${v.carga_total} un` : ''}{v.clientes?.length ? ` · ${v.clientes.length} clientes` : ''}</small></div>
             <span className={`tag ${statusTag[v.status]}`}>{statusLabel[v.status]}</span>
@@ -1490,7 +1493,7 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
               <button type="button" className="mob-outline-btn" data-testid={`mob-viagem-iniciar-${v.id}`} onClick={() => onIniciar(v)}>Iniciar</button>
               <button type="button" className="mob-text-btn" data-testid={`mob-viagem-excluir-${v.id}`} onClick={() => onDelete(v)}>Excluir</button>
             </div>}
-            {v.status === 'finalizada' && <small className="muted">Saldo {money(v.saldo_liquido ?? v.total_bruto)} · {v.entregas || 0} entregas{v.problemas ? ` · ${v.problemas} c/ MF` : ''}</small>}
+            {v.status === 'finalizada' && <small className="muted">Saldo {money(v.saldo_liquido ?? v.total_bruto)} · {v.entregas || 0} entregas{v.problemas ? ` · ${v.problemas} c/ MF` : ''}{v.carga_total ? (v.quantidade_entregue === v.carga_total ? ' · carga bateu ✓' : ` · carga ${v.carga_total} ≠ entregue ${v.quantidade_entregue ?? 0}`) : ''}</small>}
           </div>
           {v.status === 'execucao' && <div className="mob-viagem-actions">
             <button type="button" className="mob-viagem-action-btn primary" data-testid={`mob-viagem-add-entrega-${v.id}`} onClick={() => onAddEntrega(v)}><Plus size={18} /> Nova entrega</button>
@@ -1793,7 +1796,7 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
 
       {error && <div className="error" data-testid="mob-panel-error">{error}</div>}
       <button type="button" className="mob-cta" disabled={!canSubmit || saving} data-testid="mob-sign-button" onClick={() => setSigning(true)}>Assinar e concluir</button>
-      <button type="button" className="mob-danger-btn" data-testid="mob-fail-button" onClick={onClose}>Não consegui entregar</button>
+      <button type="button" className="mob-danger-btn" data-testid="mob-fail-button" onClick={() => { if (window.confirm('Cancelar esta entrega? Os dados preenchidos serão descartados.')) { clearDraft(); onClose(); } }}>Não consegui entregar</button>
     </div>
   </div>
 }
