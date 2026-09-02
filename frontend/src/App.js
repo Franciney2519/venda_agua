@@ -719,6 +719,15 @@ function todayISO(offset = 0) {
   return manaus.toISOString().slice(0, 10);
 }
 
+function manausDate(isoString) {
+  // Same -4h shift as todayISO, applied to an arbitrary UTC timestamp (e.g. created_at)
+  // instead of "now" — so comparing it to todayISO() actually lines up. A naive
+  // isoString.slice(0,10) compares the UTC date instead, which is wrong for anything
+  // logged after ~20:00 Manaus time (already past midnight UTC).
+  if (!isoString) return '';
+  return new Date(new Date(isoString).getTime() - 4 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
 function Receivables() {
   const [filter, setFilter] = useState('pending');
   const [start, setStart] = useState('');
@@ -1848,10 +1857,19 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
 }
 
 function MobileDiarioTab({ entries, date }) {
-  const todays = entries.filter(e => e.date === date);
+  const [viagemFilter, setViagemFilter] = useState('');
+  const todaysAll = entries.filter(e => e.date === date);
+  const viagemOptions = [...new Map(todaysAll.filter(e => e.viagem_codigo).map(e => [e.viagem_codigo, e])).values()];
+  const todays = viagemFilter ? todaysAll.filter(e => e.viagem_codigo === viagemFilter) : todaysAll;
   const totals = todays.reduce((s, e) => ({ qty: s.qty + Number(e.billed_quantity || 0), pix: s.pix + Number(e.pix_value || 0), cash: s.cash + Number(e.cash_value || 0) }), { qty: 0, pix: 0, cash: 0 });
   const mfDetail = e => e.mf_plan === 'swap' ? 'trocado' : e.mf_plan === 'refused' ? 'cliente não quis' : (e.mf_date || '');
   return <div className="mob-screen">
+    {viagemOptions.length > 0 && <label className="mob-field-md" style={{ marginBottom: 4 }}>FILTRAR POR VIAGEM
+      <select value={viagemFilter} data-testid="mob-diario-viagem-filter" onChange={e => setViagemFilter(e.target.value)}>
+        <option value="">Todas as viagens de hoje</option>
+        {viagemOptions.map(e => <option key={e.viagem_codigo} value={e.viagem_codigo}>{e.viagem_codigo}</option>)}
+      </select>
+    </label>}
     <div className="mob-total-cards">
       <div className="mob-total-card"><span>GALÕES</span><b>{totals.qty}</b></div>
       <div className="mob-total-card"><span>PIX</span><b className="blue">{money(totals.pix)}</b></div>
@@ -1867,6 +1885,7 @@ function MobileDiarioTab({ entries, date }) {
           <div className="mob-entry-top"><b>{e.customer}{e.entry_number ? <small style={{ fontWeight: 400, marginLeft: 6 }}>Nº {e.entry_number}</small> : null}</b><b>{money(e.total)}</b></div>
           <div className="mob-chips">
             <span className="mob-chip neutral">{itemsLabel}</span>
+            {e.viagem_codigo && <span className="mob-chip neutral">{e.viagem_codigo}</span>}
             <span className="mob-chip blue">Pix {money(e.pix_value)}</span>
             <span className="mob-chip green">Dinheiro {money(e.cash_value)}</span>
             {e.mf_quantity > 0 && <span className="mob-chip orange">{e.mf_quantity} MF · {mfDetail(e)}</span>}
@@ -1878,17 +1897,25 @@ function MobileDiarioTab({ entries, date }) {
   </div>
 }
 
-function MobileCaixaTab({ entries, expensesTotal, date, onAddExpense, onCloseDay }) {
+function MobileCaixaTab({ entries, expenses, expensesTotal, viagens, date, onAddExpense, onCloseDay }) {
   const todays = entries.filter(e => e.date === date);
   const pix = todays.reduce((s, e) => s + Number(e.pix_value || 0), 0);
   const cash = todays.reduce((s, e) => s + Number(e.cash_value || 0), 0);
   const comp = todays.reduce((s, e) => s + Number(e.comp_value || 0), 0);
   const netTotal = pix + cash - Number(expensesTotal || 0);
+
+  const porViagem = {};
+  function bucket(codigo) { return porViagem[codigo] || (porViagem[codigo] = { codigo, recebido: 0, despesas: 0 }); }
+  for (const e of todays) bucket(e.viagem_codigo || 'Sem viagem').recebido += Number(e.pix_value || 0) + Number(e.cash_value || 0) + Number(e.comp_value || 0);
+  for (const x of (expenses || [])) bucket(x.viagem_codigo || 'Sem viagem').despesas += Number(x.amount || 0);
+  const viagemInfo = Object.fromEntries((viagens || []).map(v => [v.codigo_viagem, v]));
+  const rotas = Object.values(porViagem).sort((a, b) => (viagemInfo[a.codigo]?.numero || 0) - (viagemInfo[b.codigo]?.numero || 0));
+
   return <div className="mob-screen">
     <div className="mob-cash-hero">
-      <span>SALDO LÍQUIDO DO DIA</span>
+      <span>SALDO LÍQUIDO DO DIA · TODAS AS ROTAS</span>
       <b data-testid="mob-cash-to-deliver">{money(netTotal)}</b>
-      <small>Pix + dinheiro recebidos, já descontadas as despesas do dia</small>
+      <small>Pix + dinheiro recebidos, já descontadas as despesas — manhã e tarde somadas</small>
     </div>
     <div className="mob-cash-rows">
       <div className="mob-cash-row"><span className="mob-cash-icon blue"><CircleDollarSign size={16} /></span><div><b>Recebido em Pix</b><small>já na conta da empresa</small></div><b className="blue">{money(pix)}</b></div>
@@ -1896,6 +1923,19 @@ function MobileCaixaTab({ entries, expensesTotal, date, onAddExpense, onCloseDay
       <div className="mob-cash-row"><span className="mob-cash-icon orange"><Clock3 size={16} /></span><div><b>Vendas a prazo</b><small>COMP lançado hoje</small></div><b className="orange">{money(comp)}</b></div>
       <div className="mob-cash-row"><span className="mob-cash-icon orange"><WalletCards size={16} /></span><div><b>Despesas do dia</b><small>descontado do saldo líquido</small></div><b className="orange">-{money(expensesTotal)}</b></div>
     </div>
+    {rotas.length > 0 && <>
+      <p className="mob-eyebrow" style={{ margin: '14px 0 0' }}>RESUMO POR ROTA</p>
+      <div className="mob-cash-rows">
+        {rotas.map(r => {
+          const info = viagemInfo[r.codigo];
+          return <div className="mob-cash-row" key={r.codigo} data-testid={`mob-cash-rota-${r.codigo}`}>
+            <span className="mob-cash-icon blue"><Truck size={16} /></span>
+            <div><b>{info ? `${TURNO_LABELS[info.turno]} · rota ${String(info.rota).padStart(3, '0')}` : r.codigo}</b><small>Recebido {money(r.recebido)} · Despesas {money(r.despesas)}</small></div>
+            <b className={(r.recebido - r.despesas) >= 0 ? 'green' : 'orange'}>{money(r.recebido - r.despesas)}</b>
+          </div>
+        })}
+      </div>
+    </>}
     <button type="button" className="mob-outline-btn" data-testid="mob-add-expense-shortcut" onClick={onAddExpense}><Plus size={16} /> Lançar despesa</button>
     <button type="button" className="mob-cta" data-testid="mob-close-day-button" onClick={onCloseDay}>Fechar o dia</button>
   </div>
@@ -1903,24 +1943,27 @@ function MobileCaixaTab({ entries, expensesTotal, date, onAddExpense, onCloseDay
 
 const MOBILE_EXPENSE_CATEGORIES = [['Combustível', Fuel], ['Alimentação', Utensils], ['Pedágio', Receipt], ['Manutenção', Wrench], ['Outros', MoreHorizontal]];
 
-function MobileDespesasTab({ user, date, viagemAtiva, onOpenViagens }) {
+function MobileDespesasTab({ user, date, viagens, viagemAtiva, onOpenViagens }) {
   const [items, setItems] = useState([]);
   const [category, setCategory] = useState('Combustível');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
+  const [viagemId, setViagemId] = useState('');
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
 
-  async function load() { const { data } = await api.get('/expenses', auth()); setItems(data.filter(x => (x.driver || '') === user.name && (x.created_at || '').slice(0, 10) === date)); }
+  useEffect(() => { setViagemId(prev => prev || viagemAtiva?.id || viagens?.[0]?.id || ''); }, [viagemAtiva, viagens]);
+
+  async function load() { const { data } = await api.get('/expenses', auth()); setItems(data.filter(x => (x.driver || '') === user.name && manausDate(x.created_at) === date)); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [date]);
 
   async function submit() {
     setError('');
-    if (!viagemAtiva) return setError('Inicie uma viagem para lançar despesas.');
+    if (!viagemId) return setError('Selecione a viagem que gerou essa despesa.');
     if (!amount || Number(amount) <= 0) return setError('Informe um valor válido.');
     try {
-      const { data } = await api.post('/expenses', { type: category, driver: user.name, amount: Number(amount), notes: note, status: 'approved', viagem_id: viagemAtiva.id }, auth());
+      const { data } = await api.post('/expenses', { type: category, driver: user.name, amount: Number(amount), notes: note, status: 'approved', viagem_id: viagemId }, auth());
       setItems([data, ...items]); setAmount(''); setNote('');
       setToast('Despesa lançada'); setTimeout(() => setToast(''), 2200);
     } catch (e) { setError(e.response?.data?.detail || 'Não foi possível lançar.'); }
@@ -1928,9 +1971,14 @@ function MobileDespesasTab({ user, date, viagemAtiva, onOpenViagens }) {
 
   const total = items.reduce((s, x) => s + Number(x.amount || 0), 0);
   return <div className="mob-screen">
-    {!viagemAtiva && <button type="button" className="mob-trip-banner pending" data-testid="mob-expense-no-trip" onClick={onOpenViagens}>
-      <Truck size={18} /><div><b>Nenhuma viagem em execução</b><small>Inicie uma viagem para lançar despesas dessa rota</small></div><ChevronRight size={18} />
+    {(!viagens || viagens.length === 0) && <button type="button" className="mob-trip-banner pending" data-testid="mob-expense-no-trip" onClick={onOpenViagens}>
+      <Truck size={18} /><div><b>Nenhuma viagem criada hoje</b><small>Crie uma viagem para poder atribuir despesas a ela</small></div><ChevronRight size={18} />
     </button>}
+    {viagens && viagens.length > 0 && <label className="mob-field-md">VIAGEM (ROTA) DESTA DESPESA
+      <select value={viagemId} data-testid="mob-expense-viagem-select" onChange={e => setViagemId(e.target.value)}>
+        {viagens.map(v => <option key={v.id} value={v.id}>{TURNO_LABELS[v.turno]} · rota {String(v.rota).padStart(3, '0')} · {v.codigo_viagem}{v.status === 'execucao' ? ' (em execução)' : v.status === 'finalizada' ? ' (finalizada)' : ''}</option>)}
+      </select>
+    </label>}
     <div className="mob-expense-grid">
       {MOBILE_EXPENSE_CATEGORIES.map(([label, Icon]) => <button type="button" key={label} className={category === label ? 'active' : ''} data-testid={`mob-expense-cat-${label}`} onClick={() => setCategory(label)}><Icon size={22} /><span>{label}</span></button>)}
     </div>
@@ -1938,7 +1986,7 @@ function MobileDespesasTab({ user, date, viagemAtiva, onOpenViagens }) {
     <label className="mob-field-md">OBSERVAÇÃO (OPCIONAL)<input placeholder="ex: posto na saída da cidade" value={note} data-testid="mob-expense-note" onChange={e => setNote(e.target.value)} /></label>
     <button type="button" className="mob-photo-btn" data-testid="mob-expense-photo"><Camera size={20} /> Foto do comprovante</button>
     {error && <div className="error" data-testid="mob-expense-error">{error}</div>}
-    <button type="button" className="mob-cta" disabled={!viagemAtiva} data-testid="mob-expense-submit" onClick={submit}>Lançar despesa</button>
+    <button type="button" className="mob-cta" disabled={!viagemId} data-testid="mob-expense-submit" onClick={submit}>Lançar despesa</button>
     <p className="mob-eyebrow" style={{ marginTop: 22 }}>MINHAS DESPESAS DE HOJE · {money(total)}</p>
     <div className="mob-expense-list">
       {items.length === 0 && <div className="mob-empty-dashed">Nenhuma despesa lançada.</div>}
@@ -2034,7 +2082,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
   const [sheetOrder, setSheetOrder] = useState(null);
   const [search, setSearch] = useState('');
   const [entries, setEntries] = useState([]);
-  const [expensesTotal, setExpensesTotal] = useState(0);
+  const [todaysExpenses, setTodaysExpenses] = useState([]);
   const [postDelivery, setPostDelivery] = useState(null);
   const [toast, setToast] = useState('');
   const [viagens, setViagens] = useState([]);
@@ -2069,7 +2117,8 @@ function DriverMobileApp({ user, customers, onLogout }) {
     setSheetCustomer(existing || { id: null, name: o.customer, address: o.address || '', brands: [] });
     setSheetOrder(o);
   }); }
-  useEffect(() => { api.get('/expenses', auth()).then(({ data }) => setExpensesTotal(data.filter(x => (x.driver || '') === user.name && (x.created_at || '').slice(0, 10) === date && x.status !== 'rejected').reduce((s, x) => s + Number(x.amount || 0), 0))); }, [date, tab, user.name]);
+  useEffect(() => { api.get('/expenses', auth()).then(({ data }) => setTodaysExpenses(data.filter(x => (x.driver || '') === user.name && manausDate(x.created_at) === date && x.status !== 'rejected'))); }, [date, tab, user.name]);
+  const expensesTotal = todaysExpenses.reduce((s, x) => s + Number(x.amount || 0), 0);
 
   function pickCustomer(c) {
     setPicker(false); setSheetOrder(null); setSheetCustomer(c);
@@ -2096,8 +2145,8 @@ function DriverMobileApp({ user, customers, onLogout }) {
     <main className="mob-main">
       {tab === 'clientes' && <MobileClientesTab customers={pickableCustomers} entries={entries} orders={orders} onStartOrder={startOrder} date={date} onOpenPicker={() => requireViagem(() => setPicker(true))} onOpenCustomer={c => requireViagem(() => { setSheetOrder(null); setSheetCustomer(c); })} search={search} setSearch={setSearch} viagemAtiva={viagemAtiva} viagens={viagensComProgresso} onOpenViagens={() => setShowViagens(true)} />}
       {tab === 'diario' && <MobileDiarioTab entries={entries} date={date} />}
-      {tab === 'caixa' && <MobileCaixaTab entries={entries} expensesTotal={expensesTotal} date={date} onAddExpense={() => setTab('despesas')} onCloseDay={() => { setToast('Dia fechado!'); setTimeout(() => setToast(''), 2200); }} />}
-      {tab === 'despesas' && <MobileDespesasTab user={user} date={date} viagemAtiva={viagemAtiva} onOpenViagens={() => setShowViagens(true)} />}
+      {tab === 'caixa' && <MobileCaixaTab entries={entries} expenses={todaysExpenses} expensesTotal={expensesTotal} viagens={viagensComProgresso} date={date} onAddExpense={() => setTab('despesas')} onCloseDay={() => { setToast('Dia fechado!'); setTimeout(() => setToast(''), 2200); }} />}
+      {tab === 'despesas' && <MobileDespesasTab user={user} date={date} viagens={viagensComProgresso} viagemAtiva={viagemAtiva} onOpenViagens={() => setShowViagens(true)} />}
       {tab === 'ajustes' && <MobileAjustesTab user={user} theme={theme} setTheme={setTheme} textScale={textScale} setTextScale={setTextScale} onLogout={onLogout} />}
     </main>
     <MobileBottomNav tab={tab} setTab={setTab} />

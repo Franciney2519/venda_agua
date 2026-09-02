@@ -335,6 +335,14 @@ async def update_product(item_id: str, data: ResourceInput, user=Depends(admin_u
 @api.get("/expenses")
 async def expenses(user=Depends(current_user)): return await list_resource("expenses")
 @api.post("/expenses")
+async def recompute_viagem_finance(viagem_id):
+    v = await db.viagens.find_one({"id": viagem_id}, {"_id": 0})
+    if not v or v.get("status") != "finalizada": return
+    despesas = await db.expenses.find({"viagem_id": viagem_id, "status": {"$ne": "rejected"}}, {"_id": 0}).to_list(500)
+    despesas_total = sum(float(d.get("amount") or 0) for d in despesas)
+    total_bruto = float(v.get("total_bruto") or 0)
+    await db.viagens.update_one({"id": viagem_id}, {"$set": {"despesas_total": despesas_total, "saldo_liquido": total_bruto - despesas_total}})
+
 async def add_expense(data: ResourceInput, user=Depends(current_user)):
     if user.get("role") != "admin": data.driver = user["name"]
     doc = await create_resource("expenses", data, user)
@@ -343,6 +351,7 @@ async def add_expense(data: ResourceInput, user=Depends(current_user)):
         if viagem:
             await db.expenses.update_one({"id": doc["id"]}, {"$set": {"viagem_codigo": viagem.get("codigo_viagem")}})
             doc["viagem_codigo"] = viagem.get("codigo_viagem")
+            await recompute_viagem_finance(doc["viagem_id"])
     return doc
 @api.patch("/expenses/{item_id}")
 async def update_expense(item_id: str, data: ResourceInput, user=Depends(admin_user)):
@@ -352,6 +361,7 @@ async def update_expense(item_id: str, data: ResourceInput, user=Depends(admin_u
     await db.expenses.update_one({"id": item_id}, {"$set": values})
     doc = await db.expenses.find_one({"id": item_id}, {"_id": 0})
     await log_activity(f"expense_{doc.get('status','updated')}", user, {"id": item_id, "name": doc.get("type"), "email": doc.get("driver")})
+    if doc.get("viagem_id"): await recompute_viagem_finance(doc["viagem_id"])
     return doc
 @api.delete("/expenses/{item_id}")
 async def delete_expense(item_id: str, user=Depends(current_user)):
@@ -359,6 +369,7 @@ async def delete_expense(item_id: str, user=Depends(current_user)):
     if not target: raise HTTPException(404, "Lançamento não encontrado")
     if user.get("role") != "admin" and target.get("created_by") != user["id"]: raise HTTPException(403, "Sem permissão")
     await db.expenses.delete_one({"id": item_id})
+    if target.get("viagem_id"): await recompute_viagem_finance(target["viagem_id"])
     return {"message": "Excluído"}
 @api.get("/customers")
 async def customers(user=Depends(current_user)): return await list_resource("customers")
