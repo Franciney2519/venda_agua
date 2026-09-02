@@ -101,6 +101,9 @@
 .mob-trip-progress div{height:100%;background:var(--mob-blue);transition:width .3s}
 .mob-trip-progress div.over{background:var(--mob-red,#d54e4e)}
 .mob-customer-list-locked{opacity:.45;pointer-events:none;filter:grayscale(.3)}
+.mob-viagem-tabs{display:flex;gap:8px;padding:0 20px 14px}
+.mob-viagem-tabs button{flex:1;height:44px;border-radius:11px;background:var(--mob-surface2);border:1.5px solid var(--mob-line);color:var(--mob-muted);font:700 calc(13px * var(--scale)) 'DM Sans',sans-serif}
+.mob-viagem-tabs button.active{background:var(--mob-blue);border-color:var(--mob-blue);color:#fff}
 .mob-viagem-form{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 20px 16px}
 .mob-viagem-form label{display:grid;gap:6px;font-size:calc(12px * var(--scale));font-weight:700;color:var(--mob-muted)}
 .mob-viagem-form label:last-of-type,.mob-viagem-form .error,.mob-viagem-form .mob-cta{grid-column:1 / -1}

@@ -1420,6 +1420,7 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
   const [loadingEntries, setLoadingEntries] = useState(false);
   const [entriesError, setEntriesError] = useState('');
   const [editingEntry, setEditingEntry] = useState(null);
+  const [viewTab, setViewTab] = useState(viagens.some(v => v.status === 'execucao') ? 'ver' : 'criar');
   const statusLabel = { planejada: 'Planejada', execucao: 'Em execução', finalizada: 'Finalizada' };
   const statusTag = { planejada: 'orange', execucao: 'blue', finalizada: 'green' };
 
@@ -1471,6 +1472,7 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
       await onCreate({ turno, rota, carga_total: cargaItems.length ? undefined : (cargaTotal ? Number(cargaTotal) : undefined), carga_items: cargaItems.length ? cargaItems : undefined, clientes: selectedClientes });
       setCargaTotal(''); setCargaItems([]); setSelectedClientes([]);
       setError(''); setConfirmMsg('Viagem criada! Toque em "Iniciar" quando for sair com o caminhão carregado.');
+      setViewTab('ver');
     } catch (e) { setError(e.response?.data?.detail || 'Não foi possível criar a viagem.'); }
   }
 
@@ -1482,7 +1484,12 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
         <button type="button" className="mob-close" data-testid="mob-viagens-close" onClick={onClose}><X size={18} /></button>
       </div>
 
-      <div className="mob-viagem-form">
+      <div className="mob-viagem-tabs">
+        <button type="button" className={viewTab === 'criar' ? 'active' : ''} data-testid="mob-viagem-tab-criar" onClick={() => setViewTab('criar')}>Criar viagem</button>
+        <button type="button" className={viewTab === 'ver' ? 'active' : ''} data-testid="mob-viagem-tab-ver" onClick={() => setViewTab('ver')}>Minhas viagens{viagens.length > 0 ? ` (${viagens.length})` : ''}</button>
+      </div>
+
+      {viewTab === 'criar' && <div className="mob-viagem-form">
         <label>Turno<select value={turno} data-testid="mob-viagem-turno" onChange={e => setTurno(Number(e.target.value))}>
           <option value={0}>Manhã</option>
           <option value={1}>Tarde</option>
@@ -1511,8 +1518,9 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
         {error && <div className="error" data-testid="mob-viagem-error">{error}</div>}
         {confirmMsg && <div className="mob-viagem-confirm" data-testid="mob-viagem-confirm">{confirmMsg}</div>}
         <button type="button" className="mob-cta" data-testid="mob-viagem-create" onClick={submit}><Plus size={18} /> Criar viagem</button>
-      </div>
+      </div>}
 
+      {viewTab === 'ver' && <>
       {viagens.length > 1 && <p className="mob-help" style={{ padding: '0 14px' }}>← Arraste para o lado para ver as outras rotas</p>}
       <div className="mob-viagem-carousel">
         {viagens.length === 0 && <p className="muted" style={{ padding: 16 }}>Nenhuma viagem criada hoje ainda.</p>}
@@ -1546,6 +1554,7 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
           </div>}
         </div>)}
       </div>
+      </>}
     </div>
     {editingEntry && <MobileEditEntregaModal entry={editingEntry} onClose={() => setEditingEntry(null)} onSaved={() => handleEntregaSaved(editingEntry.viagem_codigo)} />}
   </div>
