@@ -569,6 +569,9 @@ async def add_viagem_cliente(item_id: str, data: dict, user=Depends(current_user
 async def iniciar_viagem(item_id: str, user=Depends(current_user)):
     v = await _own_viagem_or_404(item_id, user)
     if v["status"] != "planejada": raise HTTPException(400, f"Viagem já está {v['status']}")
+    outra_em_execucao = await db.viagens.find_one({"driver": v["driver"], "status": "execucao", "id": {"$ne": item_id}}, {"_id": 0})
+    if outra_em_execucao:
+        raise HTTPException(400, f"Finalize a viagem {outra_em_execucao['codigo_viagem']} antes de iniciar outra")
     await db.viagens.update_one({"id": item_id}, {"$set": {"status": "execucao", "updated_at": now()}})
     return await db.viagens.find_one({"id": item_id}, {"_id": 0})
 

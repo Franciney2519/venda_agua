@@ -1392,7 +1392,7 @@ function MobileEditEntregaModal({ entry, onClose, onSaved }) {
   </div>
 }
 
-function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, onFinalizar, onDelete, onEntriesChanged }) {
+function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, onFinalizar, onDelete, onEntriesChanged, onAddEntrega }) {
   const [turno, setTurno] = useState(0);
   const [rota, setRota] = useState(1);
   const [cargaTotal, setCargaTotal] = useState('');
@@ -1490,10 +1490,14 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
               <button type="button" className="mob-outline-btn" data-testid={`mob-viagem-iniciar-${v.id}`} onClick={() => onIniciar(v)}>Iniciar</button>
               <button type="button" className="mob-text-btn" data-testid={`mob-viagem-excluir-${v.id}`} onClick={() => onDelete(v)}>Excluir</button>
             </div>}
-            {v.status === 'execucao' && <button type="button" className="mob-outline-btn" data-testid={`mob-viagem-finalizar-${v.id}`} onClick={() => handleFinalizar(v)}>Finalizar</button>}
             {v.status === 'finalizada' && <small className="muted">Saldo {money(v.saldo_liquido ?? v.total_bruto)} · {v.entregas || 0} entregas{v.problemas ? ` · ${v.problemas} c/ MF` : ''}</small>}
           </div>
-          {v.status !== 'planejada' && <button type="button" className="mob-text-btn" data-testid={`mob-viagem-ver-entregas-${v.id}`} onClick={() => toggleEntregas(v)} style={{ padding: '0 0 10px 4px' }}>{expanded === v.id ? 'Ocultar entregas' : 'Ver entregas desta viagem'}</button>}
+          {v.status === 'execucao' && <div className="mob-viagem-actions">
+            <button type="button" className="mob-viagem-action-btn primary" data-testid={`mob-viagem-add-entrega-${v.id}`} onClick={() => onAddEntrega(v)}><Plus size={18} /> Nova entrega</button>
+            <button type="button" className={`mob-viagem-action-btn${expanded === v.id ? ' active' : ''}`} data-testid={`mob-viagem-ver-entregas-${v.id}`} onClick={() => toggleEntregas(v)}><FileText size={16} /> {expanded === v.id ? 'Ocultar' : 'Ver entregas'}</button>
+            <button type="button" className="mob-viagem-action-btn" data-testid={`mob-viagem-finalizar-${v.id}`} onClick={() => handleFinalizar(v)}><Check size={16} /> Finalizar</button>
+          </div>}
+          {v.status === 'finalizada' && <div className="mob-viagem-actions"><button type="button" className="mob-viagem-action-btn" data-testid={`mob-viagem-ver-entregas-${v.id}`} onClick={() => toggleEntregas(v)}><FileText size={16} /> {expanded === v.id ? 'Ocultar entregas' : 'Ver entregas'}</button></div>}
           {expanded === v.id && <div className="mob-viagem-entregas">
             {loadingEntries && <Loader2 size={16} className="spin blue-text" />}
             {!loadingEntries && entriesError && <div className="error" data-testid="mob-viagem-entregas-error">{entriesError}</div>}
@@ -1522,7 +1526,6 @@ function MobileClientesTab({ customers, entries, orders, onStartOrder, date, onO
   const progress = Math.min(100, (doneNames.size / goal) * 100);
   return <div className="mob-screen">
     <MobileTripBanner viagemAtiva={viagemAtiva} viagens={viagens} onOpen={onOpenViagens} />
-    <button type="button" className="mob-outline-btn wide" data-testid="mob-new-trip-button" onClick={onOpenViagens}><Plus size={16} /> Nova viagem</button>
     {orders?.length > 0 && <div className="mob-orders-card" data-testid="mob-pending-orders">
       <p className="mob-eyebrow">CLIENTES DA ROTA · {orders.length} PENDENTE{orders.length > 1 ? 'S' : ''}</p>
       {orders.map(o => <div className="mob-order-row" key={o.id} data-testid={`mob-order-${o.id}`}>
@@ -1534,7 +1537,7 @@ function MobileClientesTab({ customers, entries, orders, onStartOrder, date, onO
       <div className="mob-summary-row"><span>{doneNames.size} cliente{doneNames.size !== 1 ? 's' : ''} lançado{doneNames.size !== 1 ? 's' : ''} hoje</span><b data-testid="mob-received-today">{money(receivedToday)}</b></div>
       <div className="mob-progress"><div style={{ width: `${progress}%` }} /></div>
     </div>
-    <button type="button" className="mob-cta" data-testid="mob-new-delivery-button" onClick={onOpenPicker}><Plus size={20} /> {viagemAtiva ? 'Nova entrega' : 'Iniciar viagem para lançar'}</button>
+    {!viagemAtiva && <button type="button" className="mob-cta" data-testid="mob-new-delivery-button" onClick={onOpenViagens}><Plus size={20} /> Iniciar viagem para lançar</button>}
     <div className="mob-search"><Search size={16} /><input placeholder="Buscar por nome ou código" value={search} data-testid="mob-search-input" onChange={e => setSearch(e.target.value)} /></div>
     <div className={`mob-customer-list${viagemAtiva ? '' : ' mob-customer-list-locked'}`}>
       {filtered.map(c => <MobileStopRow key={c.id} c={c} done={doneNames.has(c.name)} onClick={() => onOpenCustomer(c)} />)}
@@ -2050,7 +2053,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
     </main>
     <MobileBottomNav tab={tab} setTab={setTab} />
     {picker && <MobilePickerSheet customers={customers} onClose={() => setPicker(false)} onPick={pickCustomer} onNewCustomer={newCustomer} />}
-    {showViagens && <MobileViagensSheet viagens={viagensComProgresso} customers={customers} onClose={() => setShowViagens(false)} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} onEntriesChanged={() => { loadEntries(); loadViagens(); }} />}
+    {showViagens && <MobileViagensSheet viagens={viagensComProgresso} customers={customers} onClose={() => setShowViagens(false)} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} onEntriesChanged={() => { loadEntries(); loadViagens(); }} onAddEntrega={() => { setShowViagens(false); setPicker(true); }} />}
     {sheetCustomer && <MobileLaunchPanel customer={sheetCustomer} prefillOrder={sheetOrder} user={user} date={date} viagemId={viagemAtiva?.id} onClose={() => { setSheetCustomer(null); setSheetOrder(null); }} onComplete={onEntryComplete} />}
     {postDelivery && <MobileReceiptPrompt entry={postDelivery} customer={customers.find(c => c.name === postDelivery.customer)} onSavePhone={p => savePhoneForCustomerName(postDelivery.customer, p)} onClose={() => setPostDelivery(null)} />}
     <MobileToast text={toast} />
