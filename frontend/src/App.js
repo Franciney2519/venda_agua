@@ -1401,13 +1401,15 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
   const [expanded, setExpanded] = useState(null);
   const [viagemEntries, setViagemEntries] = useState([]);
   const [loadingEntries, setLoadingEntries] = useState(false);
+  const [entriesError, setEntriesError] = useState('');
   const [editingEntry, setEditingEntry] = useState(null);
   const statusLabel = { planejada: 'Planejada', execucao: 'Em execução', finalizada: 'Finalizada' };
   const statusTag = { planejada: 'orange', execucao: 'blue', finalizada: 'green' };
 
   async function loadViagemEntries(codigoViagem) {
-    setLoadingEntries(true);
+    setLoadingEntries(true); setEntriesError('');
     try { const { data } = await api.get('/daily-entries', { ...auth(), params: { codigo_viagem: codigoViagem } }); setViagemEntries(data); }
+    catch (e) { setViagemEntries([]); setEntriesError(e.response?.data?.detail || e.message || 'Não foi possível carregar as entregas.'); }
     finally { setLoadingEntries(false); }
   }
 
@@ -1419,9 +1421,11 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
 
   async function removeEntrega(entry) {
     if (!window.confirm(`Excluir a entrega de ${entry.customer} (${money(entry.total)})?`)) return;
-    await api.delete(`/daily-entries/${entry.id}`, auth());
-    setViagemEntries(viagemEntries.filter(x => x.id !== entry.id));
-    onEntriesChanged?.();
+    try {
+      await api.delete(`/daily-entries/${entry.id}`, auth());
+      setViagemEntries(viagemEntries.filter(x => x.id !== entry.id));
+      onEntriesChanged?.();
+    } catch (e) { setEntriesError(e.response?.data?.detail || e.message || 'Não foi possível excluir a entrega.'); }
   }
 
   function handleEntregaSaved(codigoViagem) {
@@ -1492,7 +1496,8 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
           {v.status !== 'planejada' && <button type="button" className="mob-text-btn" data-testid={`mob-viagem-ver-entregas-${v.id}`} onClick={() => toggleEntregas(v)} style={{ padding: '0 0 10px 4px' }}>{expanded === v.id ? 'Ocultar entregas' : 'Ver entregas desta viagem'}</button>}
           {expanded === v.id && <div className="mob-viagem-entregas">
             {loadingEntries && <Loader2 size={16} className="spin blue-text" />}
-            {!loadingEntries && viagemEntries.length === 0 && <p className="muted" style={{ padding: '6px 4px' }}>Nenhuma entrega lançada nesta viagem ainda.</p>}
+            {!loadingEntries && entriesError && <div className="error" data-testid="mob-viagem-entregas-error">{entriesError}</div>}
+            {!loadingEntries && !entriesError && viagemEntries.length === 0 && <p className="muted" style={{ padding: '6px 4px' }}>Nenhuma entrega lançada nesta viagem ainda.</p>}
             {!loadingEntries && viagemEntries.map(e => <div className="mob-viagem-entrega-row" key={e.id} data-testid={`mob-viagem-entrega-${e.id}`}>
               <div><b>{e.customer}</b><small>{(e.items?.length ? e.items : [{ brand: e.brand, quantity: e.billed_quantity ?? e.quantity }]).map(it => `${it.quantity} ${it.brand}`).join(' + ')} · {money(e.total)}</small></div>
               <div className="mob-row-actions">
