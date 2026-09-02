@@ -1215,7 +1215,7 @@ function MobileBottomNav({ tab, setTab }) {
 
 function MobileToast({ text, tone = 'green' }) { if (!text) return null; return <div className={`mob-toast ${tone}`} data-testid="mob-toast">{text}</div> }
 
-function MobileStopRow({ c, done, onClick }) {
+function MobileStopRow({ c, done, failed, onClick }) {
   const brands = brandListOf(c);
   const priceLine = brands.map(b => `${b.brand} ${money(b.price)}`).join(' · ');
   return <button type="button" className={`mob-customer-row${done ? ' done' : ''}`} data-testid={`mob-customer-row-${c.id}`} onClick={onClick}>
@@ -1225,7 +1225,7 @@ function MobileStopRow({ c, done, onClick }) {
       <small>{c.address}</small>
       {priceLine && <small>{priceLine}</small>}
     </span>
-    <span className={`mob-tag${done ? ' done' : ' neutral'}`}>{done ? 'Lançado' : 'Lançar'}</span>
+    <span className={`mob-tag${done ? ' done' : failed ? ' orange' : ' neutral'}`}>{done ? 'Lançado' : failed ? 'Não entregue' : 'Lançar'}</span>
   </button>
 }
 
@@ -1398,8 +1398,23 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
   const [turno, setTurno] = useState(0);
   const [rota, setRota] = useState(1);
   const [cargaTotal, setCargaTotal] = useState('');
+  const [cargaItems, setCargaItems] = useState([]);
+  const [brandsCatalog, setBrandsCatalog] = useState([]);
+  const [newCargaBrand, setNewCargaBrand] = useState('');
+  const [newCargaQty, setNewCargaQty] = useState('');
   const [selectedClientes, setSelectedClientes] = useState([]);
   const [error, setError] = useState('');
+  const [confirmMsg, setConfirmMsg] = useState('');
+
+  useEffect(() => { api.get('/brands', auth()).then(({ data }) => setBrandsCatalog(data.filter(b => b.active !== false))).catch(() => { }); }, []);
+
+  function addCargaItem() {
+    if (!newCargaBrand || !newCargaQty || Number(newCargaQty) <= 0) return;
+    setCargaItems(prev => [...prev.filter(i => i.brand !== newCargaBrand), { brand: newCargaBrand, quantity: Number(newCargaQty) }]);
+    setNewCargaBrand(''); setNewCargaQty('');
+  }
+  function removeCargaItem(brand) { setCargaItems(prev => prev.filter(i => i.brand !== brand)); }
+  const cargaItemsTotal = cargaItems.reduce((s, i) => s + i.quantity, 0);
   const [expanded, setExpanded] = useState(null);
   const [viagemEntries, setViagemEntries] = useState([]);
   const [loadingEntries, setLoadingEntries] = useState(false);
@@ -1453,8 +1468,9 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
   async function submit() {
     setError('');
     try {
-      await onCreate({ turno, rota, carga_total: cargaTotal ? Number(cargaTotal) : undefined, clientes: selectedClientes });
-      setCargaTotal(''); setSelectedClientes([]);
+      await onCreate({ turno, rota, carga_total: cargaItems.length ? undefined : (cargaTotal ? Number(cargaTotal) : undefined), carga_items: cargaItems.length ? cargaItems : undefined, clientes: selectedClientes });
+      setCargaTotal(''); setCargaItems([]); setSelectedClientes([]);
+      setError(''); setConfirmMsg('Viagem criada! Toque em "Iniciar" quando for sair com o caminhão carregado.');
     } catch (e) { setError(e.response?.data?.detail || 'Não foi possível criar a viagem.'); }
   }
 
@@ -1474,11 +1490,26 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
         <label>Rota<select value={rota} data-testid="mob-viagem-rota" onChange={e => setRota(Number(e.target.value))}>
           {ROTA_OPTIONS.map(n => <option key={n} value={n}>{String(n).padStart(3, '0')}</option>)}
         </select></label>
-        <label>Carga total (opcional)<input type="number" inputMode="numeric" value={cargaTotal} data-testid="mob-viagem-carga" onChange={e => setCargaTotal(e.target.value)} /></label>
+        {cargaItems.length === 0 && <label>Carga total (opcional)<input type="number" inputMode="numeric" value={cargaTotal} data-testid="mob-viagem-carga" onChange={e => setCargaTotal(e.target.value)} /></label>}
+        <label style={{ gridColumn: '1 / -1' }}>Carga por produto (opcional){cargaItems.length > 0 ? ` · total ${cargaItemsTotal} un` : ''}
+          <p className="mob-help" style={{ margin: '2px 0 6px' }}>Se preencher aqui, o sistema desconta do estoque quando iniciar a viagem, e devolve automaticamente o que sobrar ao finalizar.</p>
+          <div className="mob-carga-add-row">
+            <select value={newCargaBrand} data-testid="mob-viagem-carga-brand" onChange={e => setNewCargaBrand(e.target.value)}>
+              <option value="">Produto</option>
+              {brandsCatalog.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
+            </select>
+            <input type="number" inputMode="numeric" placeholder="Qtd" value={newCargaQty} data-testid="mob-viagem-carga-qty" onChange={e => setNewCargaQty(e.target.value)} />
+            <button type="button" className="mob-outline-btn" data-testid="mob-viagem-carga-add" onClick={addCargaItem}><Plus size={16} /></button>
+          </div>
+          {cargaItems.length > 0 && <div className="mob-viagem-client-chips">
+            {cargaItems.map(i => <span className="mob-viagem-client-chip" key={i.brand} data-testid={`mob-viagem-carga-chip-${i.brand}`}>{i.brand} · {i.quantity}<button type="button" onClick={() => removeCargaItem(i.brand)}><X size={12} /></button></span>)}
+          </div>}
+        </label>
         <label>Clientes desta rota (opcional){selectedClientes.length > 0 ? ` · ${selectedClientes.length} selecionado(s)` : ''}
           <MobileViagemClientPicker customers={customers} selected={selectedClientes} onToggle={toggleCliente} />
         </label>
         {error && <div className="error" data-testid="mob-viagem-error">{error}</div>}
+        {confirmMsg && <div className="mob-viagem-confirm" data-testid="mob-viagem-confirm">{confirmMsg}</div>}
         <button type="button" className="mob-cta" data-testid="mob-viagem-create" onClick={submit}><Plus size={18} /> Criar viagem</button>
       </div>
 
@@ -1493,7 +1524,7 @@ function MobileViagensSheet({ viagens, customers, onClose, onCreate, onIniciar, 
               <button type="button" className="mob-outline-btn" data-testid={`mob-viagem-iniciar-${v.id}`} onClick={() => onIniciar(v)}>Iniciar</button>
               <button type="button" className="mob-text-btn" data-testid={`mob-viagem-excluir-${v.id}`} onClick={() => onDelete(v)}>Excluir</button>
             </div>}
-            {v.status === 'finalizada' && <small className="muted">Saldo {money(v.saldo_liquido ?? v.total_bruto)} · {v.entregas || 0} entregas{v.problemas ? ` · ${v.problemas} c/ MF` : ''}{v.carga_total ? (v.quantidade_entregue === v.carga_total ? ' · carga bateu ✓' : ` · carga ${v.carga_total} ≠ entregue ${v.quantidade_entregue ?? 0}`) : ''}</small>}
+            {v.status === 'finalizada' && <small className="muted">Saldo {money(v.saldo_liquido ?? v.total_bruto)} · {v.entregas || 0} entregas{v.problemas ? ` · ${v.problemas} c/ MF` : ''}{v.carga_total ? (v.quantidade_entregue === v.carga_total ? ' · carga bateu ✓' : ` · carga ${v.carga_total} ≠ entregue ${v.quantidade_entregue ?? 0}`) : ''}{v.carga_carregada && v.carga_devolvida_total != null ? ` · ${v.carga_devolvida_total} un devolvida(s) ao estoque` : ''}</small>}
           </div>
           {v.status === 'execucao' && <div className="mob-viagem-actions">
             <button type="button" className="mob-viagem-action-btn primary" data-testid={`mob-viagem-add-entrega-${v.id}`} onClick={() => onAddEntrega(v)}><Plus size={18} /> Nova entrega</button>
@@ -1527,6 +1558,7 @@ function MobileClientesTab({ customers, entries, orders, onStartOrder, date, onO
   const filtered = customers.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || (c.code || '').toLowerCase().includes(search.toLowerCase())).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
   const goal = customers.length || 1;
   const progress = Math.min(100, (doneNames.size / goal) * 100);
+  const failedNames = new Set((viagemAtiva?.clientes || []).filter(c => c.status === 'nao_entregue').map(c => c.name));
   return <div className="mob-screen">
     <MobileTripBanner viagemAtiva={viagemAtiva} viagens={viagens} onOpen={onOpenViagens} />
     {orders?.length > 0 && <div className="mob-orders-card" data-testid="mob-pending-orders">
@@ -1543,7 +1575,7 @@ function MobileClientesTab({ customers, entries, orders, onStartOrder, date, onO
     {!viagemAtiva && <button type="button" className="mob-cta" data-testid="mob-new-delivery-button" onClick={onOpenViagens}><Plus size={20} /> Iniciar viagem para lançar</button>}
     <div className="mob-search"><Search size={16} /><input placeholder="Buscar por nome ou código" value={search} data-testid="mob-search-input" onChange={e => setSearch(e.target.value)} /></div>
     <div className={`mob-customer-list${viagemAtiva ? '' : ' mob-customer-list-locked'}`}>
-      {filtered.map(c => <MobileStopRow key={c.id} c={c} done={doneNames.has(c.name)} onClick={() => onOpenCustomer(c)} />)}
+      {filtered.map(c => <MobileStopRow key={c.id} c={c} done={doneNames.has(c.name)} failed={failedNames.has(c.name)} onClick={() => onOpenCustomer(c)} />)}
       {filtered.length === 0 && <p className="muted" style={{ padding: 16 }}>Nenhum cliente encontrado.</p>}
     </div>
   </div>
@@ -1569,7 +1601,7 @@ function MobilePickerSheet({ customers, onClose, onPick, onNewCustomer }) {
   </div>
 }
 
-function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillOrder, viagemId }) {
+function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillOrder, viagemId, onFailed }) {
   const draftKey = `hydro_draft_${customer.id || 'novo_' + (customer.name || 'cliente')}`;
   const draft = useMemo(() => { try { return JSON.parse(localStorage.getItem(draftKey)); } catch { return null; } }, [draftKey]);
 
@@ -1796,7 +1828,12 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
 
       {error && <div className="error" data-testid="mob-panel-error">{error}</div>}
       <button type="button" className="mob-cta" disabled={!canSubmit || saving} data-testid="mob-sign-button" onClick={() => setSigning(true)}>Assinar e concluir</button>
-      <button type="button" className="mob-danger-btn" data-testid="mob-fail-button" onClick={() => { if (window.confirm('Cancelar esta entrega? Os dados preenchidos serão descartados.')) { clearDraft(); onClose(); } }}>Não consegui entregar</button>
+      <button type="button" className="mob-danger-btn" data-testid="mob-fail-button" onClick={() => {
+        if (!window.confirm('Marcar esta entrega como não realizada? Os dados preenchidos serão descartados e nada é descontado do estoque.')) return;
+        clearDraft();
+        if (viagemId && customer.id) api.patch(`/viagens/${viagemId}/clientes/${customer.id}`, { name: customerName, status: 'nao_entregue' }, auth()).then(onFailed).catch(() => { });
+        onClose();
+      }}>Não consegui entregar</button>
     </div>
   </div>
 }
@@ -2010,7 +2047,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
   const viagemClienteIds = new Set((viagemAtiva?.clientes || []).map(c => c.id));
   const pickableCustomers = viagemClienteIds.size > 0 ? customers.filter(c => viagemClienteIds.has(c.id)) : customers;
   const entregasNaViagem = new Set(entries.filter(e => e.viagem_id === viagemAtiva?.id).map(e => e.customer));
-  const orders = (viagemAtiva?.clientes || []).filter(c => !entregasNaViagem.has(c.name)).map(c => ({ id: c.id, customer: c.name, brand: c.brand, quantity: c.quantity, notes: c.notes, sale_type: c.sale_type }));
+  const orders = (viagemAtiva?.clientes || []).filter(c => !entregasNaViagem.has(c.name) && c.status !== 'nao_entregue').map(c => ({ id: c.id, customer: c.name, brand: c.brand, quantity: c.quantity, notes: c.notes, sale_type: c.sale_type }));
   async function createViagem(payload) { await api.post('/viagens', payload, auth()); await loadViagens(); }
   async function iniciarViagem(v) { await api.post(`/viagens/${v.id}/iniciar`, {}, auth()); await loadViagens(); }
   async function finalizarViagem(v) { await api.post(`/viagens/${v.id}/finalizar`, {}, auth()); await loadViagens(); }
@@ -2057,7 +2094,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
     <MobileBottomNav tab={tab} setTab={setTab} />
     {picker && <MobilePickerSheet customers={customers} onClose={() => setPicker(false)} onPick={pickCustomer} onNewCustomer={newCustomer} />}
     {showViagens && <MobileViagensSheet viagens={viagensComProgresso} customers={customers} onClose={() => setShowViagens(false)} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} onEntriesChanged={() => { loadEntries(); loadViagens(); }} onAddEntrega={() => { setShowViagens(false); setPicker(true); }} />}
-    {sheetCustomer && <MobileLaunchPanel customer={sheetCustomer} prefillOrder={sheetOrder} user={user} date={date} viagemId={viagemAtiva?.id} onClose={() => { setSheetCustomer(null); setSheetOrder(null); }} onComplete={onEntryComplete} />}
+    {sheetCustomer && <MobileLaunchPanel customer={sheetCustomer} prefillOrder={sheetOrder} user={user} date={date} viagemId={viagemAtiva?.id} onClose={() => { setSheetCustomer(null); setSheetOrder(null); }} onComplete={onEntryComplete} onFailed={loadViagens} />}
     {postDelivery && <MobileReceiptPrompt entry={postDelivery} customer={customers.find(c => c.name === postDelivery.customer)} onSavePhone={p => savePhoneForCustomerName(postDelivery.customer, p)} onClose={() => setPostDelivery(null)} />}
     <MobileToast text={toast} />
   </div>

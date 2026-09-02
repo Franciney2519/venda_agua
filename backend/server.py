@@ -91,6 +91,7 @@ class ViagemInput(BaseModel):
     notes: Optional[str] = None
     driver: Optional[str] = None  # admin only: criar viagem para outro entregador
     clientes: Optional[List[dict]] = None  # clientes do cadastro incluídos nesta rota
+    carga_items: Optional[List[dict]] = None  # [{brand, quantity}] carregado no caminhão, por produto
 
 MANAUS_TZ = timezone(timedelta(hours=-4))  # America/Manaus, no DST
 def now(): return datetime.now(timezone.utc).isoformat()
@@ -209,7 +210,10 @@ def match_product(products_cache, brand):
     if not b: return None
     return next((p for p in products_cache if (p.get("brand") or p.get("name") or "").strip().lower() == b), None)
 
-async def apply_stock_delta(products_cache, brand, delta, reason, entry, user, extra=None):
+def viagem_ref(v):
+    return {"id": v.get("id"), "entry_number": None, "customer": None, "driver": v.get("driver")}
+
+async def apply_stock_delta(products_cache, brand, delta, reason, entry, user, extra=None, skip_quantity=False):
     if not delta: return
     match = match_product(products_cache, brand)
     if not match:
@@ -221,12 +225,15 @@ async def apply_stock_delta(products_cache, brand, delta, reason, entry, user, e
                 "created_at": now(), "created_by": user.get("id") if user else None, "created_by_name": user.get("name") if user else "sistema",
             })
         return
-    inc = {"quantity": delta}
-    if reason == "mf_defeito": inc["defective_quantity"] = -delta
-    await db.products.update_one({"id": match["id"]}, {"$inc": inc})
+    if not skip_quantity:
+        inc = {"quantity": delta}
+        if reason == "mf_defeito": inc["defective_quantity"] = -delta
+        await db.products.update_one({"id": match["id"]}, {"$inc": inc})
+    elif reason == "mf_defeito":
+        await db.products.update_one({"id": match["id"]}, {"$inc": {"defective_quantity": -delta}})
     movement = {
         "id": str(uuid.uuid4()), "product_id": match["id"], "product_name": match.get("name"), "brand": match.get("brand") or match.get("name"),
-        "quantity": delta, "reason": reason,
+        "quantity": delta, "reason": reason, "from_carga": skip_quantity,
         "entry_id": entry.get("id"), "entry_number": entry.get("entry_number"), "customer": entry.get("customer"), "driver": entry.get("driver"),
         "created_at": now(), "created_by": user.get("id") if user else None, "created_by_name": user.get("name") if user else "sistema",
     }
@@ -235,14 +242,20 @@ async def apply_stock_delta(products_cache, brand, delta, reason, entry, user, e
 
 async def apply_entry_stock_movements(doc, reason, sign, user):
     products_cache = await db.products.find({}, {"_id": 0}).to_list(1000)
+    viagem = await db.viagens.find_one({"id": doc["viagem_id"]}, {"_id": 0}) if doc.get("viagem_id") else None
+    carga_brands = set()
+    if viagem and viagem.get("carga_carregada"):
+        carga_brands = {(it.get("brand") or "").strip().lower() for it in (viagem.get("carga_items") or [])}
+    def covered(brand): return (brand or "").strip().lower() in carga_brands
+
     items = doc.get("items")
     if items:
         for it in items:
             qty = float(it.get("quantity") or 0)
-            if qty > 0: await apply_stock_delta(products_cache, it.get("brand"), sign * -qty, reason, doc, user)
+            if qty > 0: await apply_stock_delta(products_cache, it.get("brand"), sign * -qty, reason, doc, user, skip_quantity=covered(it.get("brand")))
     else:
         qty = float(doc.get("billed_quantity") or 0)
-        if qty > 0: await apply_stock_delta(products_cache, doc.get("brand"), sign * -qty, reason, doc, user)
+        if qty > 0: await apply_stock_delta(products_cache, doc.get("brand"), sign * -qty, reason, doc, user, skip_quantity=covered(doc.get("brand")))
     mf_plan = doc.get("mf_plan")
     if mf_plan in ("swap", "reschedule"):
         mf_items = [it for it in (items or []) if float(it.get("mf_quantity") or 0) > 0]
@@ -251,8 +264,10 @@ async def apply_entry_stock_movements(doc, reason, sign, user):
         if sign == 1:
             if mf_plan == "swap":
                 # Defective (microfuro) bottle swapped on the truck right away: flag for supplier exchange.
+                # The replacement bottle itself comes from the pre-loaded truck stock when covered, so only
+                # the defective_quantity bucket moves (handled inside apply_stock_delta); depot quantity does not.
                 for brand, qty in mf_brand_qty:
-                    await apply_stock_delta(products_cache, brand, -qty, "mf_defeito", doc, user, extra={"resolved": False})
+                    await apply_stock_delta(products_cache, brand, -qty, "mf_defeito", doc, user, extra={"resolved": False}, skip_quantity=covered(brand))
             else:
                 # Reschedule: no stock impact yet, just track that a future swap/pickup is owed.
                 for brand, qty in mf_brand_qty:
@@ -273,7 +288,7 @@ async def apply_entry_stock_movements(doc, reason, sign, user):
                     if qty: await db.products.update_one({"id": m["product_id"]}, {"$inc": {"defective_quantity": -qty}})
             if mf_plan == "swap":
                 for brand, qty in mf_brand_qty:
-                    await apply_stock_delta(products_cache, brand, qty, reason, doc, user)
+                    await apply_stock_delta(products_cache, brand, qty, reason, doc, user, skip_quantity=covered(brand))
 
 @api.get("/stock-movements")
 async def stock_movements(user=Depends(admin_user)): return await db.stock_movements.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
@@ -467,6 +482,10 @@ async def update_daily_entry(item_id: str, data: ResourceInput, user=Depends(cur
     values = data.model_dump(exclude_unset=True)
 
     if "items" in values or "quantity" in values:
+        if target.get("viagem_id"):
+            viagem = await db.viagens.find_one({"id": target["viagem_id"]}, {"_id": 0})
+            if viagem and viagem.get("status") == "finalizada" and user.get("role") != "admin":
+                raise HTTPException(400, "Esta viagem já foi finalizada — peça ao admin para corrigir esse lançamento")
         # Revisão de uma entrega já lançada: recalcula totais, valida o pagamento
         # e ajusta o estoque pela diferença (desfaz o efeito antigo, aplica o novo).
         merged = {**target, **values}
@@ -500,6 +519,10 @@ async def delete_daily_entry(item_id: str, user=Depends(current_user)):
     target = await db.daily_entries.find_one({"id": item_id}, {"_id": 0})
     if not target: raise HTTPException(404, "Lançamento não encontrado")
     if user.get("role") != "admin" and target.get("created_by") != user["id"]: raise HTTPException(403, "Sem permissão")
+    if target.get("viagem_id"):
+        viagem = await db.viagens.find_one({"id": target["viagem_id"]}, {"_id": 0})
+        if viagem and viagem.get("status") == "finalizada" and user.get("role") != "admin":
+            raise HTTPException(400, "Esta viagem já foi finalizada — peça ao admin para corrigir esse lançamento")
     await apply_entry_stock_movements(target, "estorno", -1, user)
     await db.daily_entries.delete_one({"id": item_id})
     return {"message": "Excluído"}
@@ -529,9 +552,11 @@ async def create_viagem(data: ViagemInput, user=Depends(current_user)):
         raise HTTPException(409, f"Já existe uma viagem com o código {codigo}")
 
     numero = await db.viagens.count_documents({"driver": driver_name, "date": date_str}) + 1
+    carga_items = [{"brand": (it.get("brand") or "").strip(), "quantity": float(it.get("quantity") or 0)} for it in (data.carga_items or []) if (it.get("brand") or "").strip() and float(it.get("quantity") or 0) > 0]
+    carga_total = data.carga_total if data.carga_total is not None else (sum(it["quantity"] for it in carga_items) or None)
     doc = {
         "id": str(uuid.uuid4()), "codigo_viagem": codigo, "driver": driver_name, "numero": numero,
-        "turno": data.turno, "rota": data.rota, "date": date_str, "carga_total": data.carga_total,
+        "turno": data.turno, "rota": data.rota, "date": date_str, "carga_total": carga_total, "carga_items": carga_items, "carga_carregada": False,
         "notes": data.notes, "clientes": data.clientes or [], "status": "planejada",
         "created_at": now(), "created_by": user["id"], "updated_at": now(),
     }
@@ -565,6 +590,19 @@ async def add_viagem_cliente(item_id: str, data: dict, user=Depends(current_user
     await db.viagens.update_one({"id": item_id}, {"$push": {"clientes": cliente}}, upsert=False)
     return await db.viagens.find_one({"id": item_id}, {"_id": 0})
 
+@api.patch("/viagens/{item_id}/clientes/{cliente_id}")
+async def update_viagem_cliente(item_id: str, cliente_id: str, data: dict, user=Depends(current_user)):
+    v = await _own_viagem_or_404(item_id, user)
+    clientes = v.get("clientes") or []
+    for c in clientes:
+        if c.get("id") == cliente_id:
+            if "status" in data: c["status"] = data["status"]
+            break
+    else:
+        clientes.append({"id": cliente_id, "name": data.get("name") or cliente_id, "status": data.get("status")})
+    await db.viagens.update_one({"id": item_id}, {"$set": {"clientes": clientes}})
+    return await db.viagens.find_one({"id": item_id}, {"_id": 0})
+
 @api.post("/viagens/{item_id}/iniciar")
 async def iniciar_viagem(item_id: str, user=Depends(current_user)):
     v = await _own_viagem_or_404(item_id, user)
@@ -572,7 +610,15 @@ async def iniciar_viagem(item_id: str, user=Depends(current_user)):
     outra_em_execucao = await db.viagens.find_one({"driver": v["driver"], "status": "execucao", "id": {"$ne": item_id}}, {"_id": 0})
     if outra_em_execucao:
         raise HTTPException(400, f"Finalize a viagem {outra_em_execucao['codigo_viagem']} antes de iniciar outra")
-    await db.viagens.update_one({"id": item_id}, {"$set": {"status": "execucao", "updated_at": now()}})
+    values = {"status": "execucao", "updated_at": now()}
+    carga_items = v.get("carga_items") or []
+    if carga_items:
+        products_cache = await db.products.find({}, {"_id": 0}).to_list(1000)
+        ref = viagem_ref(v)
+        for item in carga_items:
+            await apply_stock_delta(products_cache, item["brand"], -item["quantity"], "carregamento", ref, user)
+        values["carga_carregada"] = True
+    await db.viagens.update_one({"id": item_id}, {"$set": values})
     return await db.viagens.find_one({"id": item_id}, {"_id": 0})
 
 @api.post("/viagens/{item_id}/finalizar")
@@ -588,6 +634,27 @@ async def finalizar_viagem(item_id: str, user=Depends(current_user)):
     values = {"status": "finalizada", "total_bruto": total_bruto, "quantidade_entregue": quantidade_entregue,
               "entregas": len(entregas), "problemas": problemas, "despesas_total": despesas_total,
               "saldo_liquido": total_bruto - despesas_total, "updated_at": now()}
+
+    if v.get("carga_carregada") and v.get("carga_items"):
+        used_by_brand = {}
+        for e in entregas:
+            items = e.get("items") or ([{"brand": e.get("brand"), "quantity": e.get("billed_quantity"), "mf_quantity": e.get("mf_quantity")}] if e.get("brand") else [])
+            for it in items:
+                key = (it.get("brand") or "").strip().lower()
+                if not key: continue
+                used_by_brand[key] = used_by_brand.get(key, 0) + float(it.get("quantity") or 0)
+                if e.get("mf_plan") == "swap": used_by_brand[key] += float(it.get("mf_quantity") or 0)
+        products_cache = await db.products.find({}, {"_id": 0}).to_list(1000)
+        ref = viagem_ref(v)
+        carga_devolvida_total = 0.0
+        for item in v["carga_items"]:
+            key = item["brand"].strip().lower()
+            sobra = item["quantity"] - used_by_brand.get(key, 0)
+            if sobra > 0.0001:
+                await apply_stock_delta(products_cache, item["brand"], sobra, "retorno_carga", ref, user)
+                carga_devolvida_total += sobra
+        values["carga_devolvida_total"] = carga_devolvida_total
+
     await db.viagens.update_one({"id": item_id}, {"$set": values})
     return await db.viagens.find_one({"id": item_id}, {"_id": 0})
 

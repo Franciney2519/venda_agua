@@ -105,6 +105,10 @@
 .mob-viagem-form label{display:grid;gap:6px;font-size:calc(12px * var(--scale));font-weight:700;color:var(--mob-muted)}
 .mob-viagem-form label:last-of-type,.mob-viagem-form .error,.mob-viagem-form .mob-cta{grid-column:1 / -1}
 .mob-viagem-form select,.mob-viagem-form input{padding:11px;border-radius:10px;border:1px solid var(--mob-line);background:var(--mob-surface);font-size:calc(14px * var(--scale));color:var(--mob-ink)}
+.mob-carga-add-row{display:grid;grid-template-columns:1fr 80px 44px;gap:8px}
+.mob-carga-add-row select,.mob-carga-add-row input{padding:11px;border-radius:10px;border:1px solid var(--mob-line);background:var(--mob-surface);font-size:calc(13px * var(--scale));color:var(--mob-ink)}
+.mob-carga-add-row .mob-outline-btn{width:44px;height:44px;padding:0;margin:0;display:grid;place-items:center}
+.mob-viagem-confirm{grid-column:1 / -1;background:var(--mob-green-soft);border:1.5px solid var(--mob-green-border);color:var(--mob-green);border-radius:10px;padding:10px 12px;font-size:calc(13px * var(--scale));font-weight:700}
 .mob-viagem-clients{display:grid;gap:8px}
 .mob-viagem-client-chips{display:flex;flex-wrap:wrap;gap:6px}
 .mob-viagem-client-chip{display:flex;align-items:center;gap:6px;background:var(--mob-blue-soft);color:var(--mob-blue);border-radius:20px;padding:5px 6px 5px 10px;font-size:calc(11.5px * var(--scale));font-weight:700}
