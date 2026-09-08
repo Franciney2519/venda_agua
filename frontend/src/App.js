@@ -1275,27 +1275,66 @@ function MobileTripBanner({ viagemAtiva, viagens, onOpen }) {
   </button>
 }
 
-function MobileViagemClientPicker({ customers, selected, onToggle }) {
+function MobileViagemClientPicker({ customers, selected, onAdd, onRemove }) {
   const [q, setQ] = useState('');
+  const [configuring, setConfiguring] = useState(null);
+  const [brand, setBrand] = useState('');
+  const [quantity, setQuantity] = useState('');
+  const [saleType, setSaleType] = useState('exchange');
+  const [notes, setNotes] = useState('');
   const inputRef = useRef(null);
   const query = q.trim().toLowerCase();
+  const selectedIds = new Set(selected.map(c => c.id));
   const filtered = customers
-    .filter(c => !query || c.name.toLowerCase().includes(query) || (c.code || '').toLowerCase().includes(query))
+    .filter(c => !selectedIds.has(c.id) && (!query || c.name.toLowerCase().includes(query) || (c.code || '').toLowerCase().includes(query)))
     .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
-  function pick(c) { inputRef.current?.blur(); onToggle(c); }
+
+  function startConfig(c) {
+    inputRef.current?.blur();
+    setConfiguring(c);
+    const brandOpts = brandListOf(c);
+    setBrand(brandOpts[0]?.brand || ''); setQuantity(''); setSaleType('exchange'); setNotes('');
+  }
+  function confirmAdd() {
+    onAdd({ id: configuring.id, name: configuring.name, brand: brand || undefined, quantity: quantity ? Number(quantity) : undefined, sale_type: saleType, notes: notes || undefined });
+    setConfiguring(null); setQ('');
+  }
+
+  if (configuring) {
+    const brandOpts = brandListOf(configuring);
+    return <div className="mob-viagem-clients">
+      <div className="mob-add-brand">
+        <p className="mob-eyebrow" style={{ margin: 0 }}>{configuring.name}</p>
+        <label>Produto{brandOpts.length > 0
+          ? <select value={brand} data-testid="mob-viagem-client-brand-select" onChange={e => setBrand(e.target.value)}>{brandOpts.map(b => <option key={b.brand} value={b.brand}>{b.brand} · {money(b.price)}</option>)}</select>
+          : <input placeholder="ex: Minalar 20L" value={brand} data-testid="mob-viagem-client-brand-input" onChange={e => setBrand(e.target.value)} />}
+        </label>
+        <label>Quantidade<input type="number" inputMode="numeric" min="0" value={quantity} data-testid="mob-viagem-client-qty" onChange={e => setQuantity(e.target.value)} /></label>
+        <div className="mob-sale-type">
+          <button type="button" className={saleType === 'exchange' ? 'active' : ''} data-testid="mob-viagem-client-exchange" onClick={() => setSaleType('exchange')}>Somente água</button>
+          <button type="button" className={saleType === 'full' ? 'active' : ''} data-testid="mob-viagem-client-full" onClick={() => setSaleType('full')}>Venda completa</button>
+        </div>
+        <label>Observações (opcional)<input value={notes} data-testid="mob-viagem-client-notes" onChange={e => setNotes(e.target.value)} /></label>
+        <div className="mob-row-actions">
+          <button type="button" className="mob-ghost-btn" onClick={() => setConfiguring(null)}>Cancelar</button>
+          <button type="button" className="primary" data-testid="mob-viagem-client-confirm" onClick={confirmAdd}>Adicionar cliente</button>
+        </div>
+      </div>
+    </div>;
+  }
+
   return <div className="mob-viagem-clients">
     <div className="mob-search"><Search size={15} /><input ref={inputRef} placeholder="Buscar cliente cadastrado" value={q} data-testid="mob-viagem-client-search" onChange={e => setQ(e.target.value)} /></div>
     {selected.length > 0 && <div className="mob-viagem-client-chips">
-      {selected.map(c => <span className="mob-viagem-client-chip" key={c.id} data-testid={`mob-viagem-client-chip-${c.id}`}>{c.name}<button aria-label="Remover cliente selecionado" type="button" onClick={() => pick(c)}><X size={12} /></button></span>)}
+      {selected.map(c => <span className="mob-viagem-client-chip" key={c.id} data-testid={`mob-viagem-client-chip-${c.id}`}>{c.name}{c.brand ? ` · ${c.brand}` : ''}{c.quantity ? ` · ${c.quantity}` : ''}<button aria-label="Remover cliente selecionado" type="button" onClick={() => onRemove(c.id)}><X size={12} /></button></span>)}
     </div>}
     <div className="mob-viagem-client-list">
       {filtered.slice(0, 30).map(c => {
-        const isSelected = selected.some(x => x.id === c.id);
         const brands = brandListOf(c);
-        return <button type="button" key={c.id} className={`mob-viagem-client-row${isSelected ? ' active' : ''}`} data-testid={`mob-viagem-client-${c.id}`} onMouseDown={e => e.preventDefault()} onClick={() => pick(c)}>
+        return <button type="button" key={c.id} className="mob-viagem-client-row" data-testid={`mob-viagem-client-${c.id}`} onMouseDown={e => e.preventDefault()} onClick={() => startConfig(c)}>
           <span className="mob-customer-avatar">{c.name?.[0] || '?'}</span>
           <span className="mob-customer-info"><b>{c.name}{c.code && <span className="mob-tag neutral" style={{ marginLeft: 6 }}>#{c.code}</span>}</b><small>{brands.length ? brands.map(b => b.brand).join(', ') : 'sem marca cadastrada'}</small></span>
-          {isSelected ? <Check size={18} color="var(--mob-blue)" /> : <Plus size={18} color="var(--mob-muted)" />}
+          <Plus size={18} color="var(--mob-muted)" />
         </button>
       })}
       {filtered.length === 0 && <p className="muted" style={{ padding: '10px 4px' }}>Nenhum cliente encontrado.</p>}
@@ -1483,7 +1522,8 @@ function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate
     onEntriesChanged?.();
   }
 
-  function toggleRotaCliente(c) { setRotaClientes(prev => prev.some(x => x.id === c.id) ? prev.filter(x => x.id !== c.id) : [...prev, { id: c.id, name: c.name }]); }
+  function addRotaCliente(c) { setRotaClientes(prev => prev.some(x => x.id === c.id) ? prev : [...prev, c]); }
+  function removeRotaCliente(id) { setRotaClientes(prev => prev.filter(x => x.id !== id)); }
 
   async function submitRota(v) {
     setRotaError(''); setSavingRota(true);
@@ -1602,7 +1642,7 @@ function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate
             </div>)}
             {addingRotaFor === v.id ? <div className="mob-add-brand" data-testid={`mob-viagem-rota-form-${v.id}`}>
               <p className="mob-eyebrow" style={{ margin: 0 }}>CLIENTES DA NOVA ROTA</p>
-              <MobileViagemClientPicker customers={customers} selected={rotaClientes} onToggle={toggleRotaCliente} />
+              <MobileViagemClientPicker customers={customers} selected={rotaClientes} onAdd={addRotaCliente} onRemove={removeRotaCliente} />
               {rotaError && <div className="error" data-testid="mob-viagem-rota-error">{rotaError}</div>}
               <div className="mob-row-actions">
                 <button type="button" className="mob-ghost-btn" onClick={() => { setAddingRotaFor(null); setRotaClientes([]); setRotaError(''); }}>Cancelar</button>
