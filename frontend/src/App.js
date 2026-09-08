@@ -2252,6 +2252,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
     setSheetCustomer(existing || { id: null, name: o.customer, address: o.address || '', brands: [] });
     setSheetOrder(o);
   }); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadExpenses(); }, [date, tab, user.name]);
   const expensesTotal = todaysExpenses.reduce((s, x) => s + Number(x.amount || 0), 0);
 
