@@ -815,10 +815,11 @@ function Receivables() {
 
 function BrandsCatalog() {
   const [brands, setBrands] = useState([]);
-  const [form, setForm] = useState({ code: '', name: '', cost_price: '' });
+  const [form, setForm] = useState({ name: '', cost_price: '' });
   const [error, setError] = useState('');
   const [editingCost, setEditingCost] = useState(null);
   const [costDraft, setCostDraft] = useState('');
+  const nextCode = String(Math.max(0, ...brands.map(b => parseInt(b.code, 10) || 0)) + 1).padStart(4, '0');
 
   async function load() { const { data } = await api.get('/brands', auth()); setBrands(data); }
   useEffect(() => { load(); }, []);
@@ -828,10 +829,10 @@ function BrandsCatalog() {
     e.preventDefault(); setError('');
     if (!form.name.trim()) return setError('Informe o nome da marca.');
     try {
-      const payload = { ...form, active: true };
+      const payload = { ...form, code: nextCode, active: true };
       if (payload.cost_price !== '') payload.cost_price = Number(payload.cost_price); else delete payload.cost_price;
       const { data } = await api.post('/brands', payload, auth());
-      setBrands([data, ...brands]); setForm({ code: '', name: '', cost_price: '' });
+      setBrands([data, ...brands]); setForm({ name: '', cost_price: '' });
     } catch (e) { setError(e.response?.data?.detail || 'Não foi possível salvar.'); }
   }
 
@@ -845,7 +846,7 @@ function BrandsCatalog() {
   return <><Head eyebrow="CADASTRO" title="Cadastro de Produto" subtitle="Catálogo de marcas com código e custo de compra, usado no cadastro de clientes, nos lançamentos e no cálculo de lucro por marca." />
     <section className="panel table-panel" style={{ marginBottom: 22 }}>
       <form className="daily-entry-form" style={{ gridTemplateColumns: '.6fr 1.2fr .8fr auto' }} onSubmit={submit}>
-        <label>Código<input placeholder="ex: 0001" value={form.code} data-testid="brand-code-input" onChange={e => setForm({ ...form, code: e.target.value })} /></label>
+        <label>Código<input readOnly value={nextCode} data-testid="brand-code-input" /></label>
         <label>Marca<input required placeholder="ex: Minalar" value={form.name} data-testid="brand-name-input" onChange={e => setForm({ ...form, name: e.target.value })} /></label>
         <label>Custo de compra (R$/un)<input type="number" step="0.01" placeholder="0,00" value={form.cost_price} data-testid="brand-cost-input" onChange={e => setForm({ ...form, cost_price: e.target.value })} /></label>
         <button className="primary" data-testid="brand-submit-button"><Plus size={15} /> Adicionar</button>
