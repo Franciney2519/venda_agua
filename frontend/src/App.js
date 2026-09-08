@@ -1534,9 +1534,8 @@ function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate
     finally { setStartingNow(false); }
   }
 
-  return <div className="mob-backdrop" onClick={onClose}>
-    <div className="mob-sheet mob-sheet-tall" onClick={e => e.stopPropagation()}>
-      <div className="mob-sheet-handle" />
+  return <div className="mob-backdrop mob-backdrop-full" onClick={onClose}>
+    <div className="mob-sheet mob-sheet-full" onClick={e => e.stopPropagation()}>
       <div className="mob-sheet-head">
         <div><h3>Viagens do dia</h3><p>{viagens.length}/{VIAGENS_POR_DIA} viagens · máx. {VIAGENS_POR_TURNO} por turno</p></div>
         <button aria-label="Fechar" type="button" className="mob-close" data-testid="mob-viagens-close" onClick={onClose}><X size={18} /></button>

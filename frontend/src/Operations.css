@@ -186,6 +186,10 @@
 .mob-backdrop{position:fixed;inset:0;background:#10253f7a;z-index:30;display:flex;align-items:flex-end}
 .mob-sheet{width:100%;max-height:88%;overflow-y:auto;background:var(--mob-surface);color:var(--mob-ink);border-radius:24px 24px 0 0;padding:8px 18px 22px;box-shadow:0 12px 28px #10253f3d}
 .mob-sheet-tall{max-height:94%}
+.mob-backdrop-full{align-items:stretch}
+.mob-sheet-full{width:100%;height:100vh;max-height:100vh;border-radius:0;padding:calc(env(safe-area-inset-top) + 14px) 18px 22px;display:flex;flex-direction:column}
+.mob-sheet-full .mob-viagem-tabs,.mob-sheet-full>label,.mob-sheet-full .mob-viagem-form{flex:none}
+.mob-sheet-full .mob-viagem-carousel,.mob-sheet-full .mob-viagem-form{overflow-y:auto;flex:1}
 .mob-sheet-handle{width:44px;height:5px;border-radius:3px;background:var(--mob-line);margin:6px auto 14px}
 .mob-sheet-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:14px}
 .mob-sheet-head h3{font:700 calc(20px * var(--scale)) 'Space Grotesk',sans-serif}
