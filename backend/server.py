@@ -82,16 +82,19 @@ class ResourceInput(BaseModel):
     sale_type: Optional[str] = None
     active: Optional[bool] = None
     viagem_id: Optional[str] = None
+    rota_id: Optional[str] = None
+    photo: Optional[str] = None
 
 class ViagemInput(BaseModel):
     turno: int  # 0 = manhã, 1 = tarde
-    rota: int
     date: Optional[str] = None
     carga_total: Optional[int] = None
     notes: Optional[str] = None
     driver: Optional[str] = None  # admin only: criar viagem para outro entregador
-    clientes: Optional[List[dict]] = None  # clientes do cadastro incluídos nesta rota
     carga_items: Optional[List[dict]] = None  # [{brand, quantity}] carregado no caminhão, por produto
+
+class RotaInput(BaseModel):
+    clientes: Optional[List[dict]] = None  # clientes do cadastro incluídos nesta rota
 
 MANAUS_TZ = timezone(timedelta(hours=-4))  # America/Manaus, no DST
 def now(): return datetime.now(timezone.utc).isoformat()
@@ -105,6 +108,15 @@ async def expenses_for_day(day_str, driver=None):
     query = {"created_at": {"$gte": local_day_start_utc(day_str), "$lte": local_day_end_utc(day_str)}}
     if driver: query["driver"] = driver
     return await db.expenses.find(query, {"_id": 0}).to_list(2000)
+
+async def day_closing_record(day_str, driver):
+    return await db.daily_closings.find_one({"date": day_str, "driver": driver, "status": "closed"}, {"_id": 0})
+
+async def ensure_day_open(day_str, driver, user):
+    if user.get("role") == "admin": return
+    if await day_closing_record(day_str, driver):
+        raise HTTPException(409, f"O dia {day_str} já foi fechado. Peça ao administrador para reabrir antes de alterar lançamentos.")
+
 def entry_total(e): return float(e.get("total") or 0)
 async def next_sequence(name):
     doc = await db.counters.find_one_and_update({"_id": name}, {"$inc": {"seq": 1}}, upsert=True, return_document=ReturnDocument.AFTER)
@@ -334,7 +346,6 @@ async def update_product(item_id: str, data: ResourceInput, user=Depends(admin_u
     return doc
 @api.get("/expenses")
 async def expenses(user=Depends(current_user)): return await list_resource("expenses")
-@api.post("/expenses")
 async def recompute_viagem_finance(viagem_id):
     v = await db.viagens.find_one({"id": viagem_id}, {"_id": 0})
     if not v or v.get("status") != "finalizada": return
@@ -343,15 +354,17 @@ async def recompute_viagem_finance(viagem_id):
     total_bruto = float(v.get("total_bruto") or 0)
     await db.viagens.update_one({"id": viagem_id}, {"$set": {"despesas_total": despesas_total, "saldo_liquido": total_bruto - despesas_total}})
 
+@api.post("/expenses")
 async def add_expense(data: ResourceInput, user=Depends(current_user)):
     if user.get("role") != "admin": data.driver = user["name"]
+    viagem = await db.viagens.find_one({"id": data.viagem_id}, {"_id": 0}) if data.viagem_id else None
+    expense_day = viagem.get("date") if viagem else today_local()
+    await ensure_day_open(expense_day, data.driver or user["name"], user)
     doc = await create_resource("expenses", data, user)
-    if doc.get("viagem_id"):
-        viagem = await db.viagens.find_one({"id": doc["viagem_id"]}, {"_id": 0})
-        if viagem:
-            await db.expenses.update_one({"id": doc["id"]}, {"$set": {"viagem_codigo": viagem.get("codigo_viagem")}})
-            doc["viagem_codigo"] = viagem.get("codigo_viagem")
-            await recompute_viagem_finance(doc["viagem_id"])
+    if doc.get("viagem_id") and viagem:
+        await db.expenses.update_one({"id": doc["id"]}, {"$set": {"viagem_codigo": viagem.get("codigo_viagem")}})
+        doc["viagem_codigo"] = viagem.get("codigo_viagem")
+        await recompute_viagem_finance(doc["viagem_id"])
     return doc
 @api.patch("/expenses/{item_id}")
 async def update_expense(item_id: str, data: ResourceInput, user=Depends(admin_user)):
@@ -428,7 +441,7 @@ async def promote_brand(item_id: str, data: ResourceInput, user=Depends(admin_us
     return await db.customers.find_one({"id": item_id}, {"_id": 0})
 
 @api.get("/daily-entries")
-async def daily_entries(date: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None, driver: Optional[str] = None, customer: Optional[str] = None, codigo_viagem: Optional[str] = None, entry_number: Optional[int] = None, user=Depends(current_user)):
+async def daily_entries(date: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None, driver: Optional[str] = None, customer: Optional[str] = None, codigo_viagem: Optional[str] = None, codigo_rota: Optional[str] = None, entry_number: Optional[int] = None, user=Depends(current_user)):
     query = {}
     if date: query["date"] = date
     elif start or end:
@@ -443,6 +456,7 @@ async def daily_entries(date: Optional[str] = None, start: Optional[str] = None,
     if codigo_viagem:
         viagem = await db.viagens.find_one({"codigo_viagem": codigo_viagem.strip()}, {"_id": 0})
         query["viagem_id"] = viagem["id"] if viagem else "__none__"
+    if codigo_rota: query["rota_codigo"] = codigo_rota.strip()
     return await db.daily_entries.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
 
 @api.post("/daily-entries")
@@ -450,6 +464,7 @@ async def add_daily_entry(data: ResourceInput, user=Depends(current_user)):
     doc = data.model_dump(exclude_none=True)
     doc["driver"] = user["name"] if user.get("role") != "admin" else (doc.get("driver") or user["name"])
     doc["date"] = doc.get("date") or today_local()
+    await ensure_day_open(doc["date"], doc["driver"], user)
     items = doc.get("items")
     if items:
         billed_qty = sum(float(it.get("quantity") or 0) for it in items)
@@ -480,7 +495,12 @@ async def add_daily_entry(data: ResourceInput, user=Depends(current_user)):
 
     if doc.get("viagem_id"):
         viagem = await db.viagens.find_one({"id": doc["viagem_id"]}, {"_id": 0})
-        if viagem: doc["viagem_codigo"] = viagem.get("codigo_viagem")
+        if viagem:
+            doc["viagem_codigo"] = viagem.get("codigo_viagem")
+            if doc.get("rota_id"):
+                rota = _find_rota(viagem, doc["rota_id"])
+                if not rota: raise HTTPException(400, "Rota não encontrada nesta viagem")
+                doc["rota_codigo"] = rota.get("codigo_rota")
 
     await apply_entry_stock_movements(doc, "venda", 1, user)
     await db.daily_entries.insert_one(doc); doc.pop("_id", None); return doc
@@ -490,6 +510,7 @@ async def update_daily_entry(item_id: str, data: ResourceInput, user=Depends(cur
     target = await db.daily_entries.find_one({"id": item_id}, {"_id": 0})
     if not target: raise HTTPException(404, "Lançamento não encontrado")
     if user.get("role") != "admin" and target.get("created_by") != user["id"]: raise HTTPException(403, "Sem permissão")
+    await ensure_day_open(target.get("date") or today_local(), target.get("driver") or user["name"], user)
     values = data.model_dump(exclude_unset=True)
 
     if "items" in values or "quantity" in values:
@@ -530,6 +551,7 @@ async def delete_daily_entry(item_id: str, user=Depends(current_user)):
     target = await db.daily_entries.find_one({"id": item_id}, {"_id": 0})
     if not target: raise HTTPException(404, "Lançamento não encontrado")
     if user.get("role") != "admin" and target.get("created_by") != user["id"]: raise HTTPException(403, "Sem permissão")
+    await ensure_day_open(target.get("date") or today_local(), target.get("driver") or user["name"], user)
     if target.get("viagem_id"):
         viagem = await db.viagens.find_one({"id": target["viagem_id"]}, {"_id": 0})
         if viagem and viagem.get("status") == "finalizada" and user.get("role") != "admin":
@@ -542,37 +564,37 @@ TURNO_LABELS = {0: "Manhã", 1: "Tarde"}
 VIAGENS_POR_TURNO = 6
 VIAGENS_POR_DIA = VIAGENS_POR_TURNO * len(TURNO_LABELS)
 
-def gerar_codigo_viagem(turno: int, date_str: str, rota: int) -> str:
+def gerar_codigo_viagem(turno: int, date_str: str, numero: int) -> str:
     d = datetime.fromisoformat(date_str)
-    return f"{turno}{d.day:02d}{d.month:02d}{d.year:04d}{str(rota).zfill(3)}"
+    return f"{turno}{d.day:02d}{d.month:02d}{d.year:04d}{str(numero).zfill(3)}"
 
 @api.post("/viagens")
 async def create_viagem(data: ViagemInput, user=Depends(current_user)):
     if data.turno not in TURNO_LABELS: raise HTTPException(400, "Turno inválido (use 0 para manhã ou 1 para tarde)")
-    if data.rota < 1: raise HTTPException(400, "Informe uma rota válida")
     driver_name = user["name"]
     if data.driver and user.get("role") == "admin": driver_name = data.driver
     date_str = data.date or today_local()
+    await ensure_day_open(date_str, driver_name, user)
 
     count_turno = await db.viagens.count_documents({"driver": driver_name, "date": date_str, "turno": data.turno})
     if count_turno >= VIAGENS_POR_TURNO:
-        raise HTTPException(400, f"Máximo de {VIAGENS_POR_TURNO} rotas no turno da {TURNO_LABELS[data.turno].lower()} ({date_str}) — já existem {count_turno}.")
+        raise HTTPException(400, f"Máximo de {VIAGENS_POR_TURNO} viagens no turno da {TURNO_LABELS[data.turno].lower()} ({date_str}) — já existem {count_turno}.")
 
-    codigo = gerar_codigo_viagem(data.turno, date_str, data.rota)
+    numero = await db.viagens.count_documents({"driver": driver_name, "date": date_str}) + 1
+    codigo = gerar_codigo_viagem(data.turno, date_str, numero)
     if await db.viagens.find_one({"codigo_viagem": codigo}):
         raise HTTPException(409, f"Já existe uma viagem com o código {codigo}")
 
-    numero = await db.viagens.count_documents({"driver": driver_name, "date": date_str}) + 1
     carga_items = [{"brand": (it.get("brand") or "").strip(), "quantity": float(it.get("quantity") or 0)} for it in (data.carga_items or []) if (it.get("brand") or "").strip() and float(it.get("quantity") or 0) > 0]
     carga_total = data.carga_total if data.carga_total is not None else (sum(it["quantity"] for it in carga_items) or None)
     doc = {
         "id": str(uuid.uuid4()), "codigo_viagem": codigo, "driver": driver_name, "numero": numero,
-        "turno": data.turno, "rota": data.rota, "date": date_str, "carga_total": carga_total, "carga_items": carga_items, "carga_carregada": False,
-        "notes": data.notes, "clientes": data.clientes or [], "status": "planejada",
+        "turno": data.turno, "date": date_str, "carga_total": carga_total, "carga_items": carga_items, "carga_carregada": False,
+        "notes": data.notes, "rotas": [], "status": "planejada",
         "created_at": now(), "created_by": user["id"], "updated_at": now(),
     }
     await db.viagens.insert_one(doc); doc.pop("_id", None)
-    await log_activity("viagem_criada", user, {"id": doc["id"], "name": codigo}, {"driver": driver_name, "turno": data.turno, "rota": data.rota})
+    await log_activity("viagem_criada", user, {"id": doc["id"], "name": codigo}, {"driver": driver_name, "turno": data.turno})
     return doc
 
 @api.get("/viagens")
@@ -590,33 +612,58 @@ async def _own_viagem_or_404(item_id, user):
     if user.get("role") != "admin" and v.get("driver") != user["name"]: raise HTTPException(403, "Sem permissão")
     return v
 
-@api.post("/viagens/{item_id}/clientes")
-async def add_viagem_cliente(item_id: str, data: dict, user=Depends(current_user)):
+def _find_rota(v, rota_id):
+    for r in (v.get("rotas") or []):
+        if r.get("id") == rota_id: return r
+    return None
+
+@api.post("/viagens/{item_id}/rotas")
+async def add_rota(item_id: str, data: RotaInput, user=Depends(current_user)):
     v = await _own_viagem_or_404(item_id, user)
+    await ensure_day_open(v.get("date") or today_local(), v.get("driver") or user["name"], user)
     if v["status"] == "finalizada": raise HTTPException(400, "Viagem já está finalizada")
-    if not data.get("id") or not data.get("name"): raise HTTPException(400, "Informe o cliente")
-    if any(c.get("id") == data["id"] for c in (v.get("clientes") or [])):
-        return v
-    cliente = {"id": data["id"], "name": data["name"], "brand": data.get("brand"), "quantity": data.get("quantity"), "sale_type": data.get("sale_type"), "notes": data.get("notes")}
-    await db.viagens.update_one({"id": item_id}, {"$push": {"clientes": cliente}}, upsert=False)
+    numero = len(v.get("rotas") or []) + 1
+    rota = {
+        "id": str(uuid.uuid4()), "numero": numero, "codigo_rota": f"{v['codigo_viagem']}-R{str(numero).zfill(2)}",
+        "clientes": data.clientes or [], "created_at": now(),
+    }
+    await db.viagens.update_one({"id": item_id}, {"$push": {"rotas": rota}, "$set": {"updated_at": now()}})
     return await db.viagens.find_one({"id": item_id}, {"_id": 0})
 
-@api.patch("/viagens/{item_id}/clientes/{cliente_id}")
-async def update_viagem_cliente(item_id: str, cliente_id: str, data: dict, user=Depends(current_user)):
+@api.post("/viagens/{item_id}/rotas/{rota_id}/clientes")
+async def add_rota_cliente(item_id: str, rota_id: str, data: dict, user=Depends(current_user)):
     v = await _own_viagem_or_404(item_id, user)
-    clientes = v.get("clientes") or []
+    await ensure_day_open(v.get("date") or today_local(), v.get("driver") or user["name"], user)
+    if v["status"] == "finalizada": raise HTTPException(400, "Viagem já está finalizada")
+    rota = _find_rota(v, rota_id)
+    if not rota: raise HTTPException(404, "Rota não encontrada")
+    if not data.get("id") or not data.get("name"): raise HTTPException(400, "Informe o cliente")
+    if any(c.get("id") == data["id"] for c in (rota.get("clientes") or [])):
+        return await db.viagens.find_one({"id": item_id}, {"_id": 0})
+    cliente = {"id": data["id"], "name": data["name"], "brand": data.get("brand"), "quantity": data.get("quantity"), "sale_type": data.get("sale_type"), "notes": data.get("notes")}
+    await db.viagens.update_one({"id": item_id, "rotas.id": rota_id}, {"$push": {"rotas.$.clientes": cliente}, "$set": {"updated_at": now()}})
+    return await db.viagens.find_one({"id": item_id}, {"_id": 0})
+
+@api.patch("/viagens/{item_id}/rotas/{rota_id}/clientes/{cliente_id}")
+async def update_rota_cliente(item_id: str, rota_id: str, cliente_id: str, data: dict, user=Depends(current_user)):
+    v = await _own_viagem_or_404(item_id, user)
+    await ensure_day_open(v.get("date") or today_local(), v.get("driver") or user["name"], user)
+    rota = _find_rota(v, rota_id)
+    if not rota: raise HTTPException(404, "Rota não encontrada")
+    clientes = rota.get("clientes") or []
     for c in clientes:
         if c.get("id") == cliente_id:
             if "status" in data: c["status"] = data["status"]
             break
     else:
         clientes.append({"id": cliente_id, "name": data.get("name") or cliente_id, "status": data.get("status")})
-    await db.viagens.update_one({"id": item_id}, {"$set": {"clientes": clientes}})
+    await db.viagens.update_one({"id": item_id, "rotas.id": rota_id}, {"$set": {"rotas.$.clientes": clientes, "updated_at": now()}})
     return await db.viagens.find_one({"id": item_id}, {"_id": 0})
 
 @api.post("/viagens/{item_id}/iniciar")
 async def iniciar_viagem(item_id: str, user=Depends(current_user)):
     v = await _own_viagem_or_404(item_id, user)
+    await ensure_day_open(v.get("date") or today_local(), v.get("driver") or user["name"], user)
     if v["status"] != "planejada": raise HTTPException(400, f"Viagem já está {v['status']}")
     outra_em_execucao = await db.viagens.find_one({"driver": v["driver"], "status": "execucao", "id": {"$ne": item_id}}, {"_id": 0})
     if outra_em_execucao:
@@ -854,11 +901,63 @@ async def notifications(user=Depends(current_user)):
     pe = await db.expenses.count_documents({"status": "pending"})
     return {"pending_users": pu, "pending_expenses": pe, "total": pu + pe}
 
+@api.get("/daily-closing/status")
+async def daily_closing_status(date: Optional[str] = None, driver: Optional[str] = None, user=Depends(current_user)):
+    day = date or today_local()
+    driver_name = driver if user.get("role") == "admin" and driver else user["name"]
+    record = await day_closing_record(day, driver_name)
+    return {"date": day, "driver": driver_name, "closed": bool(record), "record": record}
+
+@api.post("/daily-closing/close")
+async def close_daily_closing(data: ResourceInput, user=Depends(current_user)):
+    day = data.date or today_local()
+    if user.get("role") != "admin" and day != today_local():
+        raise HTTPException(400, "O entregador só pode fechar o dia de hoje")
+    driver_name = data.driver if user.get("role") == "admin" and data.driver else user["name"]
+    existing = await day_closing_record(day, driver_name)
+    if existing: return existing
+
+    open_trips = await db.viagens.find({"date": day, "driver": driver_name, "status": {"$ne": "finalizada"}}, {"_id": 0, "codigo_viagem": 1}).to_list(100)
+    if open_trips:
+        codes = ", ".join(v.get("codigo_viagem") or "sem código" for v in open_trips[:3])
+        raise HTTPException(409, f"Finalize ou exclua as viagens abertas antes de fechar o dia: {codes}")
+
+    entries = await db.daily_entries.find({"date": day, "driver": driver_name}, {"_id": 0}).to_list(2000)
+    expenses = await expenses_for_day(day, driver_name)
+    pix = sum(float(e.get("pix_value") or 0) for e in entries)
+    cash = sum(float(e.get("cash_value") or 0) for e in entries)
+    comp = sum(float(e.get("comp_value") or 0) for e in entries)
+    expenses_total = sum(float(e.get("amount") or 0) for e in expenses if e.get("status") != "rejected")
+    values = {
+        "date": day, "driver": driver_name, "status": "closed", "deliveries": len(entries),
+        "revenue": sum(entry_total(e) for e in entries), "pix": pix, "cash": cash, "comp": comp,
+        "expenses": expenses_total, "balance": pix + cash - expenses_total,
+        "closed_at": now(), "closed_by": user["id"], "closed_by_name": user["name"],
+    }
+    record = await db.daily_closings.find_one_and_update(
+        {"date": day, "driver": driver_name},
+        {"$set": values, "$setOnInsert": {"id": str(uuid.uuid4()), "created_at": now()}},
+        upsert=True, return_document=ReturnDocument.AFTER, projection={"_id": 0},
+    )
+    await log_activity("daily_closing_closed", user, {"id": record["id"], "name": driver_name}, {"date": day})
+    return record
+
+@api.post("/daily-closing/reopen")
+async def reopen_daily_closing(data: ResourceInput, user=Depends(admin_user)):
+    day = data.date or today_local()
+    if not data.driver: raise HTTPException(400, "Informe o entregador")
+    record = await day_closing_record(day, data.driver)
+    if not record: raise HTTPException(404, "Fechamento não encontrado")
+    await db.daily_closings.update_one({"id": record["id"]}, {"$set": {"status": "reopened", "reopened_at": now(), "reopened_by": user["id"], "reopened_by_name": user["name"]}})
+    await log_activity("daily_closing_reopened", user, {"id": record["id"], "name": data.driver}, {"date": day})
+    return {"message": "Dia reaberto", "date": day, "driver": data.driver}
+
 @api.get("/daily-closing")
 async def daily_closing(date: Optional[str] = None, user=Depends(admin_user)):
     day = date or today_local()
     entries = await db.daily_entries.find({"date": day}, {"_id": 0}).to_list(1000)
     expenses = await expenses_for_day(day)
+    closings = await db.daily_closings.find({"date": day, "status": "closed"}, {"_id": 0}).to_list(500)
     drivers = {}
     for e in entries:
         name = e.get("driver") or "Sem entregador"
@@ -874,6 +973,10 @@ async def daily_closing(date: Optional[str] = None, user=Depends(admin_user)):
         if st == "approved": row["expenses_approved"] += amt
         elif st == "rejected": row["expenses_rejected"] += amt
         else: row["expenses_pending"] += amt
+    for closing in closings:
+        name = closing.get("driver") or "Sem entregador"
+        row = drivers.setdefault(name, {"driver": name, "deliveries_total": 0, "deliveries_done": 0, "revenue": 0, "pix": 0.0, "cash": 0.0, "comp": 0.0, "expenses_approved": 0, "expenses_pending": 0, "expenses_rejected": 0, "balance": 0})
+        row["is_closed"] = True; row["closed_at"] = closing.get("closed_at")
     for row in drivers.values(): row["balance"] = row["revenue"] - row["expenses_approved"]
     rows = list(drivers.values())
     totals = {"revenue": sum(r["revenue"] for r in rows), "pix": sum(r["pix"] for r in rows), "cash": sum(r["cash"] for r in rows), "comp": sum(r["comp"] for r in rows), "expenses_approved": sum(r["expenses_approved"] for r in rows), "expenses_pending": sum(r["expenses_pending"] for r in rows), "deliveries_done": sum(r["deliveries_done"] for r in rows), "deliveries_total": sum(r["deliveries_total"] for r in rows), "balance": sum(r["balance"] for r in rows)}

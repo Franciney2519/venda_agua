@@ -131,6 +131,9 @@
 .mob-viagem-row b{display:block;font-size:calc(15px * var(--scale))}
 .mob-viagem-row small{display:block;color:var(--mob-muted);font-size:calc(12px * var(--scale));margin-top:3px}
 .mob-viagem-actions{display:flex;gap:8px;padding:0 14px 14px}
+.mob-viagem-rotas{display:grid;gap:8px;padding:0 14px 14px}
+.mob-viagem-rota-row{display:flex;justify-content:space-between;align-items:center;background:var(--mob-surface);border:1px solid var(--mob-line);border-radius:12px;padding:8px 12px;font-size:calc(13px * var(--scale))}
+.mob-viagem-rota-row small{color:var(--mob-muted)}
 .mob-viagem-action-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;height:64px;border-radius:14px;background:var(--mob-surface);border:1.5px solid var(--mob-line);color:var(--mob-ink);font:700 calc(12px * var(--scale)) 'DM Sans',sans-serif;text-align:center}
 .mob-viagem-action-btn.primary{background:var(--mob-blue-soft);border-color:var(--mob-blue-border);color:var(--mob-blue)}
 .mob-viagem-action-btn.active{background:var(--mob-blue);border-color:var(--mob-blue);color:#fff}
@@ -156,6 +159,7 @@
 .mob-outline-btn{width:100%;height:60px;border-radius:14px;background:var(--mob-surface);color:var(--mob-blue);border:1.5px solid var(--mob-line);font:700 calc(16px * var(--scale)) 'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:4px}
 .mob-outline-btn.wide{margin-top:14px}
 .mob-photo-btn{width:100%;height:64px;border-radius:14px;background:var(--mob-blue-soft);color:var(--mob-blue);border:1.5px dashed var(--mob-blue-border);font:700 calc(15px * var(--scale)) 'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;gap:10px}
+.mob-photo-thumb{width:32px;height:32px;border-radius:8px;object-fit:cover}
 .mob-danger-btn{width:100%;height:56px;border-radius:14px;background:var(--mob-red-soft);color:var(--mob-red);border:1.5px solid var(--mob-red-border);font:700 calc(14px * var(--scale)) 'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;gap:8px}
 .mob-danger-btn.full{margin-top:6px}
 .mob-ghost-btn{flex:1;height:52px;border-radius:12px;background:var(--mob-surface2);color:var(--mob-ink);font:700 calc(14px * var(--scale)) 'DM Sans',sans-serif}
@@ -200,6 +204,8 @@
 .mob-line-info small{display:block;color:var(--mob-muted);font-size:calc(12.5px * var(--scale));margin:2px 0 4px}
 .mob-line-subtotal{display:block;font:700 calc(15px * var(--scale)) 'Space Grotesk',sans-serif;color:var(--mob-blue)}
 .mob-counter{display:flex;align-items:center;gap:10px;flex:none}
+.mob-qty-plus5{width:auto!important;height:56px;padding:0 12px;border-radius:14px;border:1.5px solid var(--mob-blue-border,var(--mob-line));background:var(--mob-blue-soft);color:var(--mob-blue);font:700 calc(14px * var(--scale)) 'DM Sans',sans-serif}
+.mob-line-split .mob-qty-plus5{width:auto!important;height:44px;padding:0 8px;font-size:calc(12px * var(--scale))}
 .mob-counter button{width:56px;height:56px;border-radius:14px;display:grid;place-items:center;background:var(--mob-surface);border:1.5px solid var(--mob-line);color:var(--mob-blue)}
 .mob-counter button.fill{background:var(--mob-blue);color:#fff;border-color:var(--mob-blue)}
 .mob-counter span{font:700 calc(32px * var(--scale)) 'Space Grotesk',sans-serif;min-width:34px;text-align:center}
@@ -214,7 +220,7 @@
 .mob-line-split{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
 .mob-line-split-col{display:grid;gap:6px;justify-items:stretch}
 .mob-line-split-label{font-size:calc(11px * var(--scale));font-weight:700;color:var(--mob-muted);text-align:center}
-.mob-line-split .mob-counter{gap:6px;justify-content:center}
+.mob-line-split .mob-counter{gap:6px;justify-content:center;flex-wrap:wrap}
 .mob-line-split .mob-counter button{width:44px;height:44px;border-radius:12px}
 .mob-line-split .mob-counter input{min-width:0;max-width:56px;flex:1;font-size:calc(22px * var(--scale))}
 .mob-line-full-price{display:grid;gap:6px;background:var(--mob-blue-soft);border:1.5px solid var(--mob-blue-border);border-radius:14px;padding:12px;margin-bottom:10px;font-size:calc(12px * var(--scale));font-weight:700;color:var(--mob-blue)}
@@ -359,7 +365,7 @@
 .mob-account-row b{display:block;font-size:calc(15px * var(--scale))}
 .mob-account-row small{color:var(--mob-muted);font-size:calc(12px * var(--scale))}
 
-@media(min-width:701px){.mobile-app{display:none}}
+@media(min-width:1025px){.mobile-app{display:none}}
 
 /* ===================== Tema escuro do painel admin ===================== */
 .theme-toggle{width:36px;height:36px;border-radius:9px;background:#eef4fa;color:#5e748a;display:grid;place-items:center}

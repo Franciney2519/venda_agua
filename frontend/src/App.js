@@ -111,6 +111,26 @@ function useMediaQuery(query) {
   }, [query]);
   return matches;
 }
+
+function useAutoRefresh(refresh, intervalMs = 15000) {
+  const refreshRef = useRef(refresh);
+  useEffect(() => { refreshRef.current = refresh; }, [refresh]);
+  useEffect(() => {
+    const run = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      Promise.resolve(refreshRef.current?.()).catch(() => { /* keep the last valid data */ });
+    };
+    const onVisibility = () => { if (document.visibilityState === 'visible') run(); };
+    const id = setInterval(run, intervalMs);
+    window.addEventListener('focus', run);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener('focus', run);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [intervalMs]);
+}
 const nav = [['/', 'Visão geral', LayoutDashboard], ['/viagens', 'Viagens', Truck], ['/comprovantes', 'Comprovantes', FileText], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/marcas', 'Cadastro de Produto', Droplets], ['/marcas-extras', 'Marcas Extras', AlertTriangle], ['/usuarios', 'Cadastro de Usuário', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
 const driverNav = [['/', 'Visão geral', LayoutDashboard], ['/viagens', 'Viagens', Truck], ['/financeiro', 'Financeiro', WalletCards]];
 
@@ -223,7 +243,7 @@ function CustomerModal({ onClose, onSave, customer }) {
       <input placeholder="Produto (ex: Minalar 20L, Gás P13)" value={b.brand} data-testid={`modal-brand-input-${i}`} onChange={e => updateBrand(i, 'brand', e.target.value)} />
       <input type="number" step="0.01" placeholder="Preço c/ troca" value={b.price} data-testid={`modal-brand-price-${i}`} onChange={e => updateBrand(i, 'price', e.target.value)} />
       <input type="number" step="0.01" placeholder="Preço completo (opcional)" value={b.price_full} data-testid={`modal-brand-price-full-${i}`} onChange={e => updateBrand(i, 'price_full', e.target.value)} />
-      {brands.length > 1 && <button type="button" className="action-btn reject" onClick={() => removeBrand(i)}><Trash2 size={13} /></button>}
+      {brands.length > 1 && <button type="button" className="action-btn reject" aria-label="Remover marca" onClick={() => removeBrand(i)}><Trash2 size={13} /></button>}
     </div>)}
     <button type="button" className="ghost-btn" data-testid="modal-add-brand" onClick={addBrand}><Plus size={14} /> Adicionar outro produto</button>
     {error && <div className="error" data-testid="form-validation-error">{error}</div>}
@@ -231,10 +251,10 @@ function CustomerModal({ onClose, onSave, customer }) {
   </form></div>
 }
 
-function PerformanceChart() {
+function PerformanceChart({ refreshKey }) {
   const [monthly, setMonthly] = useState([]);
   const [hover, setHover] = useState(null);
-  useEffect(() => { api.get('/dashboard/monthly', auth()).then(x => setMonthly(x.data)).catch(() => setMonthly([])); }, []);
+  useEffect(() => { api.get('/dashboard/monthly', auth()).then(x => setMonthly(x.data)).catch(() => setMonthly([])); }, [refreshKey]);
   const maxVal = Math.max(1, ...monthly.map(m => Math.max(m.revenue, m.expenses)));
   return <div className="chart"><div className="bars">
     {monthly.map((m, i) => <div className="bar-group" key={m.month} data-testid={`chart-bar-${m.month}`} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} onFocus={() => setHover(i)} onBlur={() => setHover(null)} tabIndex={0}>
@@ -251,10 +271,10 @@ function PerformanceChart() {
   </div></div>
 }
 
-function Dashboard({ data, onRefresh, refreshing }) {
+function Dashboard({ data, onRefresh, refreshing, lastUpdated }) {
   const today = (data?.deliveries || []);
   return <><section className="section-head"><div><p className="eyebrow">PAINEL DE CONTROLE</p><h2>Visão geral</h2><p className="muted">Acompanhe a saúde da sua operação em um só lugar.</p></div>
-      <button type="button" className="ghost-btn" data-testid="dashboard-refresh-button" disabled={refreshing} onClick={onRefresh}><RefreshCw size={15} className={refreshing ? 'spin' : ''} /> {refreshing ? 'Atualizando...' : 'Atualizar dados'}</button>
+      <div className="dashboard-refresh"><small>{lastUpdated ? `Atualizado às ${lastUpdated.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : 'Aguardando atualização'}</small><button type="button" className="ghost-btn" data-testid="dashboard-refresh-button" disabled={refreshing} onClick={onRefresh}><RefreshCw size={15} className={refreshing ? 'spin' : ''} /> {refreshing ? 'Atualizando...' : 'Atualizar dados'}</button></div>
     </section>
     <div className="stats">
       <Stat label="Receita no mês" value={money(data?.revenue)} detail="Lançamentos do Controle Diário" Icon={CircleDollarSign} />
@@ -264,7 +284,7 @@ function Dashboard({ data, onRefresh, refreshing }) {
       <Stat label="Alertas de estoque" value={data?.products?.filter(x => x.quantity < x.minimum).length || 0} detail="Itens abaixo do mínimo" Icon={AlertTriangle} tone="red" />
     </div>
     <div className="dashboard-grid">
-      <section className="panel performance"><div className="panel-head"><div><h3>Desempenho financeiro</h3><p className="muted">Últimos 6 meses · passe o mouse para ver os detalhes</p></div><BarChart3 className="blue-text" /></div><PerformanceChart /></section>
+      <section className="panel performance"><div className="panel-head"><div><h3>Desempenho financeiro</h3><p className="muted">Últimos 6 meses · passe o mouse para ver os detalhes</p></div><BarChart3 className="blue-text" /></div><PerformanceChart refreshKey={lastUpdated} /></section>
       <section className="panel route-panel">
         <div className="panel-head"><div><h3>Últimos lançamentos</h3><p className="muted">Controle Diário de hoje</p></div><CalendarCheck size={20} className="blue-text" /></div>
         {today.length === 0 && <p className="muted" style={{ padding: '8px 0' }}>Nenhum lançamento ainda hoje.</p>}
@@ -434,6 +454,7 @@ function StockMovements() {
   const [movements, setMovements] = useState(null);
   function load() { api.get('/stock-movements', auth()).then(x => setMovements(x.data)).catch(() => setMovements([])); }
   useEffect(() => { load(); }, []);
+  useAutoRefresh(load);
   const reasonLabel = { venda: 'Venda', estorno: 'Estorno', ajuste: 'Ajuste', mf_defeito: 'Defeito (MF)', mf_reagendado: 'MF reagendado', sem_correspondencia: 'Sem produto correspondente' };
   const pendingExchange = (movements || []).filter(m => m.reason === 'mf_defeito' && !m.resolved);
   const pendingReschedule = (movements || []).filter(m => m.reason === 'mf_reagendado' && !m.resolved);
@@ -507,6 +528,7 @@ function Finance({ data, setData, create, user }) {
   const [summary, setSummary] = useState(null);
   async function loadSummary() { const { data: s } = await api.get('/finance/summary', auth()); setSummary(s); }
   useEffect(() => { loadSummary(); }, [data]);
+  useAutoRefresh(loadSummary);
   async function reviewExpense(e, status) {
     const { data: updated } = await api.patch(`/expenses/${e.id}`, { status }, auth());
     setData({ ...data, expenses_list: data.expenses_list.map(x => x.id === e.id ? updated : x) });
@@ -565,6 +587,7 @@ function UsersPage({ me }) {
   const [filter, setFilter] = useState('all');
   async function load() { const { data } = await api.get('/users', auth()); setItems(data); window.hydroRefreshNotifications?.(); }
   useEffect(() => { load(); }, []);
+  useAutoRefresh(load);
   const filtered = items.filter(x => filter === 'all' || (filter === 'pending' && x.status === 'pending') || (filter === 'active' && x.active !== false && x.status === 'approved') || (filter === 'inactive' && (x.active === false || x.status === 'rejected')));
   async function approve(u) { await api.post(`/users/${u.id}/approve`, {}, auth()); load(); }
   async function reject(u) { await api.post(`/users/${u.id}/reject`, {}, auth()); load(); }
@@ -587,9 +610,9 @@ function UsersPage({ me }) {
           <td><div className="row-actions">
             {st === 'pending' && <><button className="action-btn approve" data-testid={`approve-user-${u.id}`} onClick={() => approve(u)}><Check size={13} /> Aprovar</button><button className="action-btn reject" data-testid={`reject-user-${u.id}`} onClick={() => reject(u)}><XCircle size={13} /> Reprovar</button></>}
             {st !== 'pending' && u.id !== me.id && <button className="action-btn ghost" data-testid={`toggle-user-${u.id}`} onClick={() => toggleActive(u)}>{active ? 'Desativar' : 'Ativar'}</button>}
-            <button className="action-btn ghost" data-testid={`edit-user-${u.id}`} onClick={() => setModal({ mode: 'edit', user: u })}><Pencil size={13} /></button>
-            <button className="action-btn ghost" data-testid={`reset-user-${u.id}`} onClick={() => setModal({ mode: 'reset', user: u })}><KeyRound size={13} /></button>
-            {u.id !== me.id && <button className="action-btn reject" data-testid={`delete-user-${u.id}`} onClick={() => del(u)}><Trash2 size={13} /></button>}
+            <button className="action-btn ghost" aria-label="Editar usuário" data-testid={`edit-user-${u.id}`} onClick={() => setModal({ mode: 'edit', user: u })}><Pencil size={13} /></button>
+            <button className="action-btn ghost" aria-label="Redefinir senha" data-testid={`reset-user-${u.id}`} onClick={() => setModal({ mode: 'reset', user: u })}><KeyRound size={13} /></button>
+            {u.id !== me.id && <button className="action-btn reject" aria-label="Excluir usuário" data-testid={`delete-user-${u.id}`} onClick={() => del(u)}><Trash2 size={13} /></button>}
           </div></td>
         </tr>
       })}
@@ -630,9 +653,11 @@ function UserModal({ modal, onClose, onDone }) {
 
 function ActivityPage() {
   const [items, setItems] = useState([]);
-  useEffect(() => { api.get('/activity', auth()).then(x => setItems(x.data)).catch(() => setItems([])); }, []);
-  const labels = { signup: 'Cadastro recebido', user_created: 'Usuário criado', user_approved: 'Usuário aprovado', user_rejected: 'Usuário reprovado', user_updated: 'Usuário editado', user_deleted: 'Usuário excluído', password_reset: 'Senha redefinida', expense_approved: 'Despesa aprovada', expense_rejected: 'Despesa reprovada', expense_pending: 'Despesa reaberta' };
-  const tones = { user_approved: 'green', expense_approved: 'green', user_rejected: 'red', expense_rejected: 'red', user_deleted: 'red', user_created: 'blue', signup: 'blue', password_reset: 'orange', user_updated: 'gray', expense_pending: 'gray' };
+  async function load() { const { data } = await api.get('/activity', auth()); setItems(data); }
+  useEffect(() => { load().catch(() => setItems([])); }, []);
+  useAutoRefresh(load);
+  const labels = { signup: 'Cadastro recebido', user_created: 'Usuário criado', user_approved: 'Usuário aprovado', user_rejected: 'Usuário reprovado', user_updated: 'Usuário editado', user_deleted: 'Usuário excluído', password_reset: 'Senha redefinida', expense_approved: 'Despesa aprovada', expense_rejected: 'Despesa reprovada', expense_pending: 'Despesa reaberta', daily_closing_closed: 'Dia fechado', daily_closing_reopened: 'Dia reaberto' };
+  const tones = { user_approved: 'green', expense_approved: 'green', daily_closing_closed: 'green', user_rejected: 'red', expense_rejected: 'red', user_deleted: 'red', user_created: 'blue', signup: 'blue', password_reset: 'orange', daily_closing_reopened: 'orange', user_updated: 'gray', expense_pending: 'gray' };
   return <><Head eyebrow="AUDITORIA" title="Atividade" subtitle="Todas as ações do administrador em ordem cronológica." />
     <section className="panel activity-panel"><ul className="activity-list" data-testid="activity-list">
       {items.length === 0 && <li className="muted" style={{ padding: 20 }}>Nenhuma atividade registrada ainda.</li>}
@@ -647,12 +672,23 @@ function DailyClosing() {
   const [date, setDate] = useState(todayISO(0));
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [actionDriver, setActionDriver] = useState(null);
+  const [error, setError] = useState('');
   async function load() {
     setLoading(true);
     try { const { data: r } = await api.get('/daily-closing', { ...auth(), params: { date } }); setData(r); } finally { setLoading(false); }
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [date]);
+  useAutoRefresh(load);
+
+  async function reopen(driver) {
+    if (!window.confirm(`Reabrir o dia ${date} para ${driver}? O entregador poderá voltar a lançar e corrigir dados.`)) return;
+    setActionDriver(driver); setError('');
+    try { await api.post('/daily-closing/reopen', { date, driver }, auth()); await load(); }
+    catch (e) { setError(e.response?.data?.detail || 'Não foi possível reabrir o dia.'); }
+    finally { setActionDriver(null); }
+  }
 
   function exportPDF() {
     const doc = new jsPDF();
@@ -689,6 +725,7 @@ function DailyClosing() {
         <button className="primary" data-testid="closing-export-pdf" onClick={exportPDF}><FileText size={15} /> Exportar PDF</button>
       </div>
     </div>
+    {error && <div className="error" style={{ marginBottom: 16 }} data-testid="closing-error">{error}</div>}
     <div className="stats">
       <Stat label="Receita bruta" value={money(totals.revenue)} detail="Total das entregas, incluindo a prazo" Icon={CircleDollarSign} tone="green" />
       <Stat label="Despesas aprovadas" value={money(totals.expenses_approved)} detail="Só as já aprovadas pelo admin" Icon={Wallet} tone="orange" />
@@ -697,7 +734,7 @@ function DailyClosing() {
     </div>
     <section className="panel table-panel" data-testid="closing-panel">
       <div className="panel-head"><div><h3>Fechamento por entregador</h3><p className="muted">{rows.length ? `${rows.length} entregador(es) com movimentação no dia` : 'Nenhuma movimentação encontrada para essa data'}</p></div></div>
-      <div className="table-wrap"><table><thead><tr><th>ENTREGADOR</th><th>LANÇAMENTOS</th><th>RECEITA</th><th>DESP. APROVADAS</th><th>DESP. PENDENTES</th><th>SALDO</th></tr></thead><tbody>
+      <div className="table-wrap"><table><thead><tr><th>ENTREGADOR</th><th>LANÇAMENTOS</th><th>RECEITA</th><th>DESP. APROVADAS</th><th>DESP. PENDENTES</th><th>SALDO</th><th>STATUS</th><th /></tr></thead><tbody>
         {rows.map(d => <tr key={d.driver} data-testid={`closing-row-${d.driver}`}>
           <td><b>{d.driver}</b></td>
           <td><span className="tag blue">{d.deliveries_total}</span></td>
@@ -705,6 +742,8 @@ function DailyClosing() {
           <td className="green-text">{money(d.expenses_approved)}</td>
           <td className="orange-text">{money(d.expenses_pending)}</td>
           <td><b>{money(d.balance)}</b></td>
+          <td><span className={`tag ${d.is_closed ? 'green' : 'orange'}`}>{d.is_closed ? 'Fechado' : 'Em aberto'}</span></td>
+          <td>{d.is_closed && <button type="button" className="action-btn ghost" disabled={actionDriver === d.driver} data-testid={`closing-reopen-${d.driver}`} onClick={() => reopen(d.driver)}>{actionDriver === d.driver ? 'Reabrindo...' : 'Reabrir dia'}</button>}</td>
         </tr>)}
       </tbody></table></div>
     </section></>
@@ -739,6 +778,7 @@ function Receivables() {
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [filter, start, end]);
+  useAutoRefresh(load);
   async function markReceived(row) { await api.patch(`/daily-entries/${row.id}`, { received: !row.received }, auth()); load(); }
   const today = todayISO(0);
   return <><Head eyebrow="CONTAS A RECEBER" title="Provisão de Pagamento" subtitle="Vendas a prazo (COMP), organizadas pela data prevista de recebimento — entrega + 15/30 dias." />
@@ -782,6 +822,7 @@ function BrandsCatalog() {
 
   async function load() { const { data } = await api.get('/brands', auth()); setBrands(data); }
   useEffect(() => { load(); }, []);
+  useAutoRefresh(load);
 
   async function submit(e) {
     e.preventDefault(); setError('');
@@ -821,7 +862,7 @@ function BrandsCatalog() {
         <td><span className={`tag ${active ? 'green' : 'gray'}`}>{active ? 'Ativa' : 'Inativa'}</span></td>
         <td><div className="row-actions">
           <button className="action-btn ghost" data-testid={`brand-toggle-${b.id}`} onClick={() => toggleActive(b)}>{active ? 'Desativar' : 'Ativar'}</button>
-          <button className="action-btn reject" data-testid={`brand-delete-${b.id}`} onClick={() => remove(b)}><Trash2 size={13} /></button>
+          <button className="action-btn reject" aria-label="Excluir marca" data-testid={`brand-delete-${b.id}`} onClick={() => remove(b)}><Trash2 size={13} /></button>
         </div></td>
       </tr> })}
       {brands.length === 0 && <tr><td colSpan={5} className="muted" style={{ padding: 16 }}>Nenhuma marca cadastrada.</td></tr>}
@@ -834,6 +875,7 @@ function OutOfCatalogBrands() {
   const [error, setError] = useState('');
   async function load() { const { data } = await api.get('/customers/out-of-catalog-brands', auth()); setRows(data); }
   useEffect(() => { load(); }, []);
+  useAutoRefresh(load);
   async function promote(row) {
     if (!row.customer_id) return setError(`"${row.customer}" não é um cliente cadastrado — cadastre-o primeiro em Clientes.`);
     setBusy(`${row.customer}-${row.brand}`); setError('');
@@ -901,9 +943,7 @@ function Viagens({ customers, user }) {
   const [drivers, setDrivers] = useState([]);
   const [date, setDate] = useState(todayISO(0));
   const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({ driver: '', turno: 0, rota: 1, carga_total: '' });
-  const [clientesRota, setClientesRota] = useState([]);
-  const [clienteAtual, setClienteAtual] = useState({ customer: '', brand: '', quantity: '', sale_type: 'exchange', notes: '' });
+  const [form, setForm] = useState({ driver: '', turno: 0, carga_total: '' });
   const [error, setError] = useState('');
 
   async function load() {
@@ -913,32 +953,17 @@ function Viagens({ customers, user }) {
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [date]);
+  useAutoRefresh(load);
   useEffect(() => { if (isAdmin) api.get('/users', auth()).then(({ data }) => setDrivers(data.filter(u => u.role === 'driver' && u.active !== false))); }, [isAdmin]);
-
-  function pickClienteAtual(name) {
-    const c = customers.find(x => x.name === name);
-    const brandOpts = brandListOf(c);
-    setClienteAtual({ ...clienteAtual, customer: name, brand: brandOpts[0]?.brand || '' });
-  }
-  const brandOptionsAtual = brandListOf(customers.find(x => x.name === clienteAtual.customer));
-
-  function addClienteRota() {
-    const c = customers.find(x => x.name === clienteAtual.customer);
-    if (!c) return;
-    setClientesRota([...clientesRota, { id: c.id, name: c.name, brand: clienteAtual.brand || undefined, quantity: clienteAtual.quantity ? Number(clienteAtual.quantity) : undefined, sale_type: clienteAtual.sale_type, notes: clienteAtual.notes || undefined }]);
-    setClienteAtual({ customer: '', brand: '', quantity: '', sale_type: 'exchange', notes: '' });
-  }
-  function removeClienteRota(id) { setClientesRota(clientesRota.filter(c => c.id !== id)); }
 
   async function submit(e) {
     e.preventDefault(); setError('');
     if (isAdmin && !form.driver) return setError('Selecione o entregador.');
     try {
-      const payload = { turno: Number(form.turno), rota: Number(form.rota), carga_total: form.carga_total ? Number(form.carga_total) : undefined, clientes: clientesRota, date };
+      const payload = { turno: Number(form.turno), carga_total: form.carga_total ? Number(form.carga_total) : undefined, date };
       if (isAdmin) payload.driver = form.driver;
       await api.post('/viagens', payload, auth());
-      setForm({ driver: form.driver, turno: 0, rota: 1, carga_total: '' });
-      setClientesRota([]);
+      setForm({ driver: form.driver, turno: 0, carga_total: '' });
       await load();
     } catch (e) { setError(e.response?.data?.detail || 'Não foi possível criar a viagem.'); }
   }
@@ -953,36 +978,13 @@ function Viagens({ customers, user }) {
   const despesasTotal = finalizadas.reduce((s, v) => s + Number(v.despesas_total || 0), 0);
   const saldoLiquido = totalBruto - despesasTotal;
 
-  return <><Head eyebrow="LOGÍSTICA" title="Viagens" subtitle={isAdmin ? "Planeje a rota do entregador — turno, rota, carga e os clientes dessa viagem." : "Crie sua viagem do dia, inicie, lance as entregas e finalize."} />
+  return <><Head eyebrow="LOGÍSTICA" title="Viagens" subtitle={isAdmin ? "Planeje o carregamento do caminhão — turno e carga. As rotas e clientes de cada viagem são adicionadas pelo entregador no app." : "Crie a viagem do dia (turno e carga); adicione as rotas e clientes pelo app do celular."} />
     <section className="panel table-panel" style={{ marginBottom: 22 }}>
       <form className="os-form" onSubmit={submit}>
         {isAdmin && <label>Entregador<select required value={form.driver} data-testid="viagem-driver-select" onChange={e => setForm({ ...form, driver: e.target.value })}><option value="">Selecione</option>{drivers.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}</select></label>}
         <label>Turno<select value={form.turno} data-testid="viagem-turno-select" onChange={e => setForm({ ...form, turno: e.target.value })}><option value={0}>Manhã</option><option value={1}>Tarde</option></select></label>
-        <label>Rota<select value={form.rota} data-testid="viagem-rota-select" onChange={e => setForm({ ...form, rota: e.target.value })}>{ROTA_OPTIONS.map(n => <option key={n} value={n}>{String(n).padStart(3, '0')}</option>)}</select></label>
         <label className="os-field-narrow">Carga total<input type="number" value={form.carga_total} data-testid="viagem-carga-input" onChange={e => setForm({ ...form, carga_total: e.target.value })} /></label>
       </form>
-
-      <div className="os-form" style={{ paddingTop: 0 }}>
-        <label>Cliente da rota<CustomerCombobox customers={customers} value={clienteAtual.customer} onPick={pickClienteAtual} testId="viagem-cliente-input" /></label>
-        <label>Produto{brandOptionsAtual.length > 0
-          ? <select value={clienteAtual.brand} data-testid="viagem-cliente-brand-select" onChange={e => setClienteAtual({ ...clienteAtual, brand: e.target.value })}>{brandOptionsAtual.map(b => <option key={b.brand} value={b.brand}>{b.brand} · {money(b.price)}</option>)}</select>
-          : <input placeholder="ex: Minalar 20L" value={clienteAtual.brand} data-testid="viagem-cliente-brand-input" onChange={e => setClienteAtual({ ...clienteAtual, brand: e.target.value })} />}
-        </label>
-        <label className="os-field-narrow">Qtd<input type="number" value={clienteAtual.quantity} data-testid="viagem-cliente-qtd-input" onChange={e => setClienteAtual({ ...clienteAtual, quantity: e.target.value })} /></label>
-        <label>Tipo<select value={clienteAtual.sale_type} data-testid="viagem-cliente-saletype-select" onChange={e => setClienteAtual({ ...clienteAtual, sale_type: e.target.value })}>
-          <option value="exchange">Somente água</option>
-          <option value="full">Venda completa</option>
-        </select></label>
-        <label>Observações<input value={clienteAtual.notes} data-testid="viagem-cliente-notes-input" onChange={e => setClienteAtual({ ...clienteAtual, notes: e.target.value })} /></label>
-        <button type="button" className="ghost-btn" data-testid="viagem-add-cliente-button" disabled={!clienteAtual.customer} onClick={addClienteRota}><Plus size={14} /> Adicionar à rota</button>
-      </div>
-
-      {clientesRota.length > 0 && <div style={{ padding: '0 23px 16px' }}>
-        {clientesRota.map(c => <span className="tag blue" key={c.id} style={{ marginRight: 8, marginBottom: 6, display: 'inline-flex', alignItems: 'center', gap: 6 }} data-testid={`viagem-cliente-chip-${c.id}`}>
-          {c.name}{c.brand ? ` · ${c.brand}` : ''}{c.quantity ? ` · ${c.quantity}` : ''}
-          <button type="button" onClick={() => removeClienteRota(c.id)} style={{ background: 'none', padding: 0, display: 'flex' }}><X size={12} /></button>
-        </span>)}
-      </div>}
 
       <div style={{ padding: '0 23px 20px' }}>
         {error && <div className="error" data-testid="viagem-form-error" style={{ marginBottom: 12 }}>{error}</div>}
@@ -1002,14 +1004,16 @@ function Viagens({ customers, user }) {
       <Stat label="Finalizadas" value={finalizadas.length} detail="Rotas concluídas no dia" Icon={CalendarCheck} />
       <Stat label="Saldo líquido das rotas" value={money(saldoLiquido)} detail={`Receita ${money(totalBruto)} − despesas ${money(despesasTotal)}`} Icon={WalletCards} tone="orange" />
     </div>
-    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>ENTREGADOR</th><th>VIAGEM DO DIA</th><th>TURNO</th><th>ROTA</th><th>CLIENTES</th><th>CARGA</th><th>ENTREGAS</th><th>RECEITA</th><th>DESPESAS</th><th>SALDO</th><th>SITUAÇÃO</th><th /></tr></thead><tbody>
-      {viagens.map(v => <tr key={v.id} data-testid={`viagem-row-${v.id}`}>
+    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>ENTREGADOR</th><th>VIAGEM DO DIA</th><th>TURNO</th><th>ROTAS</th><th>CLIENTES</th><th>CARGA</th><th>ENTREGAS</th><th>RECEITA</th><th>DESPESAS</th><th>SALDO</th><th>SITUAÇÃO</th><th /></tr></thead><tbody>
+      {viagens.map(v => {
+        const totalClientes = (v.rotas || []).reduce((s, r) => s + (r.clientes?.length || 0), 0);
+        return <tr key={v.id} data-testid={`viagem-row-${v.id}`}>
         <td><b>{v.codigo_viagem}</b></td>
         <td>{v.driver}</td>
         <td>{v.numero}/{VIAGENS_POR_DIA}</td>
         <td>{TURNO_LABELS[v.turno]}</td>
-        <td>{String(v.rota).padStart(3, '0')}</td>
-        <td>{v.clientes?.length ? <span title={v.clientes.map(c => `${c.name}${c.brand ? ` (${c.brand}${c.quantity ? ` x${c.quantity}` : ''})` : ''}`).join(', ')}>{v.clientes.length}</span> : '—'}</td>
+        <td>{v.rotas?.length ?? '—'}</td>
+        <td>{totalClientes || '—'}</td>
         <td>{v.carga_total ?? '—'}</td>
         <td>{v.entregas ?? '—'}{v.problemas ? <small className="muted"> · {v.problemas} c/ MF</small> : ''}</td>
         <td>{v.total_bruto != null ? money(v.total_bruto) : '—'}</td>
@@ -1017,10 +1021,11 @@ function Viagens({ customers, user }) {
         <td>{v.saldo_liquido != null ? <b className={v.saldo_liquido >= 0 ? 'green-text' : 'orange-text'}>{money(v.saldo_liquido)}</b> : '—'}</td>
         <td><span className={`tag ${VIAGEM_STATUS_TAG[v.status]}`}>{VIAGEM_STATUS_LABEL[v.status]}</span></td>
         <td><div className="row-actions">
-          {v.status === 'planejada' && <><button className="action-btn ghost" data-testid={`viagem-iniciar-${v.id}`} onClick={() => iniciar(v)}><Check size={13} /> Iniciar</button><button className="action-btn reject" data-testid={`viagem-excluir-${v.id}`} onClick={() => remove(v)}><Trash2 size={13} /></button></>}
+          {v.status === 'planejada' && <><button className="action-btn ghost" data-testid={`viagem-iniciar-${v.id}`} onClick={() => iniciar(v)}><Check size={13} /> Iniciar</button><button className="action-btn reject" aria-label="Excluir viagem" data-testid={`viagem-excluir-${v.id}`} onClick={() => remove(v)}><Trash2 size={13} /></button></>}
           {v.status === 'execucao' && <button className="action-btn ghost" data-testid={`viagem-finalizar-${v.id}`} onClick={() => finalizar(v)}><Check size={13} /> Finalizar</button>}
         </div></td>
-      </tr>)}
+      </tr>;
+      })}
       {viagens.length === 0 && <tr><td colSpan={13} className="muted" style={{ padding: 16 }}>Nenhuma viagem registrada nessa data.</td></tr>}
     </tbody></table></div></section>
   </>
@@ -1071,6 +1076,7 @@ function Receipts({ customers }) {
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [start, end]);
+  useAutoRefresh(load);
 
   return <><Head eyebrow="AUDITORIA" title="Comprovantes de Entrega" subtitle="Busque um lançamento por cliente, período, viagem ou nº de sequência para conferir a assinatura." />
     <div className="report-toolbar">
@@ -1129,6 +1135,7 @@ function Reports() {
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [start, end]);
+  useAutoRefresh(load);
 
   function applyPreset(v) {
     setPreset(v);
@@ -1230,7 +1237,7 @@ function MobileStopRow({ c, done, failed, onClick }) {
   return <button type="button" className={`mob-customer-row${done ? ' done' : ''}`} data-testid={`mob-customer-row-${c.id}`} onClick={onClick}>
     <span className="mob-customer-avatar done-aware">{done ? '✓' : (c.name?.[0] || '?')}</span>
     <span className="mob-customer-info">
-      <b>{c.name}</b>
+      <b>{c.name}{c.payment_type === 'prazo' && <span className="mob-tag orange" style={{ marginLeft: 6 }}>a prazo</span>}</b>
       <small>{c.address}</small>
       {priceLine && <small>{priceLine}</small>}
     </span>
@@ -1251,16 +1258,16 @@ function MobilePickerRow({ c, onClick }) {
 const TURNO_LABELS = { 0: 'Manhã', 1: 'Tarde' };
 const VIAGENS_POR_TURNO = 6;
 const VIAGENS_POR_DIA = VIAGENS_POR_TURNO * 2;
-const ROTA_OPTIONS = Array.from({ length: VIAGENS_POR_TURNO }, (_, i) => i + 1);
 
 function MobileTripBanner({ viagemAtiva, viagens, onOpen }) {
   const carga = viagemAtiva?.carga_total;
   const atual = viagemAtiva?.quantidade_atual || 0;
   const pct = carga ? Math.min(100, Math.round((atual / carga) * 100)) : 0;
+  const numRotas = viagemAtiva?.rotas?.length || 0;
   return <button type="button" className={`mob-trip-banner${viagemAtiva ? '' : ' pending'}`} data-testid="mob-trip-banner" onClick={onOpen}>
     <Truck size={18} />
     {viagemAtiva
-      ? <div><b>Viagem em execução · {TURNO_LABELS[viagemAtiva.turno]} · rota {String(viagemAtiva.rota).padStart(3, '0')}</b><small>{viagemAtiva.codigo_viagem}{carga ? ` · ${atual}/${carga} un carregadas` : ''}</small>
+      ? <div><b>Viagem em execução · {TURNO_LABELS[viagemAtiva.turno]} · {numRotas} rota{numRotas !== 1 ? 's' : ''}</b><small>{viagemAtiva.codigo_viagem}{carga ? ` · ${atual}/${carga} un carregadas` : ''}</small>
           {carga && <div className="mob-trip-progress"><div style={{ width: `${pct}%` }} className={atual > carga ? 'over' : ''} /></div>}
         </div>
       : <div><b>Nenhuma viagem em execução</b><small>{viagens?.length ? 'Toque para iniciar uma viagem e liberar os lançamentos' : 'Toque para criar a viagem do dia antes de lançar'}</small></div>}
@@ -1279,7 +1286,7 @@ function MobileViagemClientPicker({ customers, selected, onToggle }) {
   return <div className="mob-viagem-clients">
     <div className="mob-search"><Search size={15} /><input ref={inputRef} placeholder="Buscar cliente cadastrado" value={q} data-testid="mob-viagem-client-search" onChange={e => setQ(e.target.value)} /></div>
     {selected.length > 0 && <div className="mob-viagem-client-chips">
-      {selected.map(c => <span className="mob-viagem-client-chip" key={c.id} data-testid={`mob-viagem-client-chip-${c.id}`}>{c.name}<button type="button" onClick={() => pick(c)}><X size={12} /></button></span>)}
+      {selected.map(c => <span className="mob-viagem-client-chip" key={c.id} data-testid={`mob-viagem-client-chip-${c.id}`}>{c.name}<button aria-label="Remover cliente selecionado" type="button" onClick={() => pick(c)}><X size={12} /></button></span>)}
     </div>}
     <div className="mob-viagem-client-list">
       {filtered.slice(0, 30).map(c => {
@@ -1350,24 +1357,24 @@ function MobileEditEntregaModal({ entry, onClose, onSaved }) {
       <div className="mob-sheet-handle" />
       <div className="mob-sheet-head">
         <div><h3>Revisar entrega</h3><p>{entry.customer}{entry.entry_number ? ` · Nº ${entry.entry_number}` : ''}</p></div>
-        <button type="button" className="mob-close" data-testid="mob-edit-entrega-close" onClick={onClose}><X size={18} /></button>
+        <button aria-label="Fechar" type="button" className="mob-close" data-testid="mob-edit-entrega-close" onClick={onClose}><X size={18} /></button>
       </div>
 
       {lines.map((l, i) => <div className="mob-line active" key={i} data-testid={`mob-edit-line-${i}`}>
         <div className="mob-line-top">
           <div className="mob-line-info"><b>{l.brand}{l.sale_type === 'full' && <span className="mob-tag" style={{ marginLeft: 6 }}>venda completa</span>}</b><small>R$ {Number(l.price).toFixed(2)} por galão</small><span className="mob-line-subtotal">{money(l.quantity * l.price)}</span></div>
           <div className="mob-counter">
-            <button type="button" data-testid={`mob-edit-qty-minus-${i}`} onClick={() => decQty(i)}><Minus size={18} /></button>
+            <button aria-label="Diminuir quantidade" type="button" data-testid={`mob-edit-qty-minus-${i}`} onClick={() => decQty(i)}><Minus size={18} /></button>
             <input type="number" inputMode="numeric" min="0" value={l.quantity} data-testid={`mob-edit-qty-input-${i}`} onChange={e => setQty(i, e.target.value)} onFocus={e => e.target.select()} />
-            <button type="button" className="fill" data-testid={`mob-edit-qty-plus-${i}`} onClick={() => incQty(i)}><Plus size={20} /></button>
+            <button aria-label="Aumentar quantidade" type="button" className="fill" data-testid={`mob-edit-qty-plus-${i}`} onClick={() => incQty(i)}><Plus size={20} /></button>
           </div>
         </div>
         <div className="mob-line-mf">
           <span>MF · microfuro</span>
           <div className="mob-counter small">
-            <button type="button" data-testid={`mob-edit-mf-minus-${i}`} onClick={() => decMf(i)}><Minus size={14} /></button>
+            <button aria-label="Diminuir motivo/falta" type="button" data-testid={`mob-edit-mf-minus-${i}`} onClick={() => decMf(i)}><Minus size={14} /></button>
             <span>{l.mf_quantity}</span>
-            <button type="button" className="mf" data-testid={`mob-edit-mf-plus-${i}`} onClick={() => incMf(i)}><Plus size={16} /></button>
+            <button aria-label="Aumentar motivo/falta" type="button" className="mf" data-testid={`mob-edit-mf-plus-${i}`} onClick={() => incMf(i)}><Plus size={16} /></button>
           </div>
         </div>
       </div>)}
@@ -1403,15 +1410,17 @@ function MobileEditEntregaModal({ entry, onClose, onSaved }) {
   </div>
 }
 
-function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate, onIniciar, onFinalizar, onDelete, onEntriesChanged, onAddEntrega }) {
+function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate, onIniciar, onFinalizar, onDelete, onAddRota, onEntriesChanged, onAddEntrega, dayClosed }) {
   const [turno, setTurno] = useState(0);
-  const [rota, setRota] = useState(1);
   const [cargaTotal, setCargaTotal] = useState('');
   const [cargaItems, setCargaItems] = useState([]);
   const [brandsCatalog, setBrandsCatalog] = useState([]);
   const [newCargaBrand, setNewCargaBrand] = useState('');
   const [newCargaQty, setNewCargaQty] = useState('');
-  const [selectedClientes, setSelectedClientes] = useState([]);
+  const [addingRotaFor, setAddingRotaFor] = useState(null);
+  const [rotaClientes, setRotaClientes] = useState([]);
+  const [rotaError, setRotaError] = useState('');
+  const [savingRota, setSavingRota] = useState(false);
   const [error, setError] = useState('');
   const [confirmMsg, setConfirmMsg] = useState('');
   const [viagensDate, setViagensDate] = useState(todayISO(0));
@@ -1442,7 +1451,7 @@ function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate
   const [loadingEntries, setLoadingEntries] = useState(false);
   const [entriesError, setEntriesError] = useState('');
   const [editingEntry, setEditingEntry] = useState(null);
-  const [viewTab, setViewTab] = useState(viagens.some(v => v.status === 'execucao') ? 'ver' : 'criar');
+  const [viewTab, setViewTab] = useState(dayClosed || viagens.some(v => v.status === 'execucao') ? 'ver' : 'criar');
   const statusLabel = { planejada: 'Planejada', execucao: 'Em execução', finalizada: 'Finalizada' };
   const statusTag = { planejada: 'orange', execucao: 'blue', finalizada: 'green' };
 
@@ -1474,7 +1483,17 @@ function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate
     onEntriesChanged?.();
   }
 
-  function toggleCliente(c) { setSelectedClientes(prev => prev.some(x => x.id === c.id) ? prev.filter(x => x.id !== c.id) : [...prev, { id: c.id, name: c.name }]); }
+  function toggleRotaCliente(c) { setRotaClientes(prev => prev.some(x => x.id === c.id) ? prev.filter(x => x.id !== c.id) : [...prev, { id: c.id, name: c.name }]); }
+
+  async function submitRota(v) {
+    setRotaError(''); setSavingRota(true);
+    try {
+      await onAddRota(v.id, { clientes: rotaClientes });
+      setAddingRotaFor(null); setRotaClientes([]);
+      await loadForDate();
+    } catch (e) { setRotaError(e.response?.data?.detail || 'Não foi possível salvar a rota.'); }
+    finally { setSavingRota(false); }
+  }
 
   async function handleIniciar(v) { setError(''); try { await onIniciar(v); await loadForDate(); } catch (e) { setError(e.response?.data?.detail || e.message || 'Não foi possível iniciar a viagem.'); } }
   async function handleExcluir(v) { setError(''); try { await onDelete(v); await loadForDate(); } catch (e) { setError(e.response?.data?.detail || e.message || 'Não foi possível excluir a viagem.'); } }
@@ -1492,37 +1511,48 @@ function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate
     try { await onFinalizar(v); await loadForDate(); } catch (e) { setError(e.response?.data?.detail || e.message || 'Não foi possível finalizar a viagem.'); }
   }
 
-  async function submit() {
+  const [startingNow, setStartingNow] = useState(false);
+  async function submit(startNow) {
     setError('');
+    if (startNow) setStartingNow(true);
     try {
-      await onCreate({ turno, rota, carga_total: cargaItems.length ? undefined : (cargaTotal ? Number(cargaTotal) : undefined), carga_items: cargaItems.length ? cargaItems : undefined, clientes: selectedClientes });
-      setCargaTotal(''); setCargaItems([]); setSelectedClientes([]);
-      setError(''); setConfirmMsg('Viagem criada! Toque em "Iniciar" quando for sair com o caminhão carregado.');
+      const created = await onCreate({ turno, carga_total: cargaItems.length ? undefined : (cargaTotal ? Number(cargaTotal) : undefined), carga_items: cargaItems.length ? cargaItems : undefined });
+      setCargaTotal(''); setCargaItems([]);
+      if (startNow && created?.id) {
+        try {
+          await onIniciar(created); await loadForDate();
+          setConfirmMsg('Viagem criada e iniciada — pode sair com o caminhão!');
+        } catch (e) {
+          setConfirmMsg('Viagem criada, mas não foi possível iniciar automaticamente: ' + (e.response?.data?.detail || e.message || 'tente pelo botão "Iniciar".'));
+        }
+      } else {
+        setConfirmMsg('Viagem criada! Toque em "Iniciar" quando for sair com o caminhão carregado.');
+      }
+      setError('');
       setViewTab('ver');
     } catch (e) { setError(e.response?.data?.detail || 'Não foi possível criar a viagem.'); }
+    finally { setStartingNow(false); }
   }
 
   return <div className="mob-backdrop" onClick={onClose}>
     <div className="mob-sheet mob-sheet-tall" onClick={e => e.stopPropagation()}>
       <div className="mob-sheet-handle" />
       <div className="mob-sheet-head">
-        <div><h3>Viagens do dia</h3><p>{viagens.length}/{VIAGENS_POR_DIA} rotas · máx. {VIAGENS_POR_TURNO} por turno</p></div>
-        <button type="button" className="mob-close" data-testid="mob-viagens-close" onClick={onClose}><X size={18} /></button>
+        <div><h3>Viagens do dia</h3><p>{viagens.length}/{VIAGENS_POR_DIA} viagens · máx. {VIAGENS_POR_TURNO} por turno</p></div>
+        <button aria-label="Fechar" type="button" className="mob-close" data-testid="mob-viagens-close" onClick={onClose}><X size={18} /></button>
       </div>
 
       <div className="mob-viagem-tabs">
-        <button type="button" className={viewTab === 'criar' ? 'active' : ''} data-testid="mob-viagem-tab-criar" onClick={() => setViewTab('criar')}>Criar viagem</button>
+        {!dayClosed && <button type="button" className={viewTab === 'criar' ? 'active' : ''} data-testid="mob-viagem-tab-criar" onClick={() => setViewTab('criar')}>Criar viagem</button>}
         <button type="button" className={viewTab === 'ver' ? 'active' : ''} data-testid="mob-viagem-tab-ver" onClick={() => setViewTab('ver')}>Minhas viagens{viagens.length > 0 ? ` (${viagens.length})` : ''}</button>
       </div>
+      {dayClosed && <div className="mob-viagem-confirm" style={{ margin: '0 20px 14px' }} data-testid="mob-day-closed-banner">Dia fechado — as viagens ficam disponíveis somente para consulta.</div>}
       {error && <div className="error" data-testid="mob-viagem-action-error" style={{ margin: '0 20px 14px' }}>{error}</div>}
 
-      {viewTab === 'criar' && <div className="mob-viagem-form">
+      {!dayClosed && viewTab === 'criar' && <div className="mob-viagem-form">
         <label>Turno<select value={turno} data-testid="mob-viagem-turno" onChange={e => setTurno(Number(e.target.value))}>
           <option value={0}>Manhã</option>
           <option value={1}>Tarde</option>
-        </select></label>
-        <label>Rota<select value={rota} data-testid="mob-viagem-rota" onChange={e => setRota(Number(e.target.value))}>
-          {ROTA_OPTIONS.map(n => <option key={n} value={n}>{String(n).padStart(3, '0')}</option>)}
         </select></label>
         {cargaItems.length === 0 && <label>Carga total (opcional)<input type="number" inputMode="numeric" value={cargaTotal} data-testid="mob-viagem-carga" onChange={e => setCargaTotal(e.target.value)} /></label>}
         <label style={{ gridColumn: '1 / -1' }}>Carga por produto (opcional){cargaItems.length > 0 ? ` · total ${cargaItemsTotal} un` : ''}
@@ -1536,14 +1566,13 @@ function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate
             <button type="button" className="mob-outline-btn" data-testid="mob-viagem-carga-add" onClick={addCargaItem}><Plus size={16} /></button>
           </div>
           {cargaItems.length > 0 && <div className="mob-viagem-client-chips">
-            {cargaItems.map(i => <span className="mob-viagem-client-chip" key={i.brand} data-testid={`mob-viagem-carga-chip-${i.brand}`}>{i.brand} · {i.quantity}<button type="button" onClick={() => removeCargaItem(i.brand)}><X size={12} /></button></span>)}
+            {cargaItems.map(i => <span className="mob-viagem-client-chip" key={i.brand} data-testid={`mob-viagem-carga-chip-${i.brand}`}>{i.brand} · {i.quantity}<button aria-label="Remover item da carga" type="button" onClick={() => removeCargaItem(i.brand)}><X size={12} /></button></span>)}
           </div>}
         </label>
-        <label>Clientes desta rota (opcional){selectedClientes.length > 0 ? ` · ${selectedClientes.length} selecionado(s)` : ''}
-          <MobileViagemClientPicker customers={customers} selected={selectedClientes} onToggle={toggleCliente} />
-        </label>
+        <p className="mob-help">Depois de criar, adicione uma ou mais rotas (com os clientes de cada uma) dentro da viagem — pode fazer isso a qualquer momento, inclusive já em execução.</p>
         {confirmMsg && <div className="mob-viagem-confirm" data-testid="mob-viagem-confirm">{confirmMsg}</div>}
-        <button type="button" className="mob-cta" data-testid="mob-viagem-create" onClick={submit}><Plus size={18} /> Criar viagem</button>
+        <button type="button" className="mob-cta green" disabled={startingNow} data-testid="mob-viagem-create-start" onClick={() => submit(true)}><Truck size={18} /> {startingNow ? 'Criando e iniciando...' : 'Criar e iniciar agora'}</button>
+        <button type="button" className="mob-outline-btn wide" disabled={startingNow} data-testid="mob-viagem-create" onClick={() => submit(false)}><Plus size={18} /> Só criar (iniciar depois)</button>
       </div>}
 
       {viewTab === 'ver' && <>
@@ -1554,9 +1583,12 @@ function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate
       {viagens.length > 1 && <p className="mob-help" style={{ padding: '0 14px' }}>← Arraste para o lado para ver as outras rotas</p>}
       <div className="mob-viagem-carousel">
         {viagens.length === 0 && <p className="muted" style={{ padding: 16 }}>Nenhuma viagem criada nesse dia.</p>}
-        {viagens.map(v => <div className="mob-viagem-card" key={v.id}>
+        {viagens.map(v => {
+          const numRotas = v.rotas?.length || 0;
+          const totalClientesRotas = (v.rotas || []).reduce((s, r) => s + (r.clientes?.length || 0), 0);
+          return <div className="mob-viagem-card" key={v.id}>
           <div className="mob-viagem-row" data-testid={`mob-viagem-${v.id}`}>
-            <div><b>{TURNO_LABELS[v.turno]} · rota {String(v.rota).padStart(3, '0')}</b><small>{v.codigo_viagem}{v.carga_total ? ` · ${v.status === 'execucao' ? `${v.quantidade_atual || 0}/` : ''}${v.carga_total} un` : ''}{v.clientes?.length ? ` · ${v.clientes.length} clientes` : ''}</small></div>
+            <div><b>{TURNO_LABELS[v.turno]} · {numRotas} rota{numRotas !== 1 ? 's' : ''}</b><small>{v.codigo_viagem}{v.carga_total ? ` · ${v.status === 'execucao' ? `${v.quantidade_atual || 0}/` : ''}${v.carga_total} un` : ''}{totalClientesRotas ? ` · ${totalClientesRotas} clientes` : ''}</small></div>
             <span className={`tag ${statusTag[v.status]}`}>{statusLabel[v.status]}</span>
             {v.status === 'planejada' && <div className="mob-row-actions">
               <button type="button" className="mob-outline-btn" data-testid={`mob-viagem-iniciar-${v.id}`} onClick={() => handleIniciar(v)}>Iniciar</button>
@@ -1564,6 +1596,21 @@ function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate
             </div>}
             {v.status === 'finalizada' && <small className="muted">Saldo {money(v.saldo_liquido ?? v.total_bruto)} · {v.entregas || 0} entregas{v.problemas ? ` · ${v.problemas} c/ MF` : ''}{v.carga_total ? (v.quantidade_entregue === v.carga_total ? ' · carga bateu ✓' : ` · carga ${v.carga_total} ≠ entregue ${v.quantidade_entregue ?? 0}`) : ''}{v.carga_carregada && v.carga_devolvida_total != null ? ` · ${v.carga_devolvida_total} un devolvida(s) ao estoque` : ''}</small>}
           </div>
+          {v.status !== 'finalizada' && <div className="mob-viagem-rotas">
+            {(v.rotas || []).map(r => <div className="mob-viagem-rota-row" key={r.id} data-testid={`mob-viagem-rota-${r.id}`}>
+              <span>Rota {String(r.numero).padStart(2, '0')}</span>
+              <small>{r.clientes?.length || 0} cliente{r.clientes?.length !== 1 ? 's' : ''}</small>
+            </div>)}
+            {addingRotaFor === v.id ? <div className="mob-add-brand" data-testid={`mob-viagem-rota-form-${v.id}`}>
+              <p className="mob-eyebrow" style={{ margin: 0 }}>CLIENTES DA NOVA ROTA</p>
+              <MobileViagemClientPicker customers={customers} selected={rotaClientes} onToggle={toggleRotaCliente} />
+              {rotaError && <div className="error" data-testid="mob-viagem-rota-error">{rotaError}</div>}
+              <div className="mob-row-actions">
+                <button type="button" className="mob-ghost-btn" onClick={() => { setAddingRotaFor(null); setRotaClientes([]); setRotaError(''); }}>Cancelar</button>
+                <button type="button" className="primary" disabled={rotaClientes.length === 0 || savingRota} data-testid={`mob-viagem-rota-save-${v.id}`} onClick={() => submitRota(v)}>{savingRota ? 'Salvando...' : 'Salvar rota'}</button>
+              </div>
+            </div> : <button type="button" className="mob-dashed-btn" data-testid={`mob-viagem-rota-add-${v.id}`} onClick={() => { setAddingRotaFor(v.id); setRotaClientes([]); setRotaError(''); }}><Plus size={16} /> Nova rota</button>}
+          </div>}
           {v.status === 'execucao' && <div className="mob-viagem-actions">
             {isToday && <button type="button" className="mob-viagem-action-btn primary" data-testid={`mob-viagem-add-entrega-${v.id}`} onClick={() => onAddEntrega(v)}><Plus size={18} /> Nova entrega</button>}
             <button type="button" className={`mob-viagem-action-btn${expanded === v.id ? ' active' : ''}`} data-testid={`mob-viagem-ver-entregas-${v.id}`} onClick={() => toggleEntregas(v)}><FileText size={16} /> {expanded === v.id ? 'Ocultar' : 'Ver entregas'}</button>
@@ -1582,7 +1629,8 @@ function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate
               </div>
             </div>)}
           </div>}
-        </div>)}
+        </div>;
+        })}
       </div>
       </>}
     </div>
@@ -1590,16 +1638,21 @@ function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate
   </div>
 }
 
-function MobileClientesTab({ customers, entries, orders, onStartOrder, date, onOpenPicker, onOpenCustomer, search, setSearch, viagemAtiva, viagens, onOpenViagens }) {
+function MobileClientesTab({ customers, entries, orders, onStartOrder, date, onOpenPicker, onOpenCustomer, search, setSearch, viagemAtiva, viagens, onOpenViagens, dayClosed }) {
   const todaysEntries = entries.filter(e => e.date === date);
   const doneNames = new Set(todaysEntries.map(e => e.customer));
   const receivedToday = todaysEntries.reduce((s, e) => s + Number(e.pix_value || 0) + Number(e.cash_value || 0), 0);
-  const filtered = customers.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || (c.code || '').toLowerCase().includes(search.toLowerCase())).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
+  const filtered = customers.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || (c.code || '').toLowerCase().includes(search.toLowerCase())).sort((a, b) => {
+    const doneA = doneNames.has(a.name), doneB = doneNames.has(b.name);
+    if (doneA !== doneB) return doneA ? 1 : -1;
+    return (a.name || '').localeCompare(b.name || '', 'pt-BR');
+  });
   const goal = customers.length || 1;
   const progress = Math.min(100, (doneNames.size / goal) * 100);
-  const failedNames = new Set((viagemAtiva?.clientes || []).filter(c => c.status === 'nao_entregue').map(c => c.name));
+  const failedNames = new Set((viagemAtiva?.rotas || []).flatMap(r => r.clientes || []).filter(c => c.status === 'nao_entregue').map(c => c.name));
   return <div className="mob-screen">
     <MobileTripBanner viagemAtiva={viagemAtiva} viagens={viagens} onOpen={onOpenViagens} />
+    {dayClosed && <div className="mob-viagem-confirm" data-testid="mob-day-closed-summary">Dia fechado com sucesso. Os lançamentos de hoje estão bloqueados para preservar o fechamento.</div>}
     {orders?.length > 0 && <div className="mob-orders-card" data-testid="mob-pending-orders">
       <p className="mob-eyebrow">CLIENTES DA ROTA · {orders.length} PENDENTE{orders.length > 1 ? 'S' : ''}</p>
       {orders.map(o => <div className="mob-order-row" key={o.id} data-testid={`mob-order-${o.id}`}>
@@ -1611,7 +1664,7 @@ function MobileClientesTab({ customers, entries, orders, onStartOrder, date, onO
       <div className="mob-summary-row"><span>{doneNames.size} cliente{doneNames.size !== 1 ? 's' : ''} lançado{doneNames.size !== 1 ? 's' : ''} hoje</span><b data-testid="mob-received-today">{money(receivedToday)}</b></div>
       <div className="mob-progress"><div style={{ width: `${progress}%` }} /></div>
     </div>
-    {!viagemAtiva && <button type="button" className="mob-cta" data-testid="mob-new-delivery-button" onClick={onOpenViagens}><Plus size={20} /> Iniciar viagem para lançar</button>}
+    {!dayClosed && !viagemAtiva && <button type="button" className="mob-cta" data-testid="mob-new-delivery-button" onClick={onOpenViagens}><Plus size={20} /> Iniciar viagem para lançar</button>}
     <div className="mob-search"><Search size={16} /><input placeholder="Buscar por nome ou código" value={search} data-testid="mob-search-input" onChange={e => setSearch(e.target.value)} /></div>
     <div className={`mob-customer-list${viagemAtiva ? '' : ' mob-customer-list-locked'}`}>
       {filtered.map(c => <MobileStopRow key={c.id} c={c} done={doneNames.has(c.name)} failed={failedNames.has(c.name)} onClick={() => onOpenCustomer(c)} />)}
@@ -1628,7 +1681,7 @@ function MobilePickerSheet({ customers, onClose, onPick, onNewCustomer }) {
       <div className="mob-sheet-handle" />
       <div className="mob-sheet-head">
         <div><h3>Nova entrega</h3><p>Escolha o cliente — marca e preço vêm do cadastro</p></div>
-        <button type="button" className="mob-close" data-testid="mob-picker-close" onClick={onClose}><X size={18} /></button>
+        <button aria-label="Fechar" type="button" className="mob-close" data-testid="mob-picker-close" onClick={onClose}><X size={18} /></button>
       </div>
       <div className="mob-search"><Search size={16} /><input autoFocus placeholder="Digite o nome ou o código do cliente" value={q} data-testid="mob-picker-search" onChange={e => setQ(e.target.value)} /></div>
       <div className="mob-sheet-list">
@@ -1640,7 +1693,7 @@ function MobilePickerSheet({ customers, onClose, onPick, onNewCustomer }) {
   </div>
 }
 
-function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillOrder, viagemId, onFailed }) {
+function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillOrder, viagemId, rotaId, onFailed }) {
   const draftKey = `hydro_draft_${customer.id || 'novo_' + (customer.name || 'cliente')}`;
   const draft = useMemo(() => { try { return JSON.parse(localStorage.getItem(draftKey)); } catch { return null; } }, [draftKey]);
 
@@ -1693,13 +1746,13 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remaining]);
 
-  function incQty(i) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qty: l.qty + 1 } : l)); }
+  function incQty(i, by = 1) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qty: l.qty + by } : l)); }
   function decQty(i) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qty: Math.max(0, l.qty - 1) } : l)); }
   function setQty(i, raw) { const v = Math.max(0, parseInt(raw, 10) || 0); setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qty: v } : l)); }
-  function incQtyExchange(i) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qtyExchange: l.qtyExchange + 1 } : l)); }
+  function incQtyExchange(i, by = 1) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qtyExchange: l.qtyExchange + by } : l)); }
   function decQtyExchange(i) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qtyExchange: Math.max(0, l.qtyExchange - 1) } : l)); }
   function setQtyExchange(i, raw) { const v = Math.max(0, parseInt(raw, 10) || 0); setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qtyExchange: v } : l)); }
-  function incQtyFull(i) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qtyFull: l.qtyFull + 1 } : l)); }
+  function incQtyFull(i, by = 1) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qtyFull: l.qtyFull + by } : l)); }
   function decQtyFull(i) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qtyFull: Math.max(0, l.qtyFull - 1) } : l)); }
   function setQtyFull(i, raw) { const v = Math.max(0, parseInt(raw, 10) || 0); setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qtyFull: v } : l)); }
   function incMf(i) { setLines(prev => prev.map((l, idx) => { if (idx !== i) return l; if (l.extra) return l.qty > 0 ? { ...l, qty: l.qty - 1, mf: l.mf + 1 } : l; return l.qtyExchange > 0 ? { ...l, qtyExchange: l.qtyExchange - 1, mf: l.mf + 1 } : l; })); }
@@ -1734,7 +1787,7 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
       pix_value: Math.round(pix * 100) / 100, cash_value: Math.round(cash * 100) / 100,
       comp_value: compValue, comp_days: compOn ? compDays : undefined,
       mf_plan: totalMf > 0 ? mfPlan : undefined, mf_date: totalMf > 0 && mfPlan === 'reschedule' ? mfDate : undefined,
-      signature, signature_name: signatureName || undefined, viagem_id: viagemId || undefined,
+      signature, signature_name: signatureName || undefined, viagem_id: viagemId || undefined, rota_id: rotaId || undefined,
     };
     try {
       const { data } = await api.post('/daily-entries', payload, auth());
@@ -1755,7 +1808,7 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
           {customer.id ? <h3>{customer.name}</h3> : <input className="mob-inline-name" placeholder="Nome do cliente" value={customerName} data-testid="mob-new-customer-name" onChange={e => setCustomerName(e.target.value)} />}
           <p>{customer.address || 'Marcas e preços vêm do cadastro do cliente'}</p>
         </div>
-        <button type="button" className="mob-close" data-testid="mob-panel-close" onClick={onClose}><X size={18} /></button>
+        <button aria-label="Fechar" type="button" className="mob-close" data-testid="mob-panel-close" onClick={onClose}><X size={18} /></button>
       </div>
 
       {prefillOrder && <div className="mob-order-banner" data-testid="mob-order-banner">Vindo da ordem de serviço · {prefillOrder.sale_type === 'full' ? 'venda completa (vasilhame + água)' : 'somente água (troca de vasilhame)'}{prefillOrder.notes ? ` · ${prefillOrder.notes}` : ''}{lines.some(l => l.extra && l.brand.toLowerCase() === (prefillOrder.brand || '').toLowerCase()) ? ' · confira o preço, esse produto não está no cadastro do cliente' : ''}</div>}
@@ -1765,17 +1818,18 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
           <div className="mob-line-top">
             <div className="mob-line-info"><b>{l.brand}<span className="mob-tag orange" style={{ marginLeft: 6 }}>nova</span>{l.saleType === 'full' && <span className="mob-tag" style={{ marginLeft: 6 }}>venda completa</span>}</b><small>R$ {linePrice(l).toFixed(2)} por galão</small><span className="mob-line-subtotal">{money(l.qty * linePrice(l))}</span></div>
             <div className="mob-counter">
-              <button type="button" data-testid={`mob-qty-minus-${i}`} onClick={() => decQty(i)}><Minus size={18} /></button>
+              <button aria-label="Diminuir quantidade" type="button" data-testid={`mob-qty-minus-${i}`} onClick={() => decQty(i)}><Minus size={18} /></button>
               <input type="number" inputMode="numeric" min="0" value={l.qty} data-testid={`mob-qty-input-${i}`} onChange={e => setQty(i, e.target.value)} onFocus={e => e.target.select()} />
-              <button type="button" className="fill" data-testid={`mob-qty-plus-${i}`} onClick={() => incQty(i)}><Plus size={20} /></button>
+              <button aria-label="Aumentar quantidade" type="button" className="fill" data-testid={`mob-qty-plus-${i}`} onClick={() => incQty(i)}><Plus size={20} /></button>
+              <button aria-label="Aumentar quantidade em 5" type="button" className="mob-qty-plus5" data-testid={`mob-qty-plus5-${i}`} onClick={() => incQty(i, 5)}>+5</button>
             </div>
           </div>
           <div className="mob-line-mf">
             <span>MF · microfuro</span>
             <div className="mob-counter small">
-              <button type="button" data-testid={`mob-mf-minus-${i}`} onClick={() => decMf(i)}><Minus size={14} /></button>
+              <button aria-label="Diminuir motivo/falta" type="button" data-testid={`mob-mf-minus-${i}`} onClick={() => decMf(i)}><Minus size={14} /></button>
               <span>{l.mf}</span>
-              <button type="button" className="mf" data-testid={`mob-mf-plus-${i}`} onClick={() => incMf(i)}><Plus size={16} /></button>
+              <button aria-label="Aumentar motivo/falta" type="button" className="mf" data-testid={`mob-mf-plus-${i}`} onClick={() => incMf(i)}><Plus size={16} /></button>
             </div>
           </div>
         </div> : <div className={`mob-line${(l.qtyExchange > 0 || l.qtyFull > 0) ? ' active' : ''}`} key={i} data-testid={`mob-line-${i}`}>
@@ -1786,17 +1840,19 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
             <div className="mob-line-split-col">
               <span className="mob-line-split-label">Somente água</span>
               <div className="mob-counter">
-                <button type="button" data-testid={`mob-qty-exchange-minus-${i}`} onClick={() => decQtyExchange(i)}><Minus size={18} /></button>
+                <button aria-label="Diminuir quantidade de troca" type="button" data-testid={`mob-qty-exchange-minus-${i}`} onClick={() => decQtyExchange(i)}><Minus size={18} /></button>
                 <input type="number" inputMode="numeric" min="0" value={l.qtyExchange} data-testid={`mob-qty-exchange-input-${i}`} onChange={e => setQtyExchange(i, e.target.value)} onFocus={e => e.target.select()} />
-                <button type="button" className="fill" data-testid={`mob-qty-exchange-plus-${i}`} onClick={() => incQtyExchange(i)}><Plus size={20} /></button>
+                <button aria-label="Aumentar quantidade de troca" type="button" className="fill" data-testid={`mob-qty-exchange-plus-${i}`} onClick={() => incQtyExchange(i)}><Plus size={20} /></button>
+                <button aria-label="Aumentar quantidade de troca em 5" type="button" className="mob-qty-plus5" data-testid={`mob-qty-exchange-plus5-${i}`} onClick={() => incQtyExchange(i, 5)}>+5</button>
               </div>
             </div>
             <div className="mob-line-split-col">
               <span className="mob-line-split-label">Completo (vasilhame + água)</span>
               <div className="mob-counter">
-                <button type="button" data-testid={`mob-qty-full-minus-${i}`} onClick={() => decQtyFull(i)}><Minus size={18} /></button>
+                <button aria-label="Diminuir quantidade cheia" type="button" data-testid={`mob-qty-full-minus-${i}`} onClick={() => decQtyFull(i)}><Minus size={18} /></button>
                 <input type="number" inputMode="numeric" min="0" value={l.qtyFull} data-testid={`mob-qty-full-input-${i}`} onChange={e => setQtyFull(i, e.target.value)} onFocus={e => e.target.select()} />
-                <button type="button" className="fill" data-testid={`mob-qty-full-plus-${i}`} onClick={() => incQtyFull(i)}><Plus size={20} /></button>
+                <button aria-label="Aumentar quantidade cheia" type="button" className="fill" data-testid={`mob-qty-full-plus-${i}`} onClick={() => incQtyFull(i)}><Plus size={20} /></button>
+                <button aria-label="Aumentar quantidade cheia em 5" type="button" className="mob-qty-plus5" data-testid={`mob-qty-full-plus5-${i}`} onClick={() => incQtyFull(i, 5)}>+5</button>
               </div>
             </div>
           </div>
@@ -1804,9 +1860,9 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
           <div className="mob-line-mf">
             <span>MF · microfuro</span>
             <div className="mob-counter small">
-              <button type="button" data-testid={`mob-mf-minus-${i}`} onClick={() => decMf(i)}><Minus size={14} /></button>
+              <button aria-label="Diminuir motivo/falta" type="button" data-testid={`mob-mf-minus-${i}`} onClick={() => decMf(i)}><Minus size={14} /></button>
               <span>{l.mf}</span>
-              <button type="button" className="mf" data-testid={`mob-mf-plus-${i}`} onClick={() => incMf(i)}><Plus size={16} /></button>
+              <button aria-label="Aumentar motivo/falta" type="button" className="mf" data-testid={`mob-mf-plus-${i}`} onClick={() => incMf(i)}><Plus size={16} /></button>
             </div>
           </div>
         </div>)}
@@ -1870,7 +1926,7 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
       <button type="button" className="mob-danger-btn" data-testid="mob-fail-button" onClick={() => {
         if (!window.confirm('Marcar esta entrega como não realizada? Os dados preenchidos serão descartados e nada é descontado do estoque.')) return;
         clearDraft();
-        if (viagemId && customer.id) api.patch(`/viagens/${viagemId}/clientes/${customer.id}`, { name: customerName, status: 'nao_entregue' }, auth()).then(onFailed).catch(() => { });
+        if (viagemId && rotaId && customer.id) api.patch(`/viagens/${viagemId}/rotas/${rotaId}/clientes/${customer.id}`, { name: customerName, status: 'nao_entregue' }, auth()).then(onFailed).catch(() => { });
         onClose();
       }}>Não consegui entregar</button>
     </div>
@@ -1878,17 +1934,17 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
 }
 
 function MobileDiarioTab({ entries, date }) {
-  const [viagemFilter, setViagemFilter] = useState('');
+  const [rotaFilter, setRotaFilter] = useState('');
   const todaysAll = entries.filter(e => e.date === date);
-  const viagemOptions = [...new Map(todaysAll.filter(e => e.viagem_codigo).map(e => [e.viagem_codigo, e])).values()];
-  const todays = viagemFilter ? todaysAll.filter(e => e.viagem_codigo === viagemFilter) : todaysAll;
+  const rotaOptions = [...new Map(todaysAll.filter(e => e.rota_codigo).map(e => [e.rota_codigo, e])).values()];
+  const todays = rotaFilter ? todaysAll.filter(e => e.rota_codigo === rotaFilter) : todaysAll;
   const totals = todays.reduce((s, e) => ({ qty: s.qty + Number(e.billed_quantity || 0), pix: s.pix + Number(e.pix_value || 0), cash: s.cash + Number(e.cash_value || 0) }), { qty: 0, pix: 0, cash: 0 });
   const mfDetail = e => e.mf_plan === 'swap' ? 'trocado' : e.mf_plan === 'refused' ? 'cliente não quis' : (e.mf_date || '');
   return <div className="mob-screen">
-    {viagemOptions.length > 0 && <label className="mob-field-md" style={{ marginBottom: 4 }}>FILTRAR POR VIAGEM
-      <select value={viagemFilter} data-testid="mob-diario-viagem-filter" onChange={e => setViagemFilter(e.target.value)}>
-        <option value="">Todas as viagens de hoje</option>
-        {viagemOptions.map(e => <option key={e.viagem_codigo} value={e.viagem_codigo}>{e.viagem_codigo}</option>)}
+    {rotaOptions.length > 0 && <label className="mob-field-md" style={{ marginBottom: 4 }}>FILTRAR POR ROTA
+      <select value={rotaFilter} data-testid="mob-diario-viagem-filter" onChange={e => setRotaFilter(e.target.value)}>
+        <option value="">Todas as rotas de hoje</option>
+        {rotaOptions.map(e => <option key={e.rota_codigo} value={e.rota_codigo}>{e.rota_codigo}</option>)}
       </select>
     </label>}
     <div className="mob-total-cards">
@@ -1906,7 +1962,7 @@ function MobileDiarioTab({ entries, date }) {
           <div className="mob-entry-top"><b>{e.customer}{e.entry_number ? <small style={{ fontWeight: 400, marginLeft: 6 }}>Nº {e.entry_number}</small> : null}</b><b>{money(e.total)}</b></div>
           <div className="mob-chips">
             <span className="mob-chip neutral">{itemsLabel}</span>
-            {e.viagem_codigo && <span className="mob-chip neutral">{e.viagem_codigo}</span>}
+            {e.rota_codigo && <span className="mob-chip neutral">{e.rota_codigo}</span>}
             <span className="mob-chip blue">Pix {money(e.pix_value)}</span>
             <span className="mob-chip green">Dinheiro {money(e.cash_value)}</span>
             {e.mf_quantity > 0 && <span className="mob-chip orange">{e.mf_quantity} MF · {mfDetail(e)}</span>}
@@ -1918,19 +1974,19 @@ function MobileDiarioTab({ entries, date }) {
   </div>
 }
 
-function MobileCaixaTab({ entries, expenses, expensesTotal, viagens, date, onAddExpense, onCloseDay }) {
+function MobileCaixaTab({ entries, expensesTotal, viagens, date, onAddExpense, onCloseDay, dayClosed, closingDay }) {
   const todays = entries.filter(e => e.date === date);
   const pix = todays.reduce((s, e) => s + Number(e.pix_value || 0), 0);
   const cash = todays.reduce((s, e) => s + Number(e.cash_value || 0), 0);
   const comp = todays.reduce((s, e) => s + Number(e.comp_value || 0), 0);
   const netTotal = pix + cash - Number(expensesTotal || 0);
 
-  const porViagem = {};
-  function bucket(codigo) { return porViagem[codigo] || (porViagem[codigo] = { codigo, recebido: 0, despesas: 0 }); }
-  for (const e of todays) bucket(e.viagem_codigo || 'Sem viagem').recebido += Number(e.pix_value || 0) + Number(e.cash_value || 0) + Number(e.comp_value || 0);
-  for (const x of (expenses || [])) bucket(x.viagem_codigo || 'Sem viagem').despesas += Number(x.amount || 0);
-  const viagemInfo = Object.fromEntries((viagens || []).map(v => [v.codigo_viagem, v]));
-  const rotas = Object.values(porViagem).sort((a, b) => (viagemInfo[a.codigo]?.numero || 0) - (viagemInfo[b.codigo]?.numero || 0));
+  const porRota = {};
+  function bucket(codigo) { return porRota[codigo] || (porRota[codigo] = { codigo, recebido: 0 }); }
+  for (const e of todays) bucket(e.rota_codigo || 'Sem rota').recebido += Number(e.pix_value || 0) + Number(e.cash_value || 0);
+  const rotaInfo = {};
+  for (const v of (viagens || [])) for (const r of (v.rotas || [])) rotaInfo[r.codigo_rota] = { ...r, viagem: v };
+  const rotas = Object.values(porRota).sort((a, b) => (rotaInfo[a.codigo]?.numero || 0) - (rotaInfo[b.codigo]?.numero || 0));
 
   return <div className="mob-screen">
     <div className="mob-cash-hero">
@@ -1948,23 +2004,23 @@ function MobileCaixaTab({ entries, expenses, expensesTotal, viagens, date, onAdd
       <p className="mob-eyebrow" style={{ margin: '14px 0 0' }}>RESUMO POR ROTA</p>
       <div className="mob-cash-rows">
         {rotas.map(r => {
-          const info = viagemInfo[r.codigo];
+          const info = rotaInfo[r.codigo];
           return <div className="mob-cash-row" key={r.codigo} data-testid={`mob-cash-rota-${r.codigo}`}>
             <span className="mob-cash-icon blue"><Truck size={16} /></span>
-            <div><b>{info ? `${TURNO_LABELS[info.turno]} · rota ${String(info.rota).padStart(3, '0')}` : r.codigo}</b><small>Recebido {money(r.recebido)} · Despesas {money(r.despesas)}</small></div>
-            <b className={(r.recebido - r.despesas) >= 0 ? 'green' : 'orange'}>{money(r.recebido - r.despesas)}</b>
+            <div><b>{info ? `${TURNO_LABELS[info.viagem.turno]} · rota ${String(info.numero).padStart(2, '0')}` : r.codigo}</b><small>Recebido {money(r.recebido)}</small></div>
+            <b className="green">{money(r.recebido)}</b>
           </div>
         })}
       </div>
     </>}
-    <button type="button" className="mob-outline-btn" data-testid="mob-add-expense-shortcut" onClick={onAddExpense}><Plus size={16} /> Lançar despesa</button>
-    <button type="button" className="mob-cta" data-testid="mob-close-day-button" onClick={onCloseDay}>Fechar o dia</button>
+    {!dayClosed && <button type="button" className="mob-outline-btn" data-testid="mob-add-expense-shortcut" onClick={onAddExpense}><Plus size={16} /> Lançar despesa</button>}
+    <button type="button" className={`mob-cta${dayClosed ? ' green' : ''}`} disabled={dayClosed || closingDay} data-testid="mob-close-day-button" onClick={onCloseDay}>{dayClosed ? 'Dia fechado' : closingDay ? 'Fechando...' : 'Fechar o dia'}</button>
   </div>
 }
 
 const MOBILE_EXPENSE_CATEGORIES = [['Combustível', Fuel], ['Alimentação', Utensils], ['Pedágio', Receipt], ['Manutenção', Wrench], ['Outros', MoreHorizontal]];
 
-function MobileDespesasTab({ user, date, viagens, viagemAtiva, onOpenViagens }) {
+function MobileDespesasTab({ user, date, viagens, viagemAtiva, onOpenViagens, dayClosed }) {
   const [items, setItems] = useState([]);
   const [category, setCategory] = useState('Combustível');
   const [amount, setAmount] = useState('');
@@ -1972,32 +2028,44 @@ function MobileDespesasTab({ user, date, viagens, viagemAtiva, onOpenViagens }) 
   const [viagemId, setViagemId] = useState('');
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
+  const [photo, setPhoto] = useState(null);
+  const photoInputRef = useRef(null);
 
   useEffect(() => { setViagemId(prev => prev || viagemAtiva?.id || viagens?.[0]?.id || ''); }, [viagemAtiva, viagens]);
+
+  function pickPhoto(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setPhoto(reader.result);
+    reader.readAsDataURL(file);
+  }
 
   async function load() { const { data } = await api.get('/expenses', auth()); setItems(data.filter(x => (x.driver || '') === user.name && manausDate(x.created_at) === date)); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [date]);
+  useAutoRefresh(load);
 
   async function submit() {
     setError('');
+    if (dayClosed) return setError('O dia já foi fechado. Peça ao administrador para reabrir antes de lançar despesas.');
     if (!viagemId) return setError('Selecione a viagem que gerou essa despesa.');
     if (!amount || Number(amount) <= 0) return setError('Informe um valor válido.');
     try {
-      const { data } = await api.post('/expenses', { type: category, driver: user.name, amount: Number(amount), notes: note, status: 'approved', viagem_id: viagemId }, auth());
-      setItems([data, ...items]); setAmount(''); setNote('');
+      const { data } = await api.post('/expenses', { type: category, driver: user.name, amount: Number(amount), notes: note, status: 'approved', viagem_id: viagemId, photo }, auth());
+      setItems([data, ...items]); setAmount(''); setNote(''); setPhoto(null);
       setToast('Despesa lançada'); setTimeout(() => setToast(''), 2200);
     } catch (e) { setError(e.response?.data?.detail || 'Não foi possível lançar.'); }
   }
 
   const total = items.reduce((s, x) => s + Number(x.amount || 0), 0);
   return <div className="mob-screen">
+    {dayClosed && <div className="mob-viagem-confirm" data-testid="mob-expense-day-closed">Dia fechado — despesas disponíveis somente para consulta.</div>}
     {(!viagens || viagens.length === 0) && <button type="button" className="mob-trip-banner pending" data-testid="mob-expense-no-trip" onClick={onOpenViagens}>
       <Truck size={18} /><div><b>Nenhuma viagem criada hoje</b><small>Crie uma viagem para poder atribuir despesas a ela</small></div><ChevronRight size={18} />
     </button>}
-    {viagens && viagens.length > 0 && <label className="mob-field-md">VIAGEM (ROTA) DESTA DESPESA
+    {viagens && viagens.length > 0 && <label className="mob-field-md">VIAGEM DESTA DESPESA
       <select value={viagemId} data-testid="mob-expense-viagem-select" onChange={e => setViagemId(e.target.value)}>
-        {viagens.map(v => <option key={v.id} value={v.id}>{TURNO_LABELS[v.turno]} · rota {String(v.rota).padStart(3, '0')} · {v.codigo_viagem}{v.status === 'execucao' ? ' (em execução)' : v.status === 'finalizada' ? ' (finalizada)' : ''}</option>)}
+        {viagens.map(v => <option key={v.id} value={v.id}>{TURNO_LABELS[v.turno]} · {v.codigo_viagem}{v.status === 'execucao' ? ' (em execução)' : v.status === 'finalizada' ? ' (finalizada)' : ''}</option>)}
       </select>
     </label>}
     <div className="mob-expense-grid">
@@ -2005,14 +2073,18 @@ function MobileDespesasTab({ user, date, viagens, viagemAtiva, onOpenViagens }) 
     </div>
     <label className="mob-field-lg">VALOR (R$)<input type="number" step="0.01" placeholder="0,00" value={amount} data-testid="mob-expense-amount" onChange={e => setAmount(e.target.value)} /></label>
     <label className="mob-field-md">OBSERVAÇÃO (OPCIONAL)<input placeholder="ex: posto na saída da cidade" value={note} data-testid="mob-expense-note" onChange={e => setNote(e.target.value)} /></label>
-    <button type="button" className="mob-photo-btn" data-testid="mob-expense-photo"><Camera size={20} /> Foto do comprovante</button>
+    <input ref={photoInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} data-testid="mob-expense-photo-input" onChange={e => pickPhoto(e.target.files?.[0])} />
+    <button type="button" className="mob-photo-btn" data-testid="mob-expense-photo" onClick={() => photoInputRef.current?.click()}>
+      {photo ? <img src={photo} alt="Comprovante" className="mob-photo-thumb" /> : <Camera size={20} />}
+      {photo ? 'Trocar foto do comprovante' : 'Foto do comprovante'}
+    </button>
     {error && <div className="error" data-testid="mob-expense-error">{error}</div>}
-    <button type="button" className="mob-cta" disabled={!viagemId} data-testid="mob-expense-submit" onClick={submit}>Lançar despesa</button>
+    <button type="button" className="mob-cta" disabled={!viagemId || dayClosed} data-testid="mob-expense-submit" onClick={submit}>{dayClosed ? 'Dia fechado' : 'Lançar despesa'}</button>
     <p className="mob-eyebrow" style={{ marginTop: 22 }}>MINHAS DESPESAS DE HOJE · {money(total)}</p>
     <div className="mob-expense-list">
       {items.length === 0 && <div className="mob-empty-dashed">Nenhuma despesa lançada.</div>}
       {items.map(x => { const CatIcon = (MOBILE_EXPENSE_CATEGORIES.find(c => c[0] === x.type) || [])[1] || MoreHorizontal; return <div className="mob-expense-row" key={x.id} data-testid={`mob-expense-row-${x.id}`}>
-        <span className="mob-expense-icon"><CatIcon size={17} /></span>
+        {x.photo ? <img src={x.photo} alt="Comprovante" className="mob-expense-icon mob-photo-thumb" /> : <span className="mob-expense-icon"><CatIcon size={17} /></span>}
         <div><b>{x.type}</b><small>{new Date(x.created_at || Date.now()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}{x.viagem_codigo ? ` · ${x.viagem_codigo}` : ' · sem viagem'}</small></div>
         <b>{money(x.amount)}</b>
       </div> })}
@@ -2043,7 +2115,6 @@ function MobileAjustesTab({ user, theme, setTheme, textScale, setTextScale, onLo
 }
 
 function MobileReceiptPrompt({ entry, customer, onSavePhone, onClose }) {
-  const [stage, setStage] = useState('ask');
   const [phone, setPhone] = useState(customer?.phone || '');
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
@@ -2071,25 +2142,17 @@ function MobileReceiptPrompt({ entry, customer, onSavePhone, onClose }) {
   return <div className="mob-backdrop" onClick={onClose}>
     <div className="mob-sheet" onClick={e => e.stopPropagation()}>
       <div className="mob-sheet-handle" />
-      {stage === 'ask' ? <>
-        <div className="mob-sheet-head">
-          <div><h3>Entrega registrada!</h3><p>{entry.customer} · {money(entry.total)}</p></div>
-          <button type="button" className="mob-close" data-testid="mob-receipt-close" onClick={onClose}><X size={18} /></button>
-        </div>
-        <p className="muted" style={{ padding: '0 2px 16px' }}>O cliente quer o comprovante de entrega?</p>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button type="button" className="mob-outline-btn" data-testid="mob-receipt-skip" onClick={onClose}>Não precisa</button>
-          <button type="button" className="mob-cta" style={{ flex: 1 }} data-testid="mob-receipt-yes" onClick={() => setStage('actions')}>Sim, emitir</button>
-        </div>
-      </> : <>
-        <div className="mob-sheet-head">
-          <div><h3>Comprovante</h3><p>{entry.entry_number ? `Nº ${entry.entry_number} · ` : ''}{money(entry.total)}</p></div>
-          <button type="button" className="mob-close" data-testid="mob-receipt-close-2" onClick={onClose}><X size={18} /></button>
-        </div>
-        {!customer?.phone && !sent && <label className="mob-field-md">Telefone do cliente (WhatsApp)<input value={phone} placeholder="ex: 5592999999999" data-testid="mob-receipt-phone" onChange={e => setPhone(e.target.value)} /></label>}
-        <button type="button" className="mob-outline-btn wide" data-testid="mob-receipt-download" onClick={() => downloadReceiptPdf(entry)}>Baixar comprovante (PDF)</button>
-        <button type="button" className="mob-cta" disabled={busy} data-testid="mob-receipt-send" onClick={handleShare}>{sent ? 'Enviado' : 'Enviar no WhatsApp'}</button>
-      </>}
+      <div className="mob-sheet-head">
+        <div><h3>Entrega registrada!</h3><p>{entry.customer} · {money(entry.total)}</p></div>
+        <button aria-label="Fechar" type="button" className="mob-close" data-testid="mob-receipt-close" onClick={onClose}><X size={18} /></button>
+      </div>
+      <p className="muted" style={{ padding: '0 2px 12px' }}>O cliente quer o comprovante de entrega?</p>
+      {!customer?.phone && !sent && <label className="mob-field-md">Telefone do cliente (WhatsApp, opcional)<input value={phone} placeholder="ex: 5592999999999" data-testid="mob-receipt-phone" onChange={e => setPhone(e.target.value)} /></label>}
+      <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+        <button type="button" className="mob-outline-btn" data-testid="mob-receipt-skip" onClick={onClose}>Não precisa</button>
+        <button type="button" className="mob-outline-btn" data-testid="mob-receipt-download" onClick={() => downloadReceiptPdf(entry)}>Baixar PDF</button>
+      </div>
+      <button type="button" className="mob-cta" disabled={busy} data-testid="mob-receipt-send" onClick={handleShare}>{sent ? 'Enviado' : 'Enviar no WhatsApp'}</button>
     </div>
   </div>
 }
@@ -2106,8 +2169,11 @@ function DriverMobileApp({ user, customers, onLogout }) {
   const [todaysExpenses, setTodaysExpenses] = useState([]);
   const [postDelivery, setPostDelivery] = useState(null);
   const [toast, setToast] = useState('');
+  const [toastTone, setToastTone] = useState('green');
   const [viagens, setViagens] = useState([]);
   const [showViagens, setShowViagens] = useState(false);
+  const [dayClosure, setDayClosure] = useState(null);
+  const [closingDay, setClosingDay] = useState(false);
   const date = todayISO(0);
   async function savePhoneForCustomerName(name, phone) {
     const c = customers.find(x => x.name === name);
@@ -2116,35 +2182,46 @@ function DriverMobileApp({ user, customers, onLogout }) {
 
   async function loadEntries() { const { data } = await api.get('/daily-entries', { ...auth(), params: { driver: user.name } }); setEntries(data); }
   async function loadViagens() { const { data } = await api.get('/viagens', { ...auth(), params: { date } }); setViagens(data.viagens); }
+  async function loadExpenses() { const { data } = await api.get('/expenses', auth()); setTodaysExpenses(data.filter(x => (x.driver || '') === user.name && manausDate(x.created_at) === date && x.status !== 'rejected')); }
+  async function loadDayClosure() { const { data } = await api.get('/daily-closing/status', { ...auth(), params: { date } }); setDayClosure(data); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { loadEntries(); loadViagens(); }, []);
+  useEffect(() => { loadEntries(); loadViagens(); loadExpenses(); loadDayClosure(); }, []);
+  useAutoRefresh(() => Promise.all([loadEntries(), loadViagens(), loadExpenses(), loadDayClosure()]));
 
   const entregasPorViagem = entries.reduce((acc, e) => { if (e.viagem_id) acc[e.viagem_id] = (acc[e.viagem_id] || 0) + Number(e.billed_quantity || 0); return acc; }, {});
   const viagensComProgresso = viagens.map(v => ({ ...v, quantidade_atual: entregasPorViagem[v.id] || 0 }));
   const viagemAtiva = viagensComProgresso.find(v => v.status === 'execucao');
-  const viagemClienteIds = new Set((viagemAtiva?.clientes || []).map(c => c.id));
+  const rotasAtivas = viagemAtiva?.rotas || [];
+  const clientesDasRotas = rotasAtivas.flatMap(r => (r.clientes || []).map(c => ({ ...c, rota_id: r.id, rota_numero: r.numero })));
+  const viagemClienteIds = new Set(clientesDasRotas.map(c => c.id));
   const pickableCustomers = viagemClienteIds.size > 0 ? customers.filter(c => viagemClienteIds.has(c.id)) : customers;
   const entregasNaViagem = new Set(entries.filter(e => e.viagem_id === viagemAtiva?.id).map(e => e.customer));
-  const orders = (viagemAtiva?.clientes || []).filter(c => !entregasNaViagem.has(c.name) && c.status !== 'nao_entregue').map(c => ({ id: c.id, customer: c.name, brand: c.brand, quantity: c.quantity, notes: c.notes, sale_type: c.sale_type }));
-  async function createViagem(payload) { await api.post('/viagens', payload, auth()); await loadViagens(); }
+  const orders = clientesDasRotas.filter(c => !entregasNaViagem.has(c.name) && c.status !== 'nao_entregue').map(c => ({ id: c.id, customer: c.name, brand: c.brand, quantity: c.quantity, notes: c.notes, sale_type: c.sale_type, rota_id: c.rota_id }));
+  async function createViagem(payload) { const { data } = await api.post('/viagens', payload, auth()); await loadViagens(); return data; }
   async function iniciarViagem(v) { await api.post(`/viagens/${v.id}/iniciar`, {}, auth()); await loadViagens(); }
   async function finalizarViagem(v) { await api.post(`/viagens/${v.id}/finalizar`, {}, auth()); await loadViagens(); }
   async function deleteViagem(v) { if (!window.confirm(`Excluir a viagem ${v.codigo_viagem}?`)) return; await api.delete(`/viagens/${v.id}`, auth()); await loadViagens(); }
+  async function addRota(viagemId, payload) { const { data } = await api.post(`/viagens/${viagemId}/rotas`, payload, auth()); await loadViagens(); return data; }
 
-  function requireViagem(action) { if (!viagemAtiva) { setShowViagens(true); return; } action(); }
+  const dayClosed = !!dayClosure?.closed;
+  function showToast(text, tone = 'green') { setToast(text); setToastTone(tone); setTimeout(() => setToast(''), 2600); }
+  function requireViagem(action) { if (dayClosed) { showToast('O dia está fechado. Peça ao administrador para reabrir.', 'orange'); return; } if (!viagemAtiva) { setShowViagens(true); return; } action(); }
 
   function startOrder(o) { requireViagem(() => {
     const existing = customers.find(c => c.name.toLowerCase() === (o.customer || '').toLowerCase());
     setSheetCustomer(existing || { id: null, name: o.customer, address: o.address || '', brands: [] });
     setSheetOrder(o);
   }); }
-  useEffect(() => { api.get('/expenses', auth()).then(({ data }) => setTodaysExpenses(data.filter(x => (x.driver || '') === user.name && manausDate(x.created_at) === date && x.status !== 'rejected'))); }, [date, tab, user.name]);
+  useEffect(() => { loadExpenses(); }, [date, tab, user.name]);
   const expensesTotal = todaysExpenses.reduce((s, x) => s + Number(x.amount || 0), 0);
 
-  function pickCustomer(c) {
+  async function pickCustomer(c) {
     setPicker(false); setSheetOrder(null); setSheetCustomer(c);
     if (viagemAtiva && c.id && !viagemClienteIds.has(c.id)) {
-      api.post(`/viagens/${viagemAtiva.id}/clientes`, { id: c.id, name: c.name }, auth()).then(loadViagens);
+      const rotaAlvo = rotasAtivas[rotasAtivas.length - 1];
+      if (rotaAlvo) await api.post(`/viagens/${viagemAtiva.id}/rotas/${rotaAlvo.id}/clientes`, { id: c.id, name: c.name }, auth());
+      else await api.post(`/viagens/${viagemAtiva.id}/rotas`, { clientes: [{ id: c.id, name: c.name }] }, auth());
+      await loadViagens();
     }
   }
   function newCustomer() { setPicker(false); setSheetOrder(null); setSheetCustomer({ id: null, name: '', address: '', brands: [] }); }
@@ -2154,8 +2231,17 @@ function DriverMobileApp({ user, customers, onLogout }) {
     setSheetOrder(null);
     setSheetCustomer(null);
     setPostDelivery(entry);
-    setToast('Entrega registrada!');
-    setTimeout(() => setToast(''), 2200);
+    showToast('Entrega registrada!');
+  }
+
+  async function closeDay() {
+    setClosingDay(true);
+    try {
+      await api.post('/daily-closing/close', { date }, auth());
+      await loadDayClosure();
+      showToast('Dia fechado e registrado!');
+    } catch (e) { showToast(e.response?.data?.detail || 'Não foi possível fechar o dia.', 'orange'); }
+    finally { setClosingDay(false); }
   }
 
   const titles = { clientes: ['Clientes de hoje', 'Selecione o cliente e lance a quantidade'], diario: ['Controle Diário', viagemAtiva ? `Hoje · ${viagemAtiva.codigo_viagem}` : 'Hoje · sem viagem em execução'], caixa: ['Caixa do dia', 'Fechamento do entregador'], despesas: ['Despesas', 'Registre os gastos do dia'], ajustes: ['Ajustes', 'Tema, texto e conta'] };
@@ -2164,32 +2250,33 @@ function DriverMobileApp({ user, customers, onLogout }) {
   return <div className={`mobile-app${theme === 'dark' ? ' dark' : ''}`} style={{ '--scale': textScale }} data-testid="mobile-driver-app">
     <MobileHeader user={user} title={title} subtitle={subtitle} theme={theme} onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />
     <main className="mob-main">
-      {tab === 'clientes' && <MobileClientesTab customers={pickableCustomers} entries={entries} orders={orders} onStartOrder={startOrder} date={date} onOpenPicker={() => requireViagem(() => setPicker(true))} onOpenCustomer={c => requireViagem(() => { setSheetOrder(null); setSheetCustomer(c); })} search={search} setSearch={setSearch} viagemAtiva={viagemAtiva} viagens={viagensComProgresso} onOpenViagens={() => setShowViagens(true)} />}
+      {tab === 'clientes' && <MobileClientesTab customers={pickableCustomers} entries={entries} orders={orders} onStartOrder={startOrder} date={date} onOpenPicker={() => requireViagem(() => setPicker(true))} onOpenCustomer={c => requireViagem(() => { setSheetOrder(null); setSheetCustomer(c); })} search={search} setSearch={setSearch} viagemAtiva={viagemAtiva} viagens={viagensComProgresso} onOpenViagens={() => setShowViagens(true)} dayClosed={dayClosed} />}
       {tab === 'diario' && <MobileDiarioTab entries={entries} date={date} />}
-      {tab === 'caixa' && <MobileCaixaTab entries={entries} expenses={todaysExpenses} expensesTotal={expensesTotal} viagens={viagensComProgresso} date={date} onAddExpense={() => setTab('despesas')} onCloseDay={() => { setToast('Dia fechado!'); setTimeout(() => setToast(''), 2200); }} />}
-      {tab === 'despesas' && <MobileDespesasTab user={user} date={date} viagens={viagensComProgresso} viagemAtiva={viagemAtiva} onOpenViagens={() => setShowViagens(true)} />}
+      {tab === 'caixa' && <MobileCaixaTab entries={entries} expensesTotal={expensesTotal} viagens={viagensComProgresso} date={date} onAddExpense={() => setTab('despesas')} onCloseDay={closeDay} dayClosed={dayClosed} closingDay={closingDay} />}
+      {tab === 'despesas' && <MobileDespesasTab user={user} date={date} viagens={viagensComProgresso} viagemAtiva={viagemAtiva} onOpenViagens={() => setShowViagens(true)} dayClosed={dayClosed} />}
       {tab === 'ajustes' && <MobileAjustesTab user={user} theme={theme} setTheme={setTheme} textScale={textScale} setTextScale={setTextScale} onLogout={onLogout} />}
     </main>
     <MobileBottomNav tab={tab} setTab={setTab} />
     {picker && <MobilePickerSheet customers={customers} onClose={() => setPicker(false)} onPick={pickCustomer} onNewCustomer={newCustomer} />}
-    {showViagens && <MobileViagensSheet viagens={viagensComProgresso} customers={customers} onClose={() => setShowViagens(false)} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} onEntriesChanged={() => { loadEntries(); loadViagens(); }} onAddEntrega={() => { setShowViagens(false); setPicker(true); }} />}
-    {sheetCustomer && <MobileLaunchPanel customer={sheetCustomer} prefillOrder={sheetOrder} user={user} date={date} viagemId={viagemAtiva?.id} onClose={() => { setSheetCustomer(null); setSheetOrder(null); }} onComplete={onEntryComplete} onFailed={loadViagens} />}
+    {showViagens && <MobileViagensSheet viagens={viagensComProgresso} customers={customers} onClose={() => setShowViagens(false)} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} onAddRota={addRota} onEntriesChanged={() => { loadEntries(); loadViagens(); }} onAddEntrega={() => { setShowViagens(false); setPicker(true); }} dayClosed={dayClosed} />}
+    {sheetCustomer && <MobileLaunchPanel customer={sheetCustomer} prefillOrder={sheetOrder} user={user} date={date} viagemId={viagemAtiva?.id} rotaId={sheetOrder?.rota_id || clientesDasRotas.find(c => c.id === sheetCustomer?.id)?.rota_id || rotasAtivas[rotasAtivas.length - 1]?.id} onClose={() => { setSheetCustomer(null); setSheetOrder(null); }} onComplete={onEntryComplete} onFailed={loadViagens} />}
     {postDelivery && <MobileReceiptPrompt entry={postDelivery} customer={customers.find(c => c.name === postDelivery.customer)} onSavePhone={p => savePhoneForCustomerName(postDelivery.customer, p)} onClose={() => setPostDelivery(null)} />}
-    <MobileToast text={toast} />
+    <MobileToast text={toast} tone={toastTone} />
   </div>
 }
 
 /* =================== fim app mobile do entregador ==================== */
 
 function App() {
-  const [user, setUser] = useState(null), [data, setData] = useState(null), [customers, setCustomers] = useState([]), [checking, setChecking] = useState(true), [modal, setModal] = useState(null), [editCustomer, setEditCustomer] = useState(null), [notifications, setNotifications] = useState({ pending_users: 0, pending_expenses: 0, total: 0 }), [refreshing, setRefreshing] = useState(false);
+  const [user, setUser] = useState(null), [data, setData] = useState(null), [customers, setCustomers] = useState([]), [checking, setChecking] = useState(true), [modal, setModal] = useState(null), [editCustomer, setEditCustomer] = useState(null), [notifications, setNotifications] = useState({ pending_users: 0, pending_expenses: 0, total: 0 }), [refreshing, setRefreshing] = useState(false), [lastUpdated, setLastUpdated] = useState(null);
   useEffect(() => { const t = localStorage.getItem('hydro_token'); if (t) api.get('/auth/me', auth()).then(x => setUser(x.data)).catch(() => localStorage.removeItem('hydro_token')).finally(() => setChecking(false)); else setChecking(false) }, []);
-  async function loadDashboard() {
-    setRefreshing(true);
-    try { const [a, c] = await Promise.all([api.get('/dashboard', auth()), api.get('/customers', auth())]); setData(a.data); setCustomers(c.data); }
-    finally { setRefreshing(false); }
+  async function loadDashboard({ silent = false } = {}) {
+    if (!silent) setRefreshing(true);
+    try { const [a, c] = await Promise.all([api.get('/dashboard', auth()), api.get('/customers', auth())]); setData(a.data); setCustomers(c.data); setLastUpdated(new Date()); }
+    finally { if (!silent) setRefreshing(false); }
   }
   useEffect(() => { if (user) loadDashboard(); }, [user]);
+  useAutoRefresh(() => user ? loadDashboard({ silent: true }) : undefined);
   useEffect(() => {
     if (!user) return;
     const fetchNotif = () => api.get('/notifications', auth()).then(x => setNotifications(x.data)).catch(() => { });
@@ -2198,7 +2285,7 @@ function App() {
     window.hydroRefreshNotifications = fetchNotif;
     return () => clearInterval(id);
   }, [user, data]);
-  const isMobile = useMediaQuery('(max-width:700px)');
+  const isMobile = useMediaQuery('(max-width:1024px)');
   if (checking) return <div className="loading">Carregando operação...</div>;
   if (!user) return <Login onLogin={setUser} />;
   const logout = () => { localStorage.removeItem('hydro_token'); setUser(null) };
@@ -2209,7 +2296,7 @@ function App() {
   const adminOnly = el => user.role === 'admin' ? el : <Navigate to="/" replace />;
   return <Shell user={user} onLogout={logout} notifications={notifications}>
     <Routes>
-      <Route path="/" element={<Dashboard data={data} onRefresh={loadDashboard} refreshing={refreshing} />} />
+      <Route path="/" element={<Dashboard data={data} onRefresh={loadDashboard} refreshing={refreshing} lastUpdated={lastUpdated} />} />
       <Route path="/estoque" element={<Stock data={data} setData={setData} create={setModal} />} />
       <Route path="/financeiro" element={<Finance data={data} setData={setData} create={setModal} user={user} />} />
       <Route path="/provisao" element={adminOnly(<Receivables />)} />
