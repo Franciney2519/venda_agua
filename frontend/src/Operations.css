@@ -106,7 +106,7 @@
 .mob-viagem-tabs button.active{background:var(--mob-blue);border-color:var(--mob-blue);color:#fff}
 .mob-viagem-form{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 20px 16px}
 .mob-viagem-form label{display:grid;gap:6px;font-size:calc(12px * var(--scale));font-weight:700;color:var(--mob-muted)}
-.mob-viagem-form label:last-of-type,.mob-viagem-form .error,.mob-viagem-form .mob-cta{grid-column:1 / -1}
+.mob-viagem-form label:last-of-type,.mob-viagem-form .error,.mob-viagem-form .mob-cta,.mob-viagem-form .mob-help,.mob-viagem-form .mob-outline-btn{grid-column:1 / -1}
 .mob-viagem-form select,.mob-viagem-form input{padding:11px;border-radius:10px;border:1px solid var(--mob-line);background:var(--mob-surface);font-size:calc(14px * var(--scale));color:var(--mob-ink)}
 .mob-carga-add-row{display:grid;grid-template-columns:1fr 80px 44px;gap:8px}
 .mob-carga-add-row select,.mob-carga-add-row input{padding:11px;border-radius:10px;border:1px solid var(--mob-line);background:var(--mob-surface);font-size:calc(13px * var(--scale));color:var(--mob-ink)}
