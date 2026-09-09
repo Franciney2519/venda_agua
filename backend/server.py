@@ -674,6 +674,18 @@ async def remove_rota_cliente(item_id: str, rota_id: str, cliente_id: str, user=
     await db.viagens.update_one({"id": item_id, "rotas.id": rota_id}, {"$pull": {"rotas.$.clientes": {"id": cliente_id}}, "$set": {"updated_at": now()}})
     return await db.viagens.find_one({"id": item_id}, {"_id": 0})
 
+@api.delete("/viagens/{item_id}/rotas/{rota_id}")
+async def delete_rota(item_id: str, rota_id: str, user=Depends(current_user)):
+    v = await _own_viagem_or_404(item_id, user)
+    await ensure_day_open(v.get("date") or today_local(), v.get("driver") or user["name"], user)
+    if v["status"] == "finalizada": raise HTTPException(400, "Viagem já está finalizada")
+    rota = _find_rota(v, rota_id)
+    if not rota: raise HTTPException(404, "Rota não encontrada")
+    if await db.daily_entries.count_documents({"rota_id": rota_id}) > 0:
+        raise HTTPException(400, "Não é possível excluir uma rota que já tem entregas lançadas")
+    await db.viagens.update_one({"id": item_id}, {"$pull": {"rotas": {"id": rota_id}}, "$set": {"updated_at": now()}})
+    return await db.viagens.find_one({"id": item_id}, {"_id": 0})
+
 @api.post("/viagens/{item_id}/iniciar")
 async def iniciar_viagem(item_id: str, user=Depends(current_user)):
     v = await _own_viagem_or_404(item_id, user)

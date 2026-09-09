@@ -173,7 +173,8 @@
 .mob-danger-btn.full{margin-top:6px}
 .mob-ghost-btn{flex:1;height:52px;border-radius:12px;background:var(--mob-surface2);color:var(--mob-ink);font:700 calc(14px * var(--scale)) 'DM Sans',sans-serif}
 .mob-dashed-btn{width:100%;min-height:58px;border-radius:14px;border:1.5px dashed var(--mob-line);background:transparent;color:var(--mob-blue);font:700 calc(14px * var(--scale)) 'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;gap:8px}
-.mob-text-btn{background:none;color:var(--mob-blue);font-weight:700;font-size:calc(14px * var(--scale));padding:10px}
+.mob-text-btn{background:none;color:var(--mob-blue);font-weight:700;font-size:calc(14px * var(--scale));padding:10px;display:inline-flex;align-items:center;gap:6px}
+.mob-danger-text{color:var(--mob-red)}
 
 .mob-search{display:flex;align-items:center;gap:10px;height:56px;padding:0 16px;border-radius:14px;border:1.5px solid var(--mob-line);background:var(--mob-surface);color:var(--mob-muted)}
 .mob-search input{flex:1;border:0;background:none;font-size:calc(15px * var(--scale));color:var(--mob-ink);outline:none}

@@ -1452,7 +1452,7 @@ function MobileEditEntregaModal({ entry, onClose, onSaved }) {
   </div>
 }
 
-function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate, onIniciar, onFinalizar, onDelete, onAddRota, onAddRotaCliente, onUpdateRotaCliente, onRemoveRotaCliente, onEntriesChanged, onAddEntrega, dayClosed }) {
+function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate, onIniciar, onFinalizar, onDelete, onAddRota, onAddRotaCliente, onUpdateRotaCliente, onRemoveRotaCliente, onRemoveRota, onEntriesChanged, onAddEntrega, dayClosed }) {
   const [turno, setTurno] = useState(0);
   const [cargaTotal, setCargaTotal] = useState('');
   const [cargaItems, setCargaItems] = useState([]);
@@ -1555,6 +1555,12 @@ function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate
     if (!window.confirm(`Remover ${cliente.name} desta rota?`)) return;
     try { await onRemoveRotaCliente(viagemId, rotaId, cliente.id); await loadForDate(); }
     catch (e) { setClienteFormError(e.response?.data?.detail || 'Não foi possível remover o cliente.'); }
+  }
+  async function removeRotaFromViagem(viagemId, rota) {
+    if (!window.confirm(`Excluir a Rota ${String(rota.numero).padStart(2, '0')}${rota.clientes?.length ? ` (${rota.clientes.length} cliente(s))` : ''}?`)) return;
+    setError('');
+    try { await onRemoveRota(viagemId, rota.id); if (expandedRotaId === rota.id) setExpandedRotaId(null); await loadForDate(); }
+    catch (e) { setError(e.response?.data?.detail || 'Não foi possível excluir a rota.'); }
   }
   async function saveClienteEdit() {
     setSavingCliente(true); setClienteFormError('');
@@ -1711,6 +1717,7 @@ function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate
                     {clienteFormError && <div className="error" data-testid="mob-viagem-rota-add-cliente-error">{clienteFormError}</div>}
                     <button type="button" className="mob-ghost-btn" onClick={() => { setAddingClienteToRota(null); setClienteFormError(''); }}>Concluído</button>
                   </div> : <button type="button" className="mob-dashed-btn" data-testid={`mob-viagem-rota-add-cliente-${r.id}`} onClick={() => { setAddingClienteToRota(r.id); setClienteFormError(''); }}><Plus size={16} /> Adicionar cliente</button>)}
+                  {v.status !== 'finalizada' && addingClienteToRota !== r.id && <button type="button" className="mob-text-btn mob-danger-text" data-testid={`mob-viagem-rota-excluir-${r.id}`} onClick={() => removeRotaFromViagem(v.id, r)}><Trash2 size={14} /> Excluir esta rota</button>}
                 </div>}
               </div>;
             })}
@@ -2323,6 +2330,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
   async function addRotaCliente(viagemId, rotaId, cliente) { const { data } = await api.post(`/viagens/${viagemId}/rotas/${rotaId}/clientes`, cliente, auth()); await loadViagens(); return data; }
   async function updateRotaCliente(viagemId, rotaId, clienteId, changes) { const { data } = await api.patch(`/viagens/${viagemId}/rotas/${rotaId}/clientes/${clienteId}`, changes, auth()); await loadViagens(); return data; }
   async function removeRotaCliente(viagemId, rotaId, clienteId) { const { data } = await api.delete(`/viagens/${viagemId}/rotas/${rotaId}/clientes/${clienteId}`, auth()); await loadViagens(); return data; }
+  async function removeRota(viagemId, rotaId) { const { data } = await api.delete(`/viagens/${viagemId}/rotas/${rotaId}`, auth()); await loadViagens(); return data; }
 
   const dayClosed = !!dayClosure?.closed;
   function showToast(text, tone = 'green') { setToast(text); setToastTone(tone); setTimeout(() => setToast(''), 2600); }
@@ -2380,7 +2388,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
     </main>
     <MobileBottomNav tab={tab} setTab={setTab} />
     {picker && <MobilePickerSheet customers={customers} onClose={() => setPicker(false)} onPick={pickCustomer} onNewCustomer={newCustomer} />}
-    {showViagens && <MobileViagensSheet viagens={viagensComProgresso} customers={customers} onClose={() => setShowViagens(false)} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} onAddRota={addRota} onAddRotaCliente={addRotaCliente} onUpdateRotaCliente={updateRotaCliente} onRemoveRotaCliente={removeRotaCliente} onEntriesChanged={() => { loadEntries(); loadViagens(); }} onAddEntrega={() => { setShowViagens(false); setPicker(true); }} dayClosed={dayClosed} />}
+    {showViagens && <MobileViagensSheet viagens={viagensComProgresso} customers={customers} onClose={() => setShowViagens(false)} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} onAddRota={addRota} onAddRotaCliente={addRotaCliente} onUpdateRotaCliente={updateRotaCliente} onRemoveRotaCliente={removeRotaCliente} onRemoveRota={removeRota} onEntriesChanged={() => { loadEntries(); loadViagens(); }} onAddEntrega={() => { setShowViagens(false); setPicker(true); }} dayClosed={dayClosed} />}
     {sheetCustomer && <MobileLaunchPanel customer={sheetCustomer} prefillOrder={sheetOrder} user={user} date={date} viagemId={viagemAtiva?.id} rotaId={sheetOrder?.rota_id || clientesDasRotas.find(c => c.id === sheetCustomer?.id)?.rota_id || rotasAtivas[rotasAtivas.length - 1]?.id} onClose={() => { setSheetCustomer(null); setSheetOrder(null); }} onComplete={onEntryComplete} onFailed={loadViagens} />}
     {postDelivery && <MobileReceiptPrompt entry={postDelivery} customer={customers.find(c => c.name === postDelivery.customer)} onSavePhone={p => savePhoneForCustomerName(postDelivery.customer, p)} onClose={() => setPostDelivery(null)} />}
     <MobileToast text={toast} tone={toastTone} />
