@@ -1620,7 +1620,6 @@ function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate
         <input type="date" max={todayISO(0)} value={viagensDate} data-testid="mob-viagens-date" onChange={e => setViagensDate(e.target.value)} />
       </label>
       {!isToday && <p className="mob-help" style={{ padding: '0 14px' }}>Vendo viagens de {viagensDate} — inicie/finalize daqui se alguma ficou pendente.</p>}
-      {viagens.length > 1 && <p className="mob-help" style={{ padding: '0 14px' }}>← Arraste para o lado para ver as outras rotas</p>}
       <div className="mob-viagem-carousel">
         {viagens.length === 0 && <p className="muted" style={{ padding: 16 }}>Nenhuma viagem criada nesse dia.</p>}
         {viagens.map(v => {

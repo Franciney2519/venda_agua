@@ -124,8 +124,8 @@
 .mob-viagem-client-row .mob-customer-info{flex:1;min-width:0}
 .mob-viagem-client-row .mob-customer-info b{font-size:calc(14px * var(--scale))}
 .mob-viagem-client-row svg{flex:none}
-.mob-viagem-carousel{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;padding:4px 14px 18px;margin:0 -4px}
-.mob-viagem-card{flex:0 0 86%;max-width:360px;scroll-snap-align:center;background:var(--mob-surface2);border:1.5px solid var(--mob-line);border-radius:18px;padding:6px 0 12px;display:flex;flex-direction:column;box-shadow:0 6px 18px #10253f14}
+.mob-viagem-carousel{display:flex;flex-direction:column;gap:14px;padding:4px 14px 18px}
+.mob-viagem-card{width:100%;background:var(--mob-surface2);border:1.5px solid var(--mob-line);border-radius:18px;padding:6px 0 12px;display:flex;flex-direction:column;box-shadow:0 6px 18px #10253f14}
 .mob-viagem-row{display:flex;align-items:flex-start;gap:10px;padding:12px 14px 8px;flex-wrap:wrap}
 .mob-viagem-row>div:first-child{flex:1;min-width:60%}
 .mob-viagem-row b{display:block;font-size:calc(15px * var(--scale))}
