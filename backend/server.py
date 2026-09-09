@@ -618,11 +618,29 @@ def _find_rota(v, rota_id):
         if r.get("id") == rota_id: return r
     return None
 
+def _planned_quantity(v, exclude_cliente_id=None):
+    total = 0.0
+    for r in (v.get("rotas") or []):
+        for c in (r.get("clientes") or []):
+            if c.get("id") == exclude_cliente_id: continue
+            total += float(c.get("quantity") or 0)
+    return total
+
+def _check_carga_limit(v, added_quantity, exclude_cliente_id=None):
+    carga_total = v.get("carga_total")
+    if not carga_total: return
+    total = _planned_quantity(v, exclude_cliente_id) + float(added_quantity or 0)
+    if total > carga_total:
+        restante = max(0, carga_total - _planned_quantity(v, exclude_cliente_id))
+        raise HTTPException(400, f"Isso passa da carga da viagem ({total:g}/{carga_total:g} un somando todas as rotas). Restam {restante:g} un disponíveis.")
+
 @api.post("/viagens/{item_id}/rotas")
 async def add_rota(item_id: str, data: RotaInput, user=Depends(current_user)):
     v = await _own_viagem_or_404(item_id, user)
     await ensure_day_open(v.get("date") or today_local(), v.get("driver") or user["name"], user)
     if v["status"] == "finalizada": raise HTTPException(400, "Viagem já está finalizada")
+    added = sum(float(c.get("quantity") or 0) for c in (data.clientes or []))
+    _check_carga_limit(v, added)
     numero = len(v.get("rotas") or []) + 1
     rota = {
         "id": str(uuid.uuid4()), "numero": numero, "codigo_rota": f"{v['codigo_viagem']}-R{str(numero).zfill(2)}",
@@ -641,6 +659,7 @@ async def add_rota_cliente(item_id: str, rota_id: str, data: dict, user=Depends(
     if not data.get("id") or not data.get("name"): raise HTTPException(400, "Informe o cliente")
     if any(c.get("id") == data["id"] for c in (rota.get("clientes") or [])):
         return await db.viagens.find_one({"id": item_id}, {"_id": 0})
+    _check_carga_limit(v, data.get("quantity"))
     cliente = {"id": data["id"], "name": data["name"], "brand": data.get("brand"), "quantity": data.get("quantity"), "sale_type": data.get("sale_type"), "notes": data.get("notes")}
     await db.viagens.update_one({"id": item_id, "rotas.id": rota_id}, {"$push": {"rotas.$.clientes": cliente}, "$set": {"updated_at": now()}})
     return await db.viagens.find_one({"id": item_id}, {"_id": 0})
@@ -653,6 +672,7 @@ async def update_rota_cliente(item_id: str, rota_id: str, cliente_id: str, data:
     await ensure_day_open(v.get("date") or today_local(), v.get("driver") or user["name"], user)
     rota = _find_rota(v, rota_id)
     if not rota: raise HTTPException(404, "Rota não encontrada")
+    if "quantity" in data: _check_carga_limit(v, data.get("quantity"), exclude_cliente_id=cliente_id)
     clientes = rota.get("clientes") or []
     for c in clientes:
         if c.get("id") == cliente_id:

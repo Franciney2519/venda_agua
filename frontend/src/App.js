@@ -1533,16 +1533,18 @@ function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate
   function plannedQuantity(v, excludeClienteId) {
     return (v?.rotas || []).reduce((s, r) => s + (r.clientes || []).reduce((s2, c) => s2 + (c.id === excludeClienteId ? 0 : Number(c.quantity || 0)), 0), 0);
   }
-  function confirmCargaOk(v, addedQuantity, excludeClienteId) {
-    if (!v?.carga_total) return true;
+  function cargaLimitError(v, addedQuantity, excludeClienteId) {
+    if (!v?.carga_total) return null;
     const total = plannedQuantity(v, excludeClienteId) + Number(addedQuantity || 0);
-    if (total <= v.carga_total) return true;
-    return window.confirm(`Isso passa da carga da viagem: ${total}/${v.carga_total} un planejadas somando todas as rotas. Confirma mesmo assim?`);
+    if (total <= v.carga_total) return null;
+    const restante = Math.max(0, v.carga_total - plannedQuantity(v, excludeClienteId));
+    return `Isso passa da carga da viagem (${total}/${v.carga_total} un somando todas as rotas). Restam ${restante} un disponíveis.`;
   }
 
   async function submitRota(v) {
     const added = rotaClientes.reduce((s, c) => s + Number(c.quantity || 0), 0);
-    if (!confirmCargaOk(v, added)) return;
+    const cargaErr = cargaLimitError(v, added);
+    if (cargaErr) return setRotaError(cargaErr);
     setRotaError(''); setSavingRota(true);
     try {
       await onAddRota(v.id, { clientes: rotaClientes });
@@ -1561,7 +1563,8 @@ function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate
   function toggleRotaExpand(rotaId) { setExpandedRotaId(prev => prev === rotaId ? null : rotaId); setAddingClienteToRota(null); setEditingCliente(null); }
 
   async function saveNewClienteInRota(viagemId, rotaId, cliente) {
-    if (!confirmCargaOk(viagens.find(x => x.id === viagemId), cliente.quantity)) return;
+    const cargaErr = cargaLimitError(viagens.find(x => x.id === viagemId), cliente.quantity);
+    if (cargaErr) return setClienteFormError(cargaErr);
     setClienteFormError('');
     try { await onAddRotaCliente(viagemId, rotaId, cliente); await loadForDate(); }
     catch (e) { setClienteFormError(e.response?.data?.detail || 'Não foi possível adicionar o cliente.'); }
@@ -1579,7 +1582,8 @@ function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate
   }
   async function saveClienteEdit() {
     const { viagemId, rotaId, cliente } = editingCliente;
-    if (!confirmCargaOk(viagens.find(x => x.id === viagemId), editingCliente.quantity, cliente.id)) return;
+    const cargaErr = cargaLimitError(viagens.find(x => x.id === viagemId), editingCliente.quantity, cliente.id);
+    if (cargaErr) return setClienteFormError(cargaErr);
     setSavingCliente(true); setClienteFormError('');
     try {
       await onUpdateRotaCliente(viagemId, rotaId, cliente.id, { brand: editingCliente.brand, quantity: editingCliente.quantity ? Number(editingCliente.quantity) : undefined, sale_type: editingCliente.saleType, notes: editingCliente.notes || undefined });
