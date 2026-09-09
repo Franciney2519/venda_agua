@@ -1280,6 +1280,7 @@ function MobileViagemClientPicker({ customers, selected, onAdd, onRemove }) {
   const [q, setQ] = useState('');
   const [configuring, setConfiguring] = useState(null);
   const [brand, setBrand] = useState('');
+  const [customBrand, setCustomBrand] = useState(false);
   const [quantity, setQuantity] = useState('');
   const [saleType, setSaleType] = useState('exchange');
   const [notes, setNotes] = useState('');
@@ -1294,7 +1295,7 @@ function MobileViagemClientPicker({ customers, selected, onAdd, onRemove }) {
     inputRef.current?.blur();
     setConfiguring(c);
     const brandOpts = brandListOf(c);
-    setBrand(brandOpts[0]?.brand || ''); setQuantity(''); setSaleType('exchange'); setNotes('');
+    setBrand(brandOpts[0]?.brand || ''); setCustomBrand(brandOpts.length === 0); setQuantity(''); setSaleType('exchange'); setNotes('');
   }
   function confirmAdd() {
     onAdd({ id: configuring.id, name: configuring.name, brand: brand || undefined, quantity: quantity ? Number(quantity) : undefined, sale_type: saleType, notes: notes || undefined });
@@ -1306,10 +1307,11 @@ function MobileViagemClientPicker({ customers, selected, onAdd, onRemove }) {
     return <div className="mob-viagem-clients">
       <div className="mob-add-brand">
         <p className="mob-eyebrow" style={{ margin: 0 }}>{configuring.name}</p>
-        <label>Produto{brandOpts.length > 0
+        <label>Produto{brandOpts.length > 0 && !customBrand
           ? <select value={brand} data-testid="mob-viagem-client-brand-select" onChange={e => setBrand(e.target.value)}>{brandOpts.map(b => <option key={b.brand} value={b.brand}>{b.brand} · {money(b.price)}</option>)}</select>
-          : <input placeholder="ex: Minalar 20L" value={brand} data-testid="mob-viagem-client-brand-input" onChange={e => setBrand(e.target.value)} />}
+          : <input placeholder="ex: Minalar 20L" autoFocus={customBrand} value={brand} data-testid="mob-viagem-client-brand-input" onChange={e => setBrand(e.target.value)} />}
         </label>
+        {brandOpts.length > 0 && <button type="button" className="mob-text-btn" data-testid="mob-viagem-client-brand-toggle" onClick={() => { setCustomBrand(!customBrand); setBrand(customBrand ? (brandOpts[0]?.brand || '') : ''); }}>{customBrand ? 'Usar produto do cadastro' : 'Pediu outro produto (fora do cadastro)'}</button>}
         <label>Quantidade<input type="number" inputMode="numeric" min="0" value={quantity} data-testid="mob-viagem-client-qty" onChange={e => setQuantity(e.target.value)} /></label>
         <div className="mob-sale-type">
           <button type="button" className={saleType === 'exchange' ? 'active' : ''} data-testid="mob-viagem-client-exchange" onClick={() => setSaleType('exchange')}>Somente água</button>
@@ -1678,10 +1680,11 @@ function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate
                   {(r.clientes || []).map(c => editingCliente?.rotaId === r.id && editingCliente?.cliente.id === c.id ? (
                     <div className="mob-add-brand" key={c.id} data-testid={`mob-viagem-rota-cliente-edit-${c.id}`}>
                       <p className="mob-eyebrow" style={{ margin: 0 }}>{c.name}</p>
-                      <label>Produto{brandListOf(customers.find(x => x.id === c.id)).length > 0
-                        ? <select value={editingCliente.brand || ''} data-testid="mob-viagem-cliente-edit-brand" onChange={e => setEditingCliente({ ...editingCliente, brand: e.target.value })}>{brandListOf(customers.find(x => x.id === c.id)).map(b => <option key={b.brand} value={b.brand}>{b.brand} · {money(b.price)}</option>)}</select>
-                        : <input value={editingCliente.brand || ''} data-testid="mob-viagem-cliente-edit-brand-input" onChange={e => setEditingCliente({ ...editingCliente, brand: e.target.value })} />}
+                      <label>Produto{(() => { const opts = brandListOf(customers.find(x => x.id === c.id)); return opts.length > 0 && !editingCliente.customBrand
+                        ? <select value={editingCliente.brand || ''} data-testid="mob-viagem-cliente-edit-brand" onChange={e => setEditingCliente({ ...editingCliente, brand: e.target.value })}>{opts.map(b => <option key={b.brand} value={b.brand}>{b.brand} · {money(b.price)}</option>)}</select>
+                        : <input placeholder="ex: Minalar 20L" autoFocus={editingCliente.customBrand} value={editingCliente.brand || ''} data-testid="mob-viagem-cliente-edit-brand-input" onChange={e => setEditingCliente({ ...editingCliente, brand: e.target.value })} />; })()}
                       </label>
+                      {brandListOf(customers.find(x => x.id === c.id)).length > 0 && <button type="button" className="mob-text-btn" data-testid="mob-viagem-cliente-edit-brand-toggle" onClick={() => setEditingCliente({ ...editingCliente, customBrand: !editingCliente.customBrand, brand: editingCliente.customBrand ? (brandListOf(customers.find(x => x.id === c.id))[0]?.brand || '') : '' })}>{editingCliente.customBrand ? 'Usar produto do cadastro' : 'Pediu outro produto (fora do cadastro)'}</button>}
                       <label>Quantidade<input type="number" inputMode="numeric" min="0" value={editingCliente.quantity ?? ''} data-testid="mob-viagem-cliente-edit-qty" onChange={e => setEditingCliente({ ...editingCliente, quantity: e.target.value })} /></label>
                       <div className="mob-sale-type">
                         <button type="button" className={editingCliente.saleType === 'exchange' ? 'active' : ''} onClick={() => setEditingCliente({ ...editingCliente, saleType: 'exchange' })}>Somente água</button>
@@ -1698,7 +1701,7 @@ function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate
                     <div className="mob-viagem-rota-cliente-row" key={c.id} data-testid={`mob-viagem-rota-cliente-${c.id}`}>
                       <div><b>{c.name}</b><small>{c.brand || 'sem produto'}{c.quantity ? ` · ${c.quantity}` : ''}{c.sale_type === 'full' ? ' · venda completa' : ''}{c.status === 'nao_entregue' ? ' · não entregue' : ''}</small></div>
                       <div className="mob-row-actions">
-                        <button type="button" aria-label="Editar cliente" className="mob-text-btn" data-testid={`mob-viagem-rota-cliente-editar-${c.id}`} onClick={() => { setClienteFormError(''); setEditingCliente({ viagemId: v.id, rotaId: r.id, cliente: c, brand: c.brand || '', quantity: c.quantity ?? '', saleType: c.sale_type || 'exchange', notes: c.notes || '' }); }}><Pencil size={14} /></button>
+                        <button type="button" aria-label="Editar cliente" className="mob-text-btn" data-testid={`mob-viagem-rota-cliente-editar-${c.id}`} onClick={() => { setClienteFormError(''); const opts = brandListOf(customers.find(x => x.id === c.id)); setEditingCliente({ viagemId: v.id, rotaId: r.id, cliente: c, brand: c.brand || '', customBrand: !opts.some(b => b.brand === c.brand), quantity: c.quantity ?? '', saleType: c.sale_type || 'exchange', notes: c.notes || '' }); }}><Pencil size={14} /></button>
                         <button type="button" aria-label="Remover cliente" className="mob-text-btn" data-testid={`mob-viagem-rota-cliente-remover-${c.id}`} onClick={() => removeClienteFromRota(v.id, r.id, c)}><Trash2 size={14} /></button>
                       </div>
                     </div>
