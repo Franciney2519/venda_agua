@@ -581,7 +581,8 @@ async def create_viagem(data: ViagemInput, user=Depends(current_user)):
         raise HTTPException(400, f"Máximo de {VIAGENS_POR_TURNO} viagens no turno da {TURNO_LABELS[data.turno].lower()} ({date_str}) — já existem {count_turno}.")
 
     numero = await db.viagens.count_documents({"driver": driver_name, "date": date_str}) + 1
-    codigo = gerar_codigo_viagem(data.turno, date_str, numero)
+    seq_global = await db.viagens.count_documents({"date": date_str, "turno": data.turno}) + 1
+    codigo = gerar_codigo_viagem(data.turno, date_str, seq_global)
     if await db.viagens.find_one({"codigo_viagem": codigo}):
         raise HTTPException(409, f"Já existe uma viagem com o código {codigo}")
 
@@ -644,6 +645,8 @@ async def add_rota_cliente(item_id: str, rota_id: str, data: dict, user=Depends(
     await db.viagens.update_one({"id": item_id, "rotas.id": rota_id}, {"$push": {"rotas.$.clientes": cliente}, "$set": {"updated_at": now()}})
     return await db.viagens.find_one({"id": item_id}, {"_id": 0})
 
+CLIENTE_ROTA_EDITABLE_FIELDS = ("status", "name", "brand", "quantity", "sale_type", "notes")
+
 @api.patch("/viagens/{item_id}/rotas/{rota_id}/clientes/{cliente_id}")
 async def update_rota_cliente(item_id: str, rota_id: str, cliente_id: str, data: dict, user=Depends(current_user)):
     v = await _own_viagem_or_404(item_id, user)
@@ -653,11 +656,22 @@ async def update_rota_cliente(item_id: str, rota_id: str, cliente_id: str, data:
     clientes = rota.get("clientes") or []
     for c in clientes:
         if c.get("id") == cliente_id:
-            if "status" in data: c["status"] = data["status"]
+            for f in CLIENTE_ROTA_EDITABLE_FIELDS:
+                if f in data: c[f] = data[f]
             break
     else:
         clientes.append({"id": cliente_id, "name": data.get("name") or cliente_id, "status": data.get("status")})
     await db.viagens.update_one({"id": item_id, "rotas.id": rota_id}, {"$set": {"rotas.$.clientes": clientes, "updated_at": now()}})
+    return await db.viagens.find_one({"id": item_id}, {"_id": 0})
+
+@api.delete("/viagens/{item_id}/rotas/{rota_id}/clientes/{cliente_id}")
+async def remove_rota_cliente(item_id: str, rota_id: str, cliente_id: str, user=Depends(current_user)):
+    v = await _own_viagem_or_404(item_id, user)
+    await ensure_day_open(v.get("date") or today_local(), v.get("driver") or user["name"], user)
+    if v["status"] == "finalizada": raise HTTPException(400, "Viagem já está finalizada")
+    rota = _find_rota(v, rota_id)
+    if not rota: raise HTTPException(404, "Rota não encontrada")
+    await db.viagens.update_one({"id": item_id, "rotas.id": rota_id}, {"$pull": {"rotas.$.clientes": {"id": cliente_id}}, "$set": {"updated_at": now()}})
     return await db.viagens.find_one({"id": item_id}, {"_id": 0})
 
 @api.post("/viagens/{item_id}/iniciar")

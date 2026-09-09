@@ -1450,7 +1450,7 @@ function MobileEditEntregaModal({ entry, onClose, onSaved }) {
   </div>
 }
 
-function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate, onIniciar, onFinalizar, onDelete, onAddRota, onEntriesChanged, onAddEntrega, dayClosed }) {
+function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate, onIniciar, onFinalizar, onDelete, onAddRota, onAddRotaCliente, onUpdateRotaCliente, onRemoveRotaCliente, onEntriesChanged, onAddEntrega, dayClosed }) {
   const [turno, setTurno] = useState(0);
   const [cargaTotal, setCargaTotal] = useState('');
   const [cargaItems, setCargaItems] = useState([]);
@@ -1523,8 +1523,8 @@ function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate
     onEntriesChanged?.();
   }
 
-  function addRotaCliente(c) { setRotaClientes(prev => prev.some(x => x.id === c.id) ? prev : [...prev, c]); }
-  function removeRotaCliente(id) { setRotaClientes(prev => prev.filter(x => x.id !== id)); }
+  function addToNewRotaDraft(c) { setRotaClientes(prev => prev.some(x => x.id === c.id) ? prev : [...prev, c]); }
+  function removeFromNewRotaDraft(id) { setRotaClientes(prev => prev.filter(x => x.id !== id)); }
 
   async function submitRota(v) {
     setRotaError(''); setSavingRota(true);
@@ -1534,6 +1534,35 @@ function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate
       await loadForDate();
     } catch (e) { setRotaError(e.response?.data?.detail || 'Não foi possível salvar a rota.'); }
     finally { setSavingRota(false); }
+  }
+
+  const [expandedRotaId, setExpandedRotaId] = useState(null);
+  const [addingClienteToRota, setAddingClienteToRota] = useState(null);
+  const [editingCliente, setEditingCliente] = useState(null);
+  const [clienteFormError, setClienteFormError] = useState('');
+  const [savingCliente, setSavingCliente] = useState(false);
+
+  function toggleRotaExpand(rotaId) { setExpandedRotaId(prev => prev === rotaId ? null : rotaId); setAddingClienteToRota(null); setEditingCliente(null); }
+
+  async function saveNewClienteInRota(viagemId, rotaId, cliente) {
+    setClienteFormError('');
+    try { await onAddRotaCliente(viagemId, rotaId, cliente); await loadForDate(); }
+    catch (e) { setClienteFormError(e.response?.data?.detail || 'Não foi possível adicionar o cliente.'); }
+  }
+  async function removeClienteFromRota(viagemId, rotaId, cliente) {
+    if (!window.confirm(`Remover ${cliente.name} desta rota?`)) return;
+    try { await onRemoveRotaCliente(viagemId, rotaId, cliente.id); await loadForDate(); }
+    catch (e) { setClienteFormError(e.response?.data?.detail || 'Não foi possível remover o cliente.'); }
+  }
+  async function saveClienteEdit() {
+    setSavingCliente(true); setClienteFormError('');
+    try {
+      const { viagemId, rotaId, cliente } = editingCliente;
+      await onUpdateRotaCliente(viagemId, rotaId, cliente.id, { brand: editingCliente.brand, quantity: editingCliente.quantity ? Number(editingCliente.quantity) : undefined, sale_type: editingCliente.saleType, notes: editingCliente.notes || undefined });
+      await loadForDate();
+      setEditingCliente(null);
+    } catch (e) { setClienteFormError(e.response?.data?.detail || 'Não foi possível salvar.'); }
+    finally { setSavingCliente(false); }
   }
 
   async function handleIniciar(v) { setError(''); try { await onIniciar(v); await loadForDate(); } catch (e) { setError(e.response?.data?.detail || e.message || 'Não foi possível iniciar a viagem.'); } }
@@ -1636,13 +1665,55 @@ function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate
             {v.status === 'finalizada' && <small className="muted">Saldo {money(v.saldo_liquido ?? v.total_bruto)} · {v.entregas || 0} entregas{v.problemas ? ` · ${v.problemas} c/ MF` : ''}{v.carga_total ? (v.quantidade_entregue === v.carga_total ? ' · carga bateu ✓' : ` · carga ${v.carga_total} ≠ entregue ${v.quantidade_entregue ?? 0}`) : ''}{v.carga_carregada && v.carga_devolvida_total != null ? ` · ${v.carga_devolvida_total} un devolvida(s) ao estoque` : ''}</small>}
           </div>
           {v.status !== 'finalizada' && <div className="mob-viagem-rotas">
-            {(v.rotas || []).map(r => <div className="mob-viagem-rota-row" key={r.id} data-testid={`mob-viagem-rota-${r.id}`}>
-              <span>Rota {String(r.numero).padStart(2, '0')}</span>
-              <small>{r.clientes?.length || 0} cliente{r.clientes?.length !== 1 ? 's' : ''}</small>
-            </div>)}
+            {(v.rotas || []).map(r => {
+              const isExpanded = expandedRotaId === r.id;
+              return <div key={r.id} className={`mob-viagem-rota-block${isExpanded ? ' open' : ''}`}>
+                <button type="button" className="mob-viagem-rota-row" data-testid={`mob-viagem-rota-${r.id}`} onClick={() => toggleRotaExpand(r.id)}>
+                  <span>Rota {String(r.numero).padStart(2, '0')}</span>
+                  <small>{r.clientes?.length || 0} cliente{r.clientes?.length !== 1 ? 's' : ''}</small>
+                  <ChevronRight size={16} className={isExpanded ? 'rot90' : ''} />
+                </button>
+                {isExpanded && <div className="mob-viagem-rota-detail" data-testid={`mob-viagem-rota-detail-${r.id}`}>
+                  {(r.clientes || []).length === 0 && <p className="muted" style={{ padding: '4px 2px' }}>Nenhum cliente nesta rota ainda.</p>}
+                  {(r.clientes || []).map(c => editingCliente?.rotaId === r.id && editingCliente?.cliente.id === c.id ? (
+                    <div className="mob-add-brand" key={c.id} data-testid={`mob-viagem-rota-cliente-edit-${c.id}`}>
+                      <p className="mob-eyebrow" style={{ margin: 0 }}>{c.name}</p>
+                      <label>Produto{brandListOf(customers.find(x => x.id === c.id)).length > 0
+                        ? <select value={editingCliente.brand || ''} data-testid="mob-viagem-cliente-edit-brand" onChange={e => setEditingCliente({ ...editingCliente, brand: e.target.value })}>{brandListOf(customers.find(x => x.id === c.id)).map(b => <option key={b.brand} value={b.brand}>{b.brand} · {money(b.price)}</option>)}</select>
+                        : <input value={editingCliente.brand || ''} data-testid="mob-viagem-cliente-edit-brand-input" onChange={e => setEditingCliente({ ...editingCliente, brand: e.target.value })} />}
+                      </label>
+                      <label>Quantidade<input type="number" inputMode="numeric" min="0" value={editingCliente.quantity ?? ''} data-testid="mob-viagem-cliente-edit-qty" onChange={e => setEditingCliente({ ...editingCliente, quantity: e.target.value })} /></label>
+                      <div className="mob-sale-type">
+                        <button type="button" className={editingCliente.saleType === 'exchange' ? 'active' : ''} onClick={() => setEditingCliente({ ...editingCliente, saleType: 'exchange' })}>Somente água</button>
+                        <button type="button" className={editingCliente.saleType === 'full' ? 'active' : ''} onClick={() => setEditingCliente({ ...editingCliente, saleType: 'full' })}>Venda completa</button>
+                      </div>
+                      <label>Observações (opcional)<input value={editingCliente.notes || ''} data-testid="mob-viagem-cliente-edit-notes" onChange={e => setEditingCliente({ ...editingCliente, notes: e.target.value })} /></label>
+                      {clienteFormError && <div className="error" data-testid="mob-viagem-cliente-edit-error">{clienteFormError}</div>}
+                      <div className="mob-row-actions">
+                        <button type="button" className="mob-ghost-btn" onClick={() => { setEditingCliente(null); setClienteFormError(''); }}>Cancelar</button>
+                        <button type="button" className="primary" disabled={savingCliente} data-testid={`mob-viagem-cliente-edit-save-${c.id}`} onClick={saveClienteEdit}>{savingCliente ? 'Salvando...' : 'Salvar'}</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mob-viagem-rota-cliente-row" key={c.id} data-testid={`mob-viagem-rota-cliente-${c.id}`}>
+                      <div><b>{c.name}</b><small>{c.brand || 'sem produto'}{c.quantity ? ` · ${c.quantity}` : ''}{c.sale_type === 'full' ? ' · venda completa' : ''}{c.status === 'nao_entregue' ? ' · não entregue' : ''}</small></div>
+                      <div className="mob-row-actions">
+                        <button type="button" aria-label="Editar cliente" className="mob-text-btn" data-testid={`mob-viagem-rota-cliente-editar-${c.id}`} onClick={() => { setClienteFormError(''); setEditingCliente({ viagemId: v.id, rotaId: r.id, cliente: c, brand: c.brand || '', quantity: c.quantity ?? '', saleType: c.sale_type || 'exchange', notes: c.notes || '' }); }}><Pencil size={14} /></button>
+                        <button type="button" aria-label="Remover cliente" className="mob-text-btn" data-testid={`mob-viagem-rota-cliente-remover-${c.id}`} onClick={() => removeClienteFromRota(v.id, r.id, c)}><Trash2 size={14} /></button>
+                      </div>
+                    </div>
+                  ))}
+                  {v.status !== 'finalizada' && (addingClienteToRota === r.id ? <div className="mob-add-brand" data-testid={`mob-viagem-rota-add-cliente-form-${r.id}`}>
+                    <MobileViagemClientPicker customers={customers} selected={r.clientes || []} onAdd={c => saveNewClienteInRota(v.id, r.id, c)} onRemove={cid => removeClienteFromRota(v.id, r.id, { id: cid, name: '' })} />
+                    {clienteFormError && <div className="error" data-testid="mob-viagem-rota-add-cliente-error">{clienteFormError}</div>}
+                    <button type="button" className="mob-ghost-btn" onClick={() => { setAddingClienteToRota(null); setClienteFormError(''); }}>Concluído</button>
+                  </div> : <button type="button" className="mob-dashed-btn" data-testid={`mob-viagem-rota-add-cliente-${r.id}`} onClick={() => { setAddingClienteToRota(r.id); setClienteFormError(''); }}><Plus size={16} /> Adicionar cliente</button>)}
+                </div>}
+              </div>;
+            })}
             {addingRotaFor === v.id ? <div className="mob-add-brand" data-testid={`mob-viagem-rota-form-${v.id}`}>
               <p className="mob-eyebrow" style={{ margin: 0 }}>CLIENTES DA NOVA ROTA</p>
-              <MobileViagemClientPicker customers={customers} selected={rotaClientes} onAdd={addRotaCliente} onRemove={removeRotaCliente} />
+              <MobileViagemClientPicker customers={customers} selected={rotaClientes} onAdd={addToNewRotaDraft} onRemove={removeFromNewRotaDraft} />
               {rotaError && <div className="error" data-testid="mob-viagem-rota-error">{rotaError}</div>}
               <div className="mob-row-actions">
                 <button type="button" className="mob-ghost-btn" onClick={() => { setAddingRotaFor(null); setRotaClientes([]); setRotaError(''); }}>Cancelar</button>
@@ -2069,8 +2140,13 @@ function MobileDespesasTab({ user, date, viagens, viagemAtiva, onOpenViagens, da
   const [toast, setToast] = useState('');
   const [photo, setPhoto] = useState(null);
   const photoInputRef = useRef(null);
+  const openViagens = (viagens || []).filter(v => v.status !== 'finalizada');
 
-  useEffect(() => { setViagemId(prev => prev || viagemAtiva?.id || viagens?.[0]?.id || ''); }, [viagemAtiva, viagens]);
+  useEffect(() => {
+    const open = (viagens || []).filter(v => v.status !== 'finalizada');
+    setViagemId(prev => (prev && open.some(v => v.id === prev)) ? prev : (viagemAtiva?.id || open[0]?.id || ''));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viagemAtiva, viagens]);
 
   function pickPhoto(file) {
     if (!file) return;
@@ -2099,12 +2175,12 @@ function MobileDespesasTab({ user, date, viagens, viagemAtiva, onOpenViagens, da
   const total = items.reduce((s, x) => s + Number(x.amount || 0), 0);
   return <div className="mob-screen">
     {dayClosed && <div className="mob-viagem-confirm" data-testid="mob-expense-day-closed">Dia fechado — despesas disponíveis somente para consulta.</div>}
-    {(!viagens || viagens.length === 0) && <button type="button" className="mob-trip-banner pending" data-testid="mob-expense-no-trip" onClick={onOpenViagens}>
-      <Truck size={18} /><div><b>Nenhuma viagem criada hoje</b><small>Crie uma viagem para poder atribuir despesas a ela</small></div><ChevronRight size={18} />
+    {openViagens.length === 0 && <button type="button" className="mob-trip-banner pending" data-testid="mob-expense-no-trip" onClick={onOpenViagens}>
+      <Truck size={18} /><div><b>Nenhuma viagem em aberto hoje</b><small>{viagens?.length ? 'Todas as viagens de hoje já foram finalizadas — crie uma nova para lançar despesas' : 'Crie uma viagem para poder atribuir despesas a ela'}</small></div><ChevronRight size={18} />
     </button>}
-    {viagens && viagens.length > 0 && <label className="mob-field-md">VIAGEM DESTA DESPESA
+    {openViagens.length > 0 && <label className="mob-field-md">VIAGEM DESTA DESPESA
       <select value={viagemId} data-testid="mob-expense-viagem-select" onChange={e => setViagemId(e.target.value)}>
-        {viagens.map(v => <option key={v.id} value={v.id}>{TURNO_LABELS[v.turno]} · {v.codigo_viagem}{v.status === 'execucao' ? ' (em execução)' : v.status === 'finalizada' ? ' (finalizada)' : ''}</option>)}
+        {openViagens.map(v => <option key={v.id} value={v.id}>{TURNO_LABELS[v.turno]} · {v.codigo_viagem}{v.status === 'execucao' ? ' (em execução)' : ''}</option>)}
       </select>
     </label>}
     <div className="mob-expense-grid">
@@ -2241,6 +2317,9 @@ function DriverMobileApp({ user, customers, onLogout }) {
   async function finalizarViagem(v) { await api.post(`/viagens/${v.id}/finalizar`, {}, auth()); await loadViagens(); }
   async function deleteViagem(v) { if (!window.confirm(`Excluir a viagem ${v.codigo_viagem}?`)) return; await api.delete(`/viagens/${v.id}`, auth()); await loadViagens(); }
   async function addRota(viagemId, payload) { const { data } = await api.post(`/viagens/${viagemId}/rotas`, payload, auth()); await loadViagens(); return data; }
+  async function addRotaCliente(viagemId, rotaId, cliente) { const { data } = await api.post(`/viagens/${viagemId}/rotas/${rotaId}/clientes`, cliente, auth()); await loadViagens(); return data; }
+  async function updateRotaCliente(viagemId, rotaId, clienteId, changes) { const { data } = await api.patch(`/viagens/${viagemId}/rotas/${rotaId}/clientes/${clienteId}`, changes, auth()); await loadViagens(); return data; }
+  async function removeRotaCliente(viagemId, rotaId, clienteId) { const { data } = await api.delete(`/viagens/${viagemId}/rotas/${rotaId}/clientes/${clienteId}`, auth()); await loadViagens(); return data; }
 
   const dayClosed = !!dayClosure?.closed;
   function showToast(text, tone = 'green') { setToast(text); setToastTone(tone); setTimeout(() => setToast(''), 2600); }
@@ -2298,7 +2377,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
     </main>
     <MobileBottomNav tab={tab} setTab={setTab} />
     {picker && <MobilePickerSheet customers={customers} onClose={() => setPicker(false)} onPick={pickCustomer} onNewCustomer={newCustomer} />}
-    {showViagens && <MobileViagensSheet viagens={viagensComProgresso} customers={customers} onClose={() => setShowViagens(false)} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} onAddRota={addRota} onEntriesChanged={() => { loadEntries(); loadViagens(); }} onAddEntrega={() => { setShowViagens(false); setPicker(true); }} dayClosed={dayClosed} />}
+    {showViagens && <MobileViagensSheet viagens={viagensComProgresso} customers={customers} onClose={() => setShowViagens(false)} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} onAddRota={addRota} onAddRotaCliente={addRotaCliente} onUpdateRotaCliente={updateRotaCliente} onRemoveRotaCliente={removeRotaCliente} onEntriesChanged={() => { loadEntries(); loadViagens(); }} onAddEntrega={() => { setShowViagens(false); setPicker(true); }} dayClosed={dayClosed} />}
     {sheetCustomer && <MobileLaunchPanel customer={sheetCustomer} prefillOrder={sheetOrder} user={user} date={date} viagemId={viagemAtiva?.id} rotaId={sheetOrder?.rota_id || clientesDasRotas.find(c => c.id === sheetCustomer?.id)?.rota_id || rotasAtivas[rotasAtivas.length - 1]?.id} onClose={() => { setSheetCustomer(null); setSheetOrder(null); }} onComplete={onEntryComplete} onFailed={loadViagens} />}
     {postDelivery && <MobileReceiptPrompt entry={postDelivery} customer={customers.find(c => c.name === postDelivery.customer)} onSavePhone={p => savePhoneForCustomerName(postDelivery.customer, p)} onClose={() => setPostDelivery(null)} />}
     <MobileToast text={toast} tone={toastTone} />
