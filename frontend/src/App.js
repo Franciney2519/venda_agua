@@ -1530,7 +1530,19 @@ function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate
   function addToNewRotaDraft(c) { setRotaClientes(prev => prev.some(x => x.id === c.id) ? prev : [...prev, c]); }
   function removeFromNewRotaDraft(id) { setRotaClientes(prev => prev.filter(x => x.id !== id)); }
 
+  function plannedQuantity(v, excludeClienteId) {
+    return (v?.rotas || []).reduce((s, r) => s + (r.clientes || []).reduce((s2, c) => s2 + (c.id === excludeClienteId ? 0 : Number(c.quantity || 0)), 0), 0);
+  }
+  function confirmCargaOk(v, addedQuantity, excludeClienteId) {
+    if (!v?.carga_total) return true;
+    const total = plannedQuantity(v, excludeClienteId) + Number(addedQuantity || 0);
+    if (total <= v.carga_total) return true;
+    return window.confirm(`Isso passa da carga da viagem: ${total}/${v.carga_total} un planejadas somando todas as rotas. Confirma mesmo assim?`);
+  }
+
   async function submitRota(v) {
+    const added = rotaClientes.reduce((s, c) => s + Number(c.quantity || 0), 0);
+    if (!confirmCargaOk(v, added)) return;
     setRotaError(''); setSavingRota(true);
     try {
       await onAddRota(v.id, { clientes: rotaClientes });
@@ -1549,6 +1561,7 @@ function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate
   function toggleRotaExpand(rotaId) { setExpandedRotaId(prev => prev === rotaId ? null : rotaId); setAddingClienteToRota(null); setEditingCliente(null); }
 
   async function saveNewClienteInRota(viagemId, rotaId, cliente) {
+    if (!confirmCargaOk(viagens.find(x => x.id === viagemId), cliente.quantity)) return;
     setClienteFormError('');
     try { await onAddRotaCliente(viagemId, rotaId, cliente); await loadForDate(); }
     catch (e) { setClienteFormError(e.response?.data?.detail || 'Não foi possível adicionar o cliente.'); }
@@ -1565,9 +1578,10 @@ function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate
     catch (e) { setError(e.response?.data?.detail || 'Não foi possível excluir a rota.'); }
   }
   async function saveClienteEdit() {
+    const { viagemId, rotaId, cliente } = editingCliente;
+    if (!confirmCargaOk(viagens.find(x => x.id === viagemId), editingCliente.quantity, cliente.id)) return;
     setSavingCliente(true); setClienteFormError('');
     try {
-      const { viagemId, rotaId, cliente } = editingCliente;
       await onUpdateRotaCliente(viagemId, rotaId, cliente.id, { brand: editingCliente.brand, quantity: editingCliente.quantity ? Number(editingCliente.quantity) : undefined, sale_type: editingCliente.saleType, notes: editingCliente.notes || undefined });
       await loadForDate();
       setEditingCliente(null);
