@@ -243,10 +243,10 @@
 .mob-line-mf{display:flex;justify-content:space-between;align-items:center;gap:10px;border-top:1px solid var(--mob-line);padding-top:12px;margin-top:12px}
 .mob-line-mf span:first-child{font-size:calc(12.5px * var(--scale));font-weight:700;color:var(--mob-muted);white-space:nowrap}
 
-.mob-add-brand{background:var(--mob-surface2);border-radius:16px;padding:14px;display:grid;gap:10px}
-.mob-add-brand input{padding:12px;border-radius:10px;border:1px solid var(--mob-line);background:var(--mob-surface);font-size:calc(15px * var(--scale));color:var(--mob-ink)}
+.mob-add-brand{background:var(--mob-surface2);border-radius:16px;padding:14px;display:grid;gap:10px;max-width:100%;overflow-x:hidden}
+.mob-add-brand input,.mob-add-brand select{width:100%;padding:12px;border-radius:10px;border:1px solid var(--mob-line);background:var(--mob-surface);font-size:calc(15px * var(--scale));color:var(--mob-ink);max-width:100%}
 .mob-add-brand label{display:grid;gap:6px;font-size:calc(12px * var(--scale));font-weight:700;color:var(--mob-muted)}
-.mob-add-brand label input{font:700 calc(22px * var(--scale)) 'Space Grotesk',sans-serif}
+.mob-add-brand label input,.mob-add-brand label select{font:700 calc(22px * var(--scale)) 'Space Grotesk',sans-serif}
 .mob-row-actions{display:flex;gap:10px}
 
 .mob-total-row{display:flex;justify-content:space-between;align-items:baseline;padding:14px 4px}
