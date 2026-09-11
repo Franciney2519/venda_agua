@@ -503,6 +503,8 @@ async def add_daily_entry(data: ResourceInput, user=Depends(current_user)):
                 rota = _find_rota(viagem, doc["rota_id"])
                 if not rota: raise HTTPException(400, "Rota não encontrada nesta viagem")
                 doc["rota_codigo"] = rota.get("codigo_rota")
+        added = billed_qty + (mf_total if doc.get("mf_plan") == "swap" else 0)
+        await _check_delivered_carga_limit(doc["viagem_id"], added)
 
     await apply_entry_stock_movements(doc, "venda", 1, user)
     await db.daily_entries.insert_one(doc); doc.pop("_id", None); return doc
@@ -541,6 +543,9 @@ async def update_daily_entry(item_id: str, data: ResourceInput, user=Depends(cur
         cash_value = float(merged.get("cash_value") or 0)
         if round(pix_value + cash_value + comp_value, 2) != round(total, 2):
             raise HTTPException(400, f"Pix + Dinheiro + A prazo (R$ {pix_value + cash_value + comp_value:.2f}) precisa somar o total do lançamento (R$ {total:.2f})")
+        if target.get("viagem_id"):
+            added = billed_qty + (mf_total if merged.get("mf_plan") == "swap" else 0)
+            await _check_delivered_carga_limit(target["viagem_id"], added, exclude_entry_id=item_id)
         await apply_entry_stock_movements(target, "estorno", -1, user)
         await apply_entry_stock_movements(merged, "venda", 1, user)
         values = {k: v for k, v in merged.items() if k not in ("id", "created_at", "created_by")}
@@ -609,6 +614,20 @@ async def list_viagens(date: Optional[str] = None, driver: Optional[str] = None,
     viagens = await db.viagens.find(query, {"_id": 0}).sort("numero", 1).to_list(500)
     return {"total": len(viagens), "limite": VIAGENS_POR_DIA, "viagens": viagens}
 
+@api.patch("/viagens/{item_id}")
+async def update_viagem(item_id: str, data: dict, user=Depends(current_user)):
+    v = await _own_viagem_or_404(item_id, user)
+    await ensure_day_open(v.get("date") or today_local(), v.get("driver") or user["name"], user)
+    if v["status"] == "finalizada": raise HTTPException(400, "Viagem já está finalizada")
+    values = {}
+    if "carga_total" in data:
+        values["carga_total"] = float(data["carga_total"]) if data["carga_total"] not in (None, "") else None
+    if "notes" in data: values["notes"] = data["notes"]
+    if values:
+        values["updated_at"] = now()
+        await db.viagens.update_one({"id": item_id}, {"$set": values})
+    return await db.viagens.find_one({"id": item_id}, {"_id": 0})
+
 async def _own_viagem_or_404(item_id, user):
     v = await db.viagens.find_one({"id": item_id}, {"_id": 0})
     if not v: raise HTTPException(404, "Viagem não encontrada")
@@ -635,6 +654,27 @@ def _check_carga_limit(v, added_quantity, exclude_cliente_id=None):
     if total > carga_total:
         restante = max(0, carga_total - _planned_quantity(v, exclude_cliente_id))
         raise HTTPException(400, f"Isso passa da carga da viagem ({total:g}/{carga_total:g} un somando todas as rotas). Restam {restante:g} un disponíveis.")
+
+async def _delivered_quantity(viagem_id, exclude_entry_id=None):
+    entregas = await db.daily_entries.find({"viagem_id": viagem_id}, {"_id": 0}).to_list(2000)
+    total = 0.0
+    for e in entregas:
+        if e.get("id") == exclude_entry_id: continue
+        total += float(e.get("billed_quantity") or 0)
+        if e.get("mf_plan") == "swap":
+            items = e.get("items") or ([{"mf_quantity": e.get("mf_quantity")}] if e.get("mf_quantity") else [])
+            total += sum(float(it.get("mf_quantity") or 0) for it in items)
+    return total
+
+async def _check_delivered_carga_limit(viagem_id, added_quantity, exclude_entry_id=None):
+    viagem = await db.viagens.find_one({"id": viagem_id}, {"_id": 0})
+    carga_total = viagem.get("carga_total") if viagem else None
+    if not carga_total: return
+    delivered = await _delivered_quantity(viagem_id, exclude_entry_id)
+    total = delivered + float(added_quantity or 0)
+    if total > carga_total:
+        restante = max(0, carga_total - delivered)
+        raise HTTPException(400, f"Isso passa da carga da viagem ({total:g}/{carga_total:g} un entregues). Restam {restante:g} un — ajuste a carga da viagem ou revise as rotas em \"Viagens do dia\" antes de lançar.")
 
 @api.post("/viagens/{item_id}/rotas")
 async def add_rota(item_id: str, data: RotaInput, user=Depends(current_user)):
