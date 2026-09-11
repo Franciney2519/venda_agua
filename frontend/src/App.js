@@ -455,10 +455,17 @@ function StockMovements() {
   function load() { api.get('/stock-movements', auth()).then(x => setMovements(x.data)).catch(() => setMovements([])); }
   useEffect(() => { load(); }, []);
   useAutoRefresh(load);
-  const reasonLabel = { venda: 'Venda', estorno: 'Estorno', ajuste: 'Ajuste', mf_defeito: 'Defeito (MF)', mf_reagendado: 'MF reagendado', sem_correspondencia: 'Sem produto correspondente' };
+  const reasonLabel = { venda: 'Venda', estorno: 'Estorno', ajuste: 'Ajuste', mf_defeito: 'Defeito (MF)', mf_reagendado: 'MF reagendado', sem_correspondencia: 'Sem produto correspondente', vasilhame_vazio: 'Vasilhame vazio' };
   const pendingExchange = (movements || []).filter(m => m.reason === 'mf_defeito' && !m.resolved);
   const pendingReschedule = (movements || []).filter(m => m.reason === 'mf_reagendado' && !m.resolved);
   const unmatched = (movements || []).filter(m => m.reason === 'sem_correspondencia');
+  const pendingEmpty = (movements || []).filter(m => m.reason === 'vasilhame_vazio' && !m.resolved);
+  const pendingEmptyByBrand = Object.values(pendingEmpty.reduce((acc, m) => {
+    const key = m.product_name || m.brand;
+    acc[key] = acc[key] || { key, total: 0 };
+    acc[key].total += Number(m.quantity) || 0;
+    return acc;
+  }, {}));
   async function markExchanged(m) { await api.patch(`/stock-movements/${m.id}`, {}, auth()); load(); }
   return <>
     {pendingReschedule.length > 0 && <div className="stock-alert" data-testid="mf-reschedule-alert" style={{ marginTop: 22 }}>
@@ -471,6 +478,12 @@ function StockMovements() {
       <AlertTriangle size={19} />
       <div><b>{pendingExchange.length} galão{pendingExchange.length > 1 ? 'ões' : ''} com defeito (microfuro) aguardando troca com o fornecedor</b>
         <span>{pendingExchange.map(m => `${m.product_name || m.brand} (${Math.abs(m.quantity)})${m.viagem_codigo ? ` · ${m.rota_codigo || m.viagem_codigo}` : ''}`).join(' · ')}</span>
+      </div>
+    </div>}
+    {pendingEmpty.length > 0 && <div className="stock-alert" data-testid="empty-return-alert" style={{ marginTop: 22 }}>
+      <Package size={19} />
+      <div><b>{pendingEmpty.length} lote{pendingEmpty.length > 1 ? 's' : ''} de vasilhame vazio aguardando envio ao fornecedor</b>
+        <span>{pendingEmptyByBrand.map(b => `${b.key} (${b.total})`).join(' · ')}</span>
       </div>
     </div>}
     {unmatched.length > 0 && <div className="stock-alert" data-testid="stock-unmatched-alert" style={{ marginTop: 22 }}>
@@ -486,9 +499,9 @@ function StockMovements() {
           <td><small>{formatDateTimeManaus(m.created_at)}</small></td>
           <td><b>{m.product_name || m.brand}</b></td>
           <td>{m.reason === 'mf_reagendado' ? <span className="tag orange">pendente ({m.pending_quantity})</span> : m.reason === 'sem_correspondencia' ? <span className="tag gray">—</span> : <span className={`tag ${m.quantity < 0 ? 'red' : 'green'}`}>{m.quantity > 0 ? '+' : ''}{m.quantity}</span>}</td>
-          <td>{(m.reason === 'mf_defeito' || m.reason === 'mf_reagendado' || m.reason === 'sem_correspondencia') ? <span className="tag orange">{reasonLabel[m.reason]}</span> : (reasonLabel[m.reason] || m.reason)}</td>
+          <td>{(m.reason === 'mf_defeito' || m.reason === 'mf_reagendado' || m.reason === 'sem_correspondencia' || m.reason === 'vasilhame_vazio') ? <span className="tag orange">{reasonLabel[m.reason]}</span> : (reasonLabel[m.reason] || m.reason)}</td>
           <td>{m.entry_number ? <small>Nº {m.entry_number} · {m.customer}{m.driver ? ` · ${m.driver}` : ''}{m.rota_codigo ? ` · ${m.rota_codigo}` : (m.viagem_codigo ? ` · ${m.viagem_codigo}` : '')}</small> : <small className="muted">{m.viagem_codigo || '—'}</small>}</td>
-          <td>{(m.reason === 'mf_defeito' || m.reason === 'mf_reagendado') && (m.resolved ? <span className="tag green" title={m.resolved_note}>{m.reason === 'mf_reagendado' ? 'Trocado' : 'Trocado'}</span> : <button className="action-btn ghost" data-testid={`mf-mark-exchanged-${m.id}`} onClick={() => markExchanged(m)}>{m.reason === 'mf_reagendado' ? 'Troca realizada' : 'Marcar trocado'}</button>)}</td>
+          <td>{(m.reason === 'mf_defeito' || m.reason === 'mf_reagendado' || m.reason === 'vasilhame_vazio') && (m.resolved ? <span className="tag green" title={m.resolved_note}>{m.resolved_note?.includes('fornecedor') ? 'Enviado' : 'Trocado'}</span> : <button className="action-btn ghost" data-testid={`mf-mark-exchanged-${m.id}`} onClick={() => markExchanged(m)}>{m.reason === 'mf_reagendado' ? 'Troca realizada' : m.reason === 'vasilhame_vazio' ? 'Marcar enviado' : 'Marcar trocado'}</button>)}</td>
         </tr>)}
         {movements?.length === 0 && <tr><td colSpan={6} className="muted" style={{ padding: 16 }}>Nenhuma movimentação registrada ainda.</td></tr>}
       </tbody></table></div>
@@ -513,12 +526,14 @@ function Stock({ data, setData, create }) {
   const stockValue = products.reduce((s, p) => s + (Number(p.quantity) || 0) * (Number(p.cost_price) || 0), 0);
   const missingCost = products.filter(p => p.cost_price == null && p.quantity > 0).length;
   const defectiveTotal = products.reduce((s, p) => s + (Number(p.defective_quantity) || 0), 0);
+  const emptyTotal = products.reduce((s, p) => s + (Number(p.empty_quantity) || 0), 0);
   return <><Head eyebrow="INVENTÁRIO" title="Estoque" subtitle="Produtos, galões retornáveis e níveis mínimos." action="Novo produto" onAction={() => create('product')} />
     <div className="stats">
       <Stat label="Valor em estoque" value={money(stockValue)} detail={missingCost > 0 ? `${missingCost} produto${missingCost > 1 ? 's' : ''} sem custo cadastrado` : 'Custo de compra × quantidade disponível'} Icon={WalletCards} tone={missingCost > 0 ? 'orange' : ''} />
       <Stat label="Galões com defeito" value={defectiveTotal} detail="Parados no depósito, aguardando troca com o fornecedor" Icon={AlertTriangle} tone={defectiveTotal > 0 ? 'red' : 'green'} />
+      <Stat label="Vasilhames vazios" value={emptyTotal} detail="Recebidos dos clientes, aguardando envio ao fornecedor" Icon={Package} tone={emptyTotal > 0 ? 'orange' : 'green'} />
     </div>
-    <div className="stock-alert" data-testid="stock-alert"><AlertTriangle size={19} /><div><b>{products.filter(x => x.quantity < x.minimum).length} produtos precisam de reposição</b><span>Confira os itens antes da próxima rota.</span></div></div><section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>MARCA</th><th>CATEGORIA</th><th>DISPONÍVEL</th><th>MÍNIMO</th><th>DEFEITO</th><th>VALOR EM ESTOQUE</th><th>SITUAÇÃO</th><th>LOTE / COMPRA</th><th /></tr></thead><tbody>{products.map(p => <tr key={p.id} data-testid={`stock-row-${p.id}`}><td><b>{p.name}</b><small>SKU-{p.id}</small></td><td>{p.brand || '—'}</td><td>{p.category}</td><td>{p.quantity} {p.unit || 'un'}</td><td>{p.minimum}</td><td>{p.defective_quantity ? <span className="tag red" data-testid={`stock-defective-${p.id}`}>{p.defective_quantity}</span> : <small className="muted">—</small>}</td><td>{p.cost_price != null ? money((Number(p.quantity) || 0) * Number(p.cost_price)) : <small className="muted">sem custo</small>}</td><td><span className={`tag ${p.quantity < p.minimum ? 'red' : 'green'}`}>{p.quantity < p.minimum ? 'Repor' : 'Saudável'}</span></td><td><small className="muted">{p.batch ? `Lote ${p.batch}` : '—'}{p.purchase_date ? ` · ${p.purchase_date}` : ''}</small></td><td className="row-actions"><button className="action-btn ghost" data-testid={`stock-edit-${p.id}`} onClick={() => setEditing(p)}><Pencil size={13} /> Editar</button><button className="action-btn ghost" data-testid={`stock-adjust-${p.id}`} onClick={() => setAdjusting(p)}>Ajustar</button></td></tr>)}</tbody></table></div></section>
+    <div className="stock-alert" data-testid="stock-alert"><AlertTriangle size={19} /><div><b>{products.filter(x => x.quantity < x.minimum).length} produtos precisam de reposição</b><span>Confira os itens antes da próxima rota.</span></div></div><section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>MARCA</th><th>CATEGORIA</th><th>DISPONÍVEL</th><th>MÍNIMO</th><th>DEFEITO</th><th>VAZIO</th><th>VALOR EM ESTOQUE</th><th>SITUAÇÃO</th><th>LOTE / COMPRA</th><th /></tr></thead><tbody>{products.map(p => <tr key={p.id} data-testid={`stock-row-${p.id}`}><td><b>{p.name}</b><small>SKU-{p.id}</small></td><td>{p.brand || '—'}</td><td>{p.category}</td><td>{p.quantity} {p.unit || 'un'}</td><td>{p.minimum}</td><td>{p.defective_quantity ? <span className="tag red" data-testid={`stock-defective-${p.id}`}>{p.defective_quantity}</span> : <small className="muted">—</small>}</td><td>{p.empty_quantity ? <span className="tag orange" data-testid={`stock-empty-${p.id}`}>{p.empty_quantity}</span> : <small className="muted">—</small>}</td><td>{p.cost_price != null ? money((Number(p.quantity) || 0) * Number(p.cost_price)) : <small className="muted">sem custo</small>}</td><td><span className={`tag ${p.quantity < p.minimum ? 'red' : 'green'}`}>{p.quantity < p.minimum ? 'Repor' : 'Saudável'}</span></td><td><small className="muted">{p.batch ? `Lote ${p.batch}` : '—'}{p.purchase_date ? ` · ${p.purchase_date}` : ''}</small></td><td className="row-actions"><button className="action-btn ghost" data-testid={`stock-edit-${p.id}`} onClick={() => setEditing(p)}><Pencil size={13} /> Editar</button><button className="action-btn ghost" data-testid={`stock-adjust-${p.id}`} onClick={() => setAdjusting(p)}>Ajustar</button></td></tr>)}</tbody></table></div></section>
     {adjusting && <StockAdjustModal product={adjusting} onClose={() => setAdjusting(null)} onSave={saveAdjustment} />}
     {editing && <ProductModal product={editing} onClose={() => setEditing(null)} onSave={saveEdit} />}
     <StockMovements />

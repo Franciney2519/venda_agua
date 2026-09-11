@@ -304,6 +304,39 @@ async def apply_entry_stock_movements(doc, reason, sign, user):
                 for brand, qty in mf_brand_qty:
                     await apply_stock_delta(products_cache, brand, qty, reason, doc, user, skip_quantity=covered(brand))
 
+    # Vasilhame vazio: toda venda "somente água" (exchange) significa que o cliente
+    # devolveu um vasilhame vazio na hora — isso vira estoque de vazio, separado do
+    # pronto-pra-venda, aguardando envio ao fornecedor.
+    if items:
+        empty_by_brand = {}
+        for it in items:
+            if (it.get("sale_type") or "exchange") != "exchange": continue
+            qty = float(it.get("quantity") or 0)
+            if qty > 0: empty_by_brand[it.get("brand")] = empty_by_brand.get(it.get("brand"), 0) + qty
+    else:
+        empty_by_brand = {}
+        if (doc.get("sale_type") or "exchange") == "exchange":
+            qty = float(doc.get("billed_quantity") or 0)
+            if qty > 0: empty_by_brand[doc.get("brand")] = qty
+    if sign == 1:
+        for brand, qty in empty_by_brand.items():
+            match = match_product(products_cache, brand)
+            if not match: continue
+            await db.products.update_one({"id": match["id"]}, {"$inc": {"empty_quantity": qty}})
+            await db.stock_movements.insert_one({
+                "id": str(uuid.uuid4()), "product_id": match["id"], "product_name": match.get("name"), "brand": match.get("brand") or match.get("name"),
+                "quantity": qty, "reason": "vasilhame_vazio", "resolved": False,
+                "entry_id": doc.get("id"), "entry_number": doc.get("entry_number"), "customer": doc.get("customer"), "driver": doc.get("driver"),
+                "viagem_codigo": doc.get("viagem_codigo"), "rota_codigo": doc.get("rota_codigo"),
+                "created_at": now(), "created_by": user.get("id") if user else None, "created_by_name": user.get("name") if user else "sistema",
+            })
+    else:
+        pending_empty = await db.stock_movements.find({"entry_id": doc.get("id"), "reason": "vasilhame_vazio", "resolved": False}, {"_id": 0}).to_list(50)
+        await db.stock_movements.update_many({"entry_id": doc.get("id"), "reason": "vasilhame_vazio", "resolved": False}, {"$set": {"resolved": True, "resolved_note": "Estornado"}})
+        for m in pending_empty:
+            if m.get("product_id"):
+                await db.products.update_one({"id": m["product_id"]}, {"$inc": {"empty_quantity": -float(m.get("quantity") or 0)}})
+
 @api.get("/stock-movements")
 async def stock_movements(user=Depends(admin_user)): return await db.stock_movements.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
 
@@ -326,7 +359,11 @@ async def update_stock_movement(item_id: str, user=Depends(admin_user)):
         if target.get("reason") == "mf_defeito" and target.get("product_id"):
             qty = abs(float(target.get("quantity") or 0))
             if qty: await db.products.update_one({"id": target["product_id"]}, {"$inc": {"defective_quantity": -qty}})
-        await db.stock_movements.update_one({"id": item_id}, {"$set": {"resolved": True, "resolved_note": "Trocado com o fornecedor", "resolved_by": user["name"], "resolved_at": now()}})
+        if target.get("reason") == "vasilhame_vazio" and target.get("product_id"):
+            qty = abs(float(target.get("quantity") or 0))
+            if qty: await db.products.update_one({"id": target["product_id"]}, {"$inc": {"empty_quantity": -qty}})
+        resolved_note = "Enviado ao fornecedor" if target.get("reason") == "vasilhame_vazio" else "Trocado com o fornecedor"
+        await db.stock_movements.update_one({"id": item_id}, {"$set": {"resolved": True, "resolved_note": resolved_note, "resolved_by": user["name"], "resolved_at": now()}})
     return await db.stock_movements.find_one({"id": item_id}, {"_id": 0})
 async def create_resource(collection, payload, user):
     doc = payload.model_dump(exclude_none=True); doc.update({"id": str(uuid.uuid4()), "created_at": now(), "created_by": user["id"]})
