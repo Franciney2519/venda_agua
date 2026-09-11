@@ -283,6 +283,7 @@
 .mob-mf-options{display:grid;gap:8px}
 .mob-mf-options button{min-height:58px;border-radius:12px;background:var(--mob-surface);border:1px solid var(--mob-line);color:var(--mob-ink);display:flex;align-items:center;gap:10px;padding:0 14px;font:700 calc(13.5px * var(--scale)) 'DM Sans',sans-serif}
 .mob-mf-options button.active{background:var(--mob-blue-soft);border-color:var(--mob-blue);color:var(--mob-blue)}
+.mob-mf-options button:disabled{opacity:.4}
 
 .mob-bottom-nav{position:sticky;bottom:0;display:flex;background:var(--mob-surface);border-top:1px solid var(--mob-line);padding:8px 6px 14px;z-index:2}
 .mob-bottom-nav button{flex:1;min-height:62px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border-radius:12px;color:var(--mob-muted)}

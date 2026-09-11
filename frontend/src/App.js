@@ -1856,7 +1856,7 @@ function MobilePickerSheet({ customers, onClose, onPick, onNewCustomer }) {
   </div>
 }
 
-function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillOrder, viagemId, rotaId, onFailed, onOpenViagens }) {
+function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillOrder, viagemId, rotaId, onFailed, onOpenViagens, cargaRestante }) {
   const draftKey = `hydro_draft_${customer.id || 'novo_' + (customer.name || 'cliente')}`;
   const draft = useMemo(() => { try { return JSON.parse(localStorage.getItem(draftKey)); } catch { return null; } }, [draftKey]);
 
@@ -1903,11 +1903,15 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
   const compValue = compOn ? (Number(comp) || 0) : 0;
   const remaining = Math.max(0, Math.round((total - compValue) * 100) / 100);
   const totalMf = lines.reduce((s, l) => s + l.mf, 0);
+  const billedQtyThisEntry = lines.reduce((s, l) => s + (l.extra ? l.qty : l.qtyExchange + l.qtyFull), 0);
+  const swapDisabled = cargaRestante != null && (billedQtyThisEntry + totalMf) > cargaRestante;
 
   useEffect(() => {
     setPix(prev => { const p = Math.min(prev, remaining); setCash(Math.round((remaining - p) * 100) / 100); return p; });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remaining]);
+
+  useEffect(() => { if (swapDisabled) setMfPlan(prev => prev === 'swap' ? null : prev); }, [swapDisabled]);
 
   function incQty(i, by = 1) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qty: l.qty + by } : l)); }
   function decQty(i) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qty: Math.max(0, l.qty - 1) } : l)); }
@@ -2076,9 +2080,10 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
         <p>O que o cliente decidiu sobre esses galões?</p>
         <div className="mob-mf-options">
           <button type="button" className={mfPlan === 'reschedule' ? 'active' : ''} data-testid="mob-mf-reschedule" onClick={() => setMfPlan('reschedule')}><Truck size={22} /> Entregar outro dia</button>
-          <button type="button" className={mfPlan === 'swap' ? 'active' : ''} data-testid="mob-mf-swap" onClick={() => setMfPlan('swap')}><Check size={22} /> Trocar agora no caminhão</button>
+          <button type="button" className={mfPlan === 'swap' ? 'active' : ''} disabled={swapDisabled} data-testid="mob-mf-swap" onClick={() => setMfPlan('swap')}><Check size={22} /> Trocar agora no caminhão</button>
           <button type="button" className={mfPlan === 'refused' ? 'active' : ''} data-testid="mob-mf-refused" onClick={() => setMfPlan('refused')}><XCircle size={22} /> Cliente não quis</button>
         </div>
+        {swapDisabled && <p className="mob-help" style={{ color: 'var(--mob-orange)' }}>Não sobra galão na carga da viagem pra trocar agora (restam {cargaRestante} un) — escolha "Entregar outro dia".</p>}
         {mfPlan === 'reschedule' && <div className="mob-days-toggle">
           {['Amanhã', 'Em 2 dias', 'Próxima rota'].map(d => <button type="button" key={d} className={mfDate === d ? 'active' : ''} data-testid={`mob-mf-date-${d}`} onClick={() => setMfDate(d)}>{d}</button>)}
         </div>}
@@ -2353,9 +2358,15 @@ function DriverMobileApp({ user, customers, onLogout }) {
   useEffect(() => { loadEntries(); loadViagens(); loadExpenses(); loadDayClosure(); }, []);
   useAutoRefresh(() => Promise.all([loadEntries(), loadViagens(), loadExpenses(), loadDayClosure()]));
 
-  const entregasPorViagem = entries.reduce((acc, e) => { if (e.viagem_id) acc[e.viagem_id] = (acc[e.viagem_id] || 0) + Number(e.billed_quantity || 0); return acc; }, {});
+  const entregasPorViagem = entries.reduce((acc, e) => {
+    if (!e.viagem_id) return acc;
+    const swapMf = e.mf_plan === 'swap' ? Number(e.mf_quantity || 0) : 0;
+    acc[e.viagem_id] = (acc[e.viagem_id] || 0) + Number(e.billed_quantity || 0) + swapMf;
+    return acc;
+  }, {});
   const viagensComProgresso = viagens.map(v => ({ ...v, quantidade_atual: entregasPorViagem[v.id] || 0 }));
   const viagemAtiva = viagensComProgresso.find(v => v.status === 'execucao');
+  const cargaRestante = viagemAtiva?.carga_total != null ? Math.max(0, viagemAtiva.carga_total - (viagemAtiva.quantidade_atual || 0)) : null;
   const rotasAtivas = viagemAtiva?.rotas || [];
   const clientesDasRotas = rotasAtivas.flatMap(r => (r.clientes || []).map(c => ({ ...c, rota_id: r.id, rota_numero: r.numero })));
   const viagemClienteIds = new Set(clientesDasRotas.map(c => c.id));
@@ -2430,7 +2441,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
     <MobileBottomNav tab={tab} setTab={setTab} />
     {picker && <MobilePickerSheet customers={customers} onClose={() => setPicker(false)} onPick={pickCustomer} onNewCustomer={newCustomer} />}
     {showViagens && <MobileViagensSheet viagens={viagensComProgresso} customers={customers} onClose={() => setShowViagens(false)} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} onAddRota={addRota} onAddRotaCliente={addRotaCliente} onUpdateRotaCliente={updateRotaCliente} onRemoveRotaCliente={removeRotaCliente} onRemoveRota={removeRota} onUpdateViagem={updateViagem} onEntriesChanged={() => { loadEntries(); loadViagens(); }} onAddEntrega={() => { setShowViagens(false); setPicker(true); }} dayClosed={dayClosed} />}
-    {sheetCustomer && <MobileLaunchPanel customer={sheetCustomer} prefillOrder={sheetOrder} user={user} date={date} viagemId={viagemAtiva?.id} rotaId={sheetOrder?.rota_id || clientesDasRotas.find(c => c.id === sheetCustomer?.id)?.rota_id || rotasAtivas[rotasAtivas.length - 1]?.id} onClose={() => { setSheetCustomer(null); setSheetOrder(null); }} onComplete={onEntryComplete} onFailed={loadViagens} onOpenViagens={() => setShowViagens(true)} />}
+    {sheetCustomer && <MobileLaunchPanel customer={sheetCustomer} prefillOrder={sheetOrder} user={user} date={date} viagemId={viagemAtiva?.id} rotaId={sheetOrder?.rota_id || clientesDasRotas.find(c => c.id === sheetCustomer?.id)?.rota_id || rotasAtivas[rotasAtivas.length - 1]?.id} onClose={() => { setSheetCustomer(null); setSheetOrder(null); }} onComplete={onEntryComplete} onFailed={loadViagens} onOpenViagens={() => setShowViagens(true)} cargaRestante={cargaRestante} />}
     {postDelivery && <MobileReceiptPrompt entry={postDelivery} customer={customers.find(c => c.name === postDelivery.customer)} onSavePhone={p => savePhoneForCustomerName(postDelivery.customer, p)} onClose={() => setPostDelivery(null)} />}
     <MobileToast text={toast} tone={toastTone} />
   </div>
