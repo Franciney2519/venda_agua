@@ -356,7 +356,7 @@
 .mob-field-lg{display:grid;gap:6px;font-size:calc(11px * var(--scale));font-weight:700;color:var(--mob-muted);text-transform:uppercase}
 .mob-field-lg input{padding:14px;border-radius:12px;border:1px solid var(--mob-line);font:700 calc(30px * var(--scale)) 'Space Grotesk',sans-serif;background:var(--mob-surface);color:var(--mob-ink)}
 .mob-field-md{display:grid;gap:6px;font-size:calc(11px * var(--scale));font-weight:700;color:var(--mob-muted);text-transform:uppercase}
-.mob-field-md input{padding:13px;border-radius:12px;border:1px solid var(--mob-line);font-size:calc(16px * var(--scale));background:var(--mob-surface);color:var(--mob-ink)}
+.mob-field-md input,.mob-field-md select{width:100%;padding:13px;border-radius:12px;border:1px solid var(--mob-line);font-size:calc(16px * var(--scale));background:var(--mob-surface);color:var(--mob-ink)}
 .mob-expense-list{display:flex;flex-direction:column;gap:10px}
 .mob-expense-row{display:flex;align-items:center;gap:10px;background:var(--mob-surface);border:1px solid var(--mob-line);border-radius:14px;padding:12px 14px}
 .mob-expense-row>div{flex:1;min-width:0}

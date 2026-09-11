@@ -223,7 +223,7 @@ def match_product(products_cache, brand):
     return next((p for p in products_cache if (p.get("brand") or p.get("name") or "").strip().lower() == b), None)
 
 def viagem_ref(v):
-    return {"id": v.get("id"), "entry_number": None, "customer": None, "driver": v.get("driver")}
+    return {"id": v.get("id"), "entry_number": None, "customer": None, "driver": v.get("driver"), "viagem_codigo": v.get("codigo_viagem")}
 
 async def apply_stock_delta(products_cache, brand, delta, reason, entry, user, extra=None, skip_quantity=False):
     if not delta: return
@@ -234,6 +234,7 @@ async def apply_stock_delta(products_cache, brand, delta, reason, entry, user, e
                 "id": str(uuid.uuid4()), "product_id": None, "product_name": None, "brand": brand,
                 "quantity": 0, "reason": "sem_correspondencia",
                 "entry_id": entry.get("id"), "entry_number": entry.get("entry_number"), "customer": entry.get("customer"), "driver": entry.get("driver"),
+                "viagem_codigo": entry.get("viagem_codigo"), "rota_codigo": entry.get("rota_codigo"),
                 "created_at": now(), "created_by": user.get("id") if user else None, "created_by_name": user.get("name") if user else "sistema",
             })
         return
@@ -247,6 +248,7 @@ async def apply_stock_delta(products_cache, brand, delta, reason, entry, user, e
         "id": str(uuid.uuid4()), "product_id": match["id"], "product_name": match.get("name"), "brand": match.get("brand") or match.get("name"),
         "quantity": delta, "reason": reason, "from_carga": skip_quantity,
         "entry_id": entry.get("id"), "entry_number": entry.get("entry_number"), "customer": entry.get("customer"), "driver": entry.get("driver"),
+        "viagem_codigo": entry.get("viagem_codigo"), "rota_codigo": entry.get("rota_codigo"),
         "created_at": now(), "created_by": user.get("id") if user else None, "created_by_name": user.get("name") if user else "sistema",
     }
     if extra: movement.update(extra)
@@ -733,11 +735,23 @@ async def finalizar_viagem(item_id: str, user=Depends(current_user)):
     despesas = await db.expenses.find({"viagem_id": item_id, "status": {"$ne": "rejected"}}, {"_id": 0}).to_list(500)
     total_bruto = sum(entry_total(e) for e in entregas)
     despesas_total = sum(float(d.get("amount") or 0) for d in despesas)
-    quantidade_entregue = sum(float(e.get("billed_quantity") or 0) for e in entregas)
+    billed_total = sum(float(e.get("billed_quantity") or 0) for e in entregas)
+    mf_swap_total = 0.0
+    mf_problema_total = 0.0
+    for e in entregas:
+        items = e.get("items") or ([{"brand": e.get("brand"), "quantity": e.get("billed_quantity"), "mf_quantity": e.get("mf_quantity")}] if e.get("brand") else [])
+        for it in items:
+            mf_qty = float(it.get("mf_quantity") or 0)
+            if mf_qty <= 0: continue
+            mf_problema_total += mf_qty
+            if e.get("mf_plan") == "swap": mf_swap_total += mf_qty
+    # Um MF trocado na hora consome um galão bom extra do caminhão, então ele conta
+    # como "entregue" para bater com a carga — mesmo não sendo cobrado do cliente.
+    quantidade_entregue = billed_total + mf_swap_total
     problemas = sum(1 for e in entregas if float(e.get("mf_quantity") or 0) > 0)
     values = {"status": "finalizada", "total_bruto": total_bruto, "quantidade_entregue": quantidade_entregue,
-              "entregas": len(entregas), "problemas": problemas, "despesas_total": despesas_total,
-              "saldo_liquido": total_bruto - despesas_total, "updated_at": now()}
+              "entregas": len(entregas), "problemas": problemas, "mf_quantity_total": mf_problema_total,
+              "despesas_total": despesas_total, "saldo_liquido": total_bruto - despesas_total, "updated_at": now()}
 
     if v.get("carga_carregada") and v.get("carga_items"):
         used_by_brand = {}
