@@ -316,7 +316,14 @@ function SignaturePad({ onSave, onCancel, variant = 'desktop', customer, total, 
     return () => { c.removeEventListener('mousedown', start); c.removeEventListener('mousemove', move); window.removeEventListener('mouseup', end); c.removeEventListener('touchstart', start); c.removeEventListener('touchmove', move); window.removeEventListener('touchend', end); };
   }, [variant]);
   function clear() { const c = canvasRef.current; c.getContext('2d').clearRect(0, 0, c.width, c.height); setEmpty(true); }
-  function save() { onSave(canvasRef.current.toDataURL('image/png'), signerName.trim()); }
+  const submittedRef = useRef(false);
+  const [submitted, setSubmitted] = useState(false);
+  function save() {
+    if (submittedRef.current) return;
+    submittedRef.current = true;
+    setSubmitted(true);
+    onSave(canvasRef.current.toDataURL('image/png'), signerName.trim());
+  }
 
   if (variant === 'mobile') return <div className="mob-signature-screen" data-testid="mob-signature-screen">
     <p className="mob-eyebrow">CONFIRMAÇÃO DE ENTREGA</p>
@@ -335,7 +342,7 @@ function SignaturePad({ onSave, onCancel, variant = 'desktop', customer, total, 
       <span>Nome do assinante</span>
       <input value={signerName} placeholder="Digite o nome de quem assinou" data-testid="signature-name-input" onChange={e => setSignerName(e.target.value)} />
     </label>
-    <button type="button" className="mob-cta green" data-testid="signature-save" disabled={empty} onClick={save}>Concluir parada</button>
+    <button type="button" className="mob-cta green" data-testid="signature-save" disabled={empty || submitted} onClick={save}>{submitted ? 'Enviando...' : 'Concluir parada'}</button>
     <button type="button" className="mob-text-btn" data-testid="signature-close" onClick={onCancel}>Voltar</button>
   </div>;
 
@@ -348,7 +355,7 @@ function SignaturePad({ onSave, onCancel, variant = 'desktop', customer, total, 
     <label className="signature-name-field"><span>Nome do assinante</span><input value={signerName} placeholder="Digite o nome de quem assinou" data-testid="signature-name-input" onChange={e => setSignerName(e.target.value)} /></label>
     <div className="signature-actions">
       <button type="button" className="ghost-btn signature-clear-btn" data-testid="signature-clear" onClick={clear}><Eraser size={16} /> Apagar assinatura</button>
-      <button type="button" className="primary" data-testid="signature-save" onClick={save} disabled={empty}><Check size={16} /> Concluir parada</button>
+      <button type="button" className="primary" data-testid="signature-save" onClick={save} disabled={empty || submitted}><Check size={16} /> {submitted ? 'Enviando...' : 'Concluir parada'}</button>
     </div>
   </div></div>
 }
