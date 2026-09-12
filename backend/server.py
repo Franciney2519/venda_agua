@@ -509,12 +509,17 @@ async def add_daily_entry(data: ResourceInput, user=Depends(current_user)):
         billed_qty = sum(float(it.get("quantity") or 0) for it in items)
         mf_total = sum(float(it.get("mf_quantity") or 0) for it in items)
         total = sum(float(it.get("quantity") or 0) * float(it.get("price") or 0) for it in items)
+        # MF trocado na hora entrega um galão bom no lugar do defeituoso, então o cliente paga
+        # normalmente por ele — só não paga quando o galão fica pendente (reagendado/recusado).
+        if doc.get("mf_plan") == "swap":
+            total += sum(float(it.get("mf_quantity") or 0) * float(it.get("price") or 0) for it in items)
     else:
         qty = float(doc.get("quantity") or 0)
         mf_total = float(doc.get("mf_quantity") or 0)
         billed_qty = max(0.0, qty - mf_total)
         price = float(doc.get("price") or 0)
         total = billed_qty * price
+        if doc.get("mf_plan") == "swap": total += mf_total * price
     doc["billed_quantity"] = billed_qty
     doc["mf_quantity"] = mf_total
     doc["total"] = total
@@ -567,11 +572,14 @@ async def update_daily_entry(item_id: str, data: ResourceInput, user=Depends(cur
             billed_qty = sum(float(it.get("quantity") or 0) for it in items)
             mf_total = sum(float(it.get("mf_quantity") or 0) for it in items)
             total = sum(float(it.get("quantity") or 0) * float(it.get("price") or 0) for it in items)
+            if merged.get("mf_plan") == "swap":
+                total += sum(float(it.get("mf_quantity") or 0) * float(it.get("price") or 0) for it in items)
         else:
             qty = float(merged.get("quantity") or 0)
             mf_total = float(merged.get("mf_quantity") or 0)
             billed_qty = max(0.0, qty - mf_total)
             total = billed_qty * float(merged.get("price") or 0)
+            if merged.get("mf_plan") == "swap": total += mf_total * float(merged.get("price") or 0)
         merged["billed_quantity"] = billed_qty
         merged["mf_quantity"] = mf_total
         merged["total"] = total

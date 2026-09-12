@@ -1381,7 +1381,7 @@ function MobileEditEntregaModal({ entry, onClose, onSaved }) {
   const [error, setError] = useState('');
 
   const compValue = Number(entry.comp_value) || 0;
-  const total = lines.reduce((s, l) => s + l.quantity * l.price, 0);
+  const total = lines.reduce((s, l) => s + l.quantity * l.price + (mfPlan === 'swap' ? l.mf_quantity * l.price : 0), 0);
   const remaining = Math.max(0, Math.round((total - compValue) * 100) / 100);
   const totalMf = lines.reduce((s, l) => s + l.mf_quantity, 0);
 
@@ -1428,7 +1428,7 @@ function MobileEditEntregaModal({ entry, onClose, onSaved }) {
 
       {lines.map((l, i) => <div className="mob-line active" key={i} data-testid={`mob-edit-line-${i}`}>
         <div className="mob-line-top">
-          <div className="mob-line-info"><b>{l.brand}{l.sale_type === 'full' && <span className="mob-tag" style={{ marginLeft: 6 }}>venda completa</span>}</b><small>R$ {Number(l.price).toFixed(2)} por galão</small><span className="mob-line-subtotal">{money(l.quantity * l.price)}</span></div>
+          <div className="mob-line-info"><b>{l.brand}{l.sale_type === 'full' && <span className="mob-tag" style={{ marginLeft: 6 }}>venda completa</span>}</b><small>R$ {Number(l.price).toFixed(2)} por galão</small><span className="mob-line-subtotal">{money(l.quantity * l.price + (mfPlan === 'swap' ? l.mf_quantity * l.price : 0))}</span></div>
           <div className="mob-counter">
             <button aria-label="Diminuir quantidade" type="button" data-testid={`mob-edit-qty-minus-${i}`} onClick={() => decQty(i)}><Minus size={18} /></button>
             <input type="number" inputMode="numeric" min="0" value={l.quantity} data-testid={`mob-edit-qty-input-${i}`} onChange={e => setQty(i, e.target.value)} onFocus={e => e.target.select()} />
@@ -1920,7 +1920,12 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
 
   const fullPriceOf = l => l.priceFull != null ? l.priceFull : (Number(l.priceFullManual) || 0);
   const linePrice = l => l.saleType === 'full' ? (l.priceFull != null ? l.priceFull : (Number(l.priceFullManual) || l.priceExchange)) : l.priceExchange;
-  const lineTotal = l => l.extra ? l.qty * linePrice(l) : (l.qtyExchange * l.priceExchange) + (l.qtyFull * fullPriceOf(l));
+  const lineTotal = l => {
+    const base = l.extra ? l.qty * linePrice(l) : (l.qtyExchange * l.priceExchange) + (l.qtyFull * fullPriceOf(l));
+    // MF trocado na hora entrega um galão bom no lugar do defeituoso — o cliente paga por ele normalmente.
+    const mfBillable = mfPlan === 'swap' ? l.mf * linePrice(l) : 0;
+    return base + mfBillable;
+  };
   const total = lines.reduce((s, l) => s + lineTotal(l), 0);
   const compValue = compOn ? (Number(comp) || 0) : 0;
   const remaining = Math.max(0, Math.round((total - compValue) * 100) / 100);
@@ -2005,7 +2010,7 @@ function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillO
       <div className="mob-lines">
         {lines.map((l, i) => l.extra ? <div className={`mob-line${l.qty > 0 ? ' active' : ''}`} key={i} data-testid={`mob-line-${i}`}>
           <div className="mob-line-top">
-            <div className="mob-line-info"><b>{l.brand}<span className="mob-tag orange" style={{ marginLeft: 6 }}>nova</span>{l.saleType === 'full' && <span className="mob-tag" style={{ marginLeft: 6 }}>venda completa</span>}</b><small>R$ {linePrice(l).toFixed(2)} por galão</small><span className="mob-line-subtotal">{money(l.qty * linePrice(l))}</span></div>
+            <div className="mob-line-info"><b>{l.brand}<span className="mob-tag orange" style={{ marginLeft: 6 }}>nova</span>{l.saleType === 'full' && <span className="mob-tag" style={{ marginLeft: 6 }}>venda completa</span>}</b><small>R$ {linePrice(l).toFixed(2)} por galão</small><span className="mob-line-subtotal">{money(lineTotal(l))}</span></div>
             <div className="mob-counter">
               <button aria-label="Diminuir quantidade" type="button" data-testid={`mob-qty-minus-${i}`} onClick={() => decQty(i)}><Minus size={18} /></button>
               <input type="number" inputMode="numeric" min="0" value={l.qty} data-testid={`mob-qty-input-${i}`} onChange={e => setQty(i, e.target.value)} onFocus={e => e.target.select()} />
