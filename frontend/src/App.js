@@ -2164,12 +2164,20 @@ function MobileDiarioTab({ entries, date }) {
   </div>
 }
 
-function MobileCaixaTab({ entries, expensesTotal, viagens, date, onAddExpense, onCloseDay, dayClosed, closingDay }) {
-  const todays = entries.filter(e => e.date === date);
+function MobileCaixaTab({ entries, expenses, expensesTotal, viagens, date, onAddExpense, onCloseDay, dayClosed, closingDay }) {
+  const [viagemFilter, setViagemFilter] = useState('');
+  const todaysAll = entries.filter(e => e.date === date);
+  const todays = viagemFilter ? todaysAll.filter(e => e.viagem_id === viagemFilter) : todaysAll;
+  const expensesToday = (expenses || []).filter(x => manausDate(x.created_at) === date && x.status !== 'rejected');
+  const filteredExpensesTotal = viagemFilter ? expensesToday.filter(x => x.viagem_id === viagemFilter).reduce((s, x) => s + Number(x.amount || 0), 0) : Number(expensesTotal || 0);
   const pix = todays.reduce((s, e) => s + Number(e.pix_value || 0), 0);
   const cash = todays.reduce((s, e) => s + Number(e.cash_value || 0), 0);
   const comp = todays.reduce((s, e) => s + Number(e.comp_value || 0), 0);
-  const netTotal = pix + cash - Number(expensesTotal || 0);
+  const netTotal = pix + cash - filteredExpensesTotal;
+
+  const viagemInfo = {};
+  for (const v of (viagens || [])) viagemInfo[v.id] = v;
+  const viagemOptions = (viagens || []).filter(v => todaysAll.some(e => e.viagem_id === v.id));
 
   const porRota = {};
   function bucket(codigo) { return porRota[codigo] || (porRota[codigo] = { codigo, recebido: 0 }); }
@@ -2177,18 +2185,25 @@ function MobileCaixaTab({ entries, expensesTotal, viagens, date, onAddExpense, o
   const rotaInfo = {};
   for (const v of (viagens || [])) for (const r of (v.rotas || [])) rotaInfo[r.codigo_rota] = { ...r, viagem: v };
   const rotas = Object.values(porRota).sort((a, b) => (rotaInfo[a.codigo]?.numero || 0) - (rotaInfo[b.codigo]?.numero || 0));
+  const selectedViagem = viagemFilter ? viagemInfo[viagemFilter] : null;
 
   return <div className="mob-screen">
+    {viagemOptions.length > 0 && <label className="mob-field-md" style={{ marginBottom: 4 }}>FILTRAR POR VIAGEM
+      <select value={viagemFilter} data-testid="mob-caixa-viagem-filter" onChange={e => setViagemFilter(e.target.value)}>
+        <option value="">Todas as viagens de hoje</option>
+        {viagemOptions.map(v => <option key={v.id} value={v.id}>{TURNO_LABELS[v.turno]} · Viagem {v.numero} · {v.codigo_viagem}</option>)}
+      </select>
+    </label>}
     <div className="mob-cash-hero">
-      <span>SALDO LÍQUIDO DO DIA · TODAS AS ROTAS</span>
+      <span>{selectedViagem ? `SALDO · ${TURNO_LABELS[selectedViagem.turno]} · VIAGEM ${selectedViagem.numero}` : 'SALDO LÍQUIDO DO DIA · TODAS AS VIAGENS'}</span>
       <b data-testid="mob-cash-to-deliver">{money(netTotal)}</b>
-      <small>Pix + dinheiro recebidos, já descontadas as despesas — manhã e tarde somadas</small>
+      <small>Pix + dinheiro recebidos, já descontadas as despesas{selectedViagem ? ' desta viagem' : ' — manhã e tarde somadas'}</small>
     </div>
     <div className="mob-cash-rows">
       <div className="mob-cash-row"><span className="mob-cash-icon blue"><CircleDollarSign size={16} /></span><div><b>Recebido em Pix</b><small>já na conta da empresa</small></div><b className="blue">{money(pix)}</b></div>
       <div className="mob-cash-row"><span className="mob-cash-icon green"><Wallet size={16} /></span><div><b>Recebido em dinheiro</b><small>entregar na base</small></div><b className="green">{money(cash)}</b></div>
       <div className="mob-cash-row"><span className="mob-cash-icon orange"><Clock3 size={16} /></span><div><b>Vendas a prazo</b><small>COMP lançado hoje</small></div><b className="orange">{money(comp)}</b></div>
-      <div className="mob-cash-row"><span className="mob-cash-icon orange"><WalletCards size={16} /></span><div><b>Despesas do dia</b><small>descontado do saldo líquido</small></div><b className="orange">-{money(expensesTotal)}</b></div>
+      <div className="mob-cash-row"><span className="mob-cash-icon orange"><WalletCards size={16} /></span><div><b>Despesas{selectedViagem ? ' da viagem' : ' do dia'}</b><small>descontado do saldo líquido</small></div><b className="orange">-{money(filteredExpensesTotal)}</b></div>
     </div>
     {rotas.length > 0 && <>
       <p className="mob-eyebrow" style={{ margin: '14px 0 0' }}>RESUMO POR ROTA</p>
@@ -2197,7 +2212,7 @@ function MobileCaixaTab({ entries, expensesTotal, viagens, date, onAddExpense, o
           const info = rotaInfo[r.codigo];
           return <div className="mob-cash-row" key={r.codigo} data-testid={`mob-cash-rota-${r.codigo}`}>
             <span className="mob-cash-icon blue"><Truck size={16} /></span>
-            <div><b>{info ? `${TURNO_LABELS[info.viagem.turno]} · rota ${String(info.numero).padStart(2, '0')}` : r.codigo}</b><small>Recebido {money(r.recebido)}</small></div>
+            <div><b>{info ? `${TURNO_LABELS[info.viagem.turno]} · Viagem ${info.viagem.numero} · Rota ${String(info.numero).padStart(2, '0')}` : r.codigo}</b><small>Recebido {money(r.recebido)}</small></div>
             <b className="green">{money(r.recebido)}</b>
           </div>
         })}
@@ -2456,7 +2471,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
     <main className="mob-main">
       {tab === 'clientes' && <MobileClientesTab customers={pickableCustomers} entries={entries} orders={orders} onStartOrder={startOrder} date={date} onOpenPicker={() => requireViagem(() => setPicker(true))} onOpenCustomer={c => requireViagem(() => { setSheetOrder(null); setSheetCustomer(c); })} search={search} setSearch={setSearch} viagemAtiva={viagemAtiva} viagens={viagensComProgresso} onOpenViagens={() => setShowViagens(true)} dayClosed={dayClosed} />}
       {tab === 'diario' && <MobileDiarioTab entries={entries} date={date} />}
-      {tab === 'caixa' && <MobileCaixaTab entries={entries} expensesTotal={expensesTotal} viagens={viagensComProgresso} date={date} onAddExpense={() => setTab('despesas')} onCloseDay={closeDay} dayClosed={dayClosed} closingDay={closingDay} />}
+      {tab === 'caixa' && <MobileCaixaTab entries={entries} expenses={todaysExpenses} expensesTotal={expensesTotal} viagens={viagensComProgresso} date={date} onAddExpense={() => setTab('despesas')} onCloseDay={closeDay} dayClosed={dayClosed} closingDay={closingDay} />}
       {tab === 'despesas' && <MobileDespesasTab user={user} date={date} viagens={viagensComProgresso} viagemAtiva={viagemAtiva} onOpenViagens={() => setShowViagens(true)} dayClosed={dayClosed} />}
       {tab === 'ajustes' && <MobileAjustesTab user={user} theme={theme} setTheme={setTheme} textScale={textScale} setTextScale={setTextScale} onLogout={onLogout} />}
     </main>
