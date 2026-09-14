@@ -131,7 +131,22 @@ function useAutoRefresh(refresh, intervalMs = 15000) {
     };
   }, [intervalMs]);
 }
-const nav = [['/', 'Visão geral', LayoutDashboard], ['/viagens', 'Viagens', Truck], ['/comprovantes', 'Comprovantes', FileText], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/margem', 'Margem', Percent], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/marcas', 'Cadastro de Produto', Droplets], ['/marcas-extras', 'Marcas Extras', AlertTriangle], ['/usuarios', 'Cadastro de Usuário', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
+const nav = [
+  ['/', 'Visão geral', LayoutDashboard],
+  ['/marcas', 'Cadastro de Produto', Droplets],
+  ['/marcas-extras', 'Marcas Extras', AlertTriangle],
+  ['/usuarios', 'Cadastro de Usuário', ShieldCheck],
+  ['/clientes', 'Clientes', Users],
+  ['/estoque', 'Estoque', Package],
+  ['/viagens', 'Viagens', Truck],
+  ['/comprovantes', 'Comprovantes', FileText],
+  ['/financeiro', 'Financeiro', WalletCards],
+  ['/margem', 'Margem', Percent],
+  ['/provisao', 'Provisão de Pagamento', Wallet],
+  ['/fechamento', 'Fechamento', CalendarCheck],
+  ['/atividade', 'Atividade', Activity],
+  ['/relatorios', 'Relatórios', BarChart3],
+];
 const driverNav = [['/', 'Visão geral', LayoutDashboard], ['/viagens', 'Viagens', Truck], ['/financeiro', 'Financeiro', WalletCards]];
 
 function Shell({ user, onLogout, notifications, children }) {
