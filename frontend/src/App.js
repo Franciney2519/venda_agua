@@ -134,7 +134,7 @@ function useAutoRefresh(refresh, intervalMs = 15000) {
 const nav = [
   ['/', 'Visão geral', LayoutDashboard],
   ['/marcas', 'Cadastro de Produto', Droplets],
-  ['/marcas-extras', 'Marcas Extras', AlertTriangle],
+  ['/marcas-extras', 'Produtos Fora do Cadastro', AlertTriangle],
   ['/usuarios', 'Cadastro de Usuário', ShieldCheck],
   ['/clientes', 'Clientes', Users],
   ['/estoque', 'Estoque', Package],
@@ -1032,7 +1032,7 @@ function OutOfCatalogBrands() {
     catch (e) { setError(e.response?.data?.detail || 'Não foi possível salvar.'); }
     finally { setBusy(null); }
   }
-  return <><Head eyebrow="CADASTRO" title="Marcas Extras" subtitle="Marcas que os entregadores lançaram fora do cadastro do cliente — revise e salve as que devem virar padrão." />
+  return <><Head eyebrow="CADASTRO" title="Produtos Fora do Cadastro" subtitle="Marcas que os entregadores lançaram fora do cadastro do cliente — revise e salve as que devem virar padrão." />
     {error && <div className="error" style={{ marginBottom: 16 }} data-testid="out-of-catalog-error">{error}</div>}
     <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CLIENTE</th><th>MARCA</th><th>PREÇO USADO</th><th>Nº DE VEZES</th><th>ÚLTIMO LANÇAMENTO</th><th /></tr></thead><tbody>
       {rows.map(r => <tr key={`${r.customer}-${r.brand}`} data-testid={`out-of-catalog-row-${r.customer}-${r.brand}`}>
