@@ -984,10 +984,40 @@ async def margin_report(start: Optional[str] = None, end: Optional[str] = None, 
         categories.append(c)
     categories.sort(key=lambda c: (c["margin_pct"] if c["margin_pct"] is not None else -999))
 
+    def margin_for_entries(subset):
+        total_revenue = 0.0
+        total_margin = 0.0
+        for e in subset:
+            sub_items = e.get("items") or ([{"brand": e.get("brand"), "quantity": e.get("billed_quantity"), "price": e.get("price"), "mf_quantity": e.get("mf_quantity")}] if e.get("brand") else [])
+            for it in sub_items:
+                n = (it.get("brand") or "").strip()
+                if not n: continue
+                c = brand_by_name.get(n.lower())
+                cp = c.get("cost_price") if c else None
+                if cp is None: continue
+                q = float(it.get("quantity") or 0)
+                if e.get("mf_plan") == "swap": q += float(it.get("mf_quantity") or 0)
+                rev = q * float(it.get("price") or 0)
+                total_revenue += rev
+                total_margin += rev - q * float(cp)
+        return (total_margin / total_revenue) if total_revenue > 0 else None
+
+    end_date = datetime.fromisoformat(end)
+    evo_start = (end_date - timedelta(weeks=7)).date().isoformat()
+    evo_entries = entries if evo_start >= start else await db.daily_entries.find({"date": {"$gte": evo_start, "$lte": end}}, {"_id": 0}).to_list(5000)
+    evolution = []
+    for i in range(7, -1, -1):
+        b_end = end_date - timedelta(days=7 * i)
+        b_start = b_end - timedelta(days=6)
+        b_start_s, b_end_s = b_start.date().isoformat(), b_end.date().isoformat()
+        bucket = [e for e in evo_entries if b_start_s <= e.get("date", "") <= b_end_s]
+        m = margin_for_entries(bucket)
+        evolution.append({"label": f"{b_end.day:02d}/{b_end.month:02d}", "start": b_start_s, "end": b_end_s, "margin_pct": round(m, 4) if m is not None else None})
+
     return {
         "start": start, "end": end, "total_produtos": len(rows), "counts": counts,
         "margin_media": round(margin_media, 4) if margin_media is not None else None,
-        "revenue_total": round(revenue_total, 2), "rows": rows, "categories": categories,
+        "revenue_total": round(revenue_total, 2), "rows": rows, "categories": categories, "evolution": evolution,
         "default_target_margin": DEFAULT_TARGET_MARGIN,
     }
 

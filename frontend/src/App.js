@@ -555,7 +555,7 @@ function Stock({ data, setData, create }) {
       <Stat label="Galões com defeito" value={defectiveTotal} detail="Parados no depósito, aguardando troca com o fornecedor" Icon={AlertTriangle} tone={defectiveTotal > 0 ? 'red' : 'green'} />
       <Stat label="Vasilhames vazios" value={emptyTotal} detail="Recebidos dos clientes, aguardando envio ao fornecedor" Icon={Package} tone={emptyTotal > 0 ? 'orange' : 'green'} />
     </div>
-    <div className="stock-alert" data-testid="stock-alert"><AlertTriangle size={19} /><div><b>{products.filter(x => x.quantity < x.minimum).length} produtos precisam de reposição</b><span>Confira os itens antes da próxima rota.</span></div></div><section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>MARCA</th><th>CATEGORIA</th><th>DISPONÍVEL</th><th>MÍNIMO</th><th>DEFEITO</th><th>VAZIO</th><th>VALOR EM ESTOQUE</th><th>SITUAÇÃO</th><th>LOTE / COMPRA</th><th /></tr></thead><tbody>{products.map(p => <tr key={p.id} data-testid={`stock-row-${p.id}`}><td><b>{p.name}</b><small>SKU-{p.id}</small></td><td>{p.brand || '—'}</td><td>{p.category}</td><td>{p.quantity} {p.unit || 'un'}</td><td>{p.minimum}</td><td>{p.defective_quantity ? <span className="tag red" data-testid={`stock-defective-${p.id}`}>{p.defective_quantity}</span> : <small className="muted">—</small>}</td><td>{p.empty_quantity ? <span className="tag orange" data-testid={`stock-empty-${p.id}`}>{p.empty_quantity}</span> : <small className="muted">—</small>}</td><td>{p.cost_price != null ? money((Number(p.quantity) || 0) * Number(p.cost_price)) : <small className="muted">sem custo</small>}</td><td><span className={`tag ${p.quantity < p.minimum ? 'red' : 'green'}`}>{p.quantity < p.minimum ? 'Repor' : 'Saudável'}</span></td><td><small className="muted">{p.batch ? `Lote ${p.batch}` : '—'}{p.purchase_date ? ` · ${p.purchase_date}` : ''}</small></td><td className="row-actions"><button className="action-btn ghost" data-testid={`stock-edit-${p.id}`} onClick={() => setEditing(p)}><Pencil size={13} /> Editar</button><button className="action-btn ghost" data-testid={`stock-adjust-${p.id}`} onClick={() => setAdjusting(p)}>Ajustar</button></td></tr>)}</tbody></table></div></section>
+    <div className="stock-alert" data-testid="stock-alert"><AlertTriangle size={19} /><div><b>{products.filter(x => x.quantity < x.minimum).length} produtos precisam de reposição</b><span>Confira os itens antes da próxima rota.</span></div></div><section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>MARCA</th><th>CATEGORIA</th><th>DISPONÍVEL</th><th>MÍNIMO</th><th>DEFEITO</th><th>VAZIO</th><th>VALOR EM ESTOQUE</th><th>SITUAÇÃO</th><th>LOTE / COMPRA</th><th /></tr></thead><tbody>{products.map(p => <tr key={p.id} data-testid={`stock-row-${p.id}`}><td><b>{p.name}</b><small>SKU-{p.id}</small></td><td>{p.brand || '—'}</td><td>{p.category}</td><td>{p.quantity} {p.unit || 'un'}</td><td>{p.minimum}</td><td>{p.defective_quantity ? <span className="tag red" data-testid={`stock-defective-${p.id}`}>{p.defective_quantity}</span> : <small className="muted">—</small>}</td><td>{p.empty_quantity ? <span className="tag orange" data-testid={`stock-empty-${p.id}`}>{p.empty_quantity}</span> : <small className="muted">—</small>}</td><td>{p.cost_price != null ? money((Number(p.quantity) || 0) * Number(p.cost_price)) : <small className="muted">sem custo</small>}</td><td><span className={`tag ${p.quantity < p.minimum ? 'red' : 'green'}`}>{p.quantity < p.minimum ? 'Repor' : 'Saudável'}</span></td><td><small className="muted">{p.batch ? `Lote ${p.batch}` : '—'}{p.purchase_date ? ` · ${p.purchase_date}` : ''}</small></td><td className="row-actions"><button className="action-btn ghost" data-testid={`stock-edit-${p.id}`} onClick={() => setEditing(p)}><Pencil size={13} /> Editar</button><button className="action-btn ghost" data-testid={`stock-adjust-${p.id}`} onClick={() => setAdjusting(p)}>Ajustar</button></td></tr>)}{products.length === 0 && <tr><td colSpan={11} className="muted" style={{ padding: 16 }}>Nenhum produto cadastrado.</td></tr>}</tbody></table></div></section>
     {adjusting && <StockAdjustModal product={adjusting} onClose={() => setAdjusting(null)} onSave={saveAdjustment} />}
     {editing && <ProductModal product={editing} onClose={() => setEditing(null)} onSave={saveEdit} />}
     <StockMovements />
@@ -605,6 +605,7 @@ function Finance({ data, setData, create, user }) {
             </td>}
           </tr>
         })}
+        {(data?.expenses_list || []).length === 0 && <tr><td colSpan={isAdmin ? 6 : 5} className="muted" style={{ padding: 16 }}>Nenhuma despesa lançada.</td></tr>}
       </tbody></table></div></section></>
 }
 
@@ -650,6 +651,22 @@ function MarginReport() {
         <span>{abaixoMeta.map(r => `${r.brand} (${pct(r.margin_pct)})`).join(' · ')}</span>
       </div>
     </div>}
+
+    <section className="panel" style={{ marginBottom: 22, padding: 23 }}>
+      <div className="panel-head"><div><h3>Evolução da margem média</h3><p className="muted">Últimas 8 semanas · margem sobre os produtos com custo cadastrado</p></div></div>
+      <div className="chart" style={{ height: 190 }}><div className="bars">
+        {(report?.evolution || []).map(w => {
+          const target = report?.default_target_margin || 0.3;
+          const color = w.margin_pct == null ? '#c9d4de' : w.margin_pct < 0 ? 'var(--red)' : w.margin_pct < target ? '#f8c45d' : 'var(--green)';
+          const heightPct = w.margin_pct == null ? 2 : Math.max(4, Math.min(100, (w.margin_pct / Math.max(target * 1.5, 0.01)) * 100));
+          return <div className="bar-group" key={w.end} data-testid={`margin-evo-bar-${w.end}`} title={w.margin_pct != null ? `${w.label}: ${pct(w.margin_pct)}` : `${w.label}: sem vendas`}>
+            <div className="bar" style={{ width: 20, height: `${heightPct}%`, background: color }} />
+            <span>{w.label}</span>
+          </div>;
+        })}
+        {(!report?.evolution || report.evolution.length === 0) && <p className="muted" style={{ padding: '30px 0' }}>Sem dados suficientes ainda.</p>}
+      </div></div>
+    </section>
 
     <section className="panel table-panel" style={{ marginBottom: 22 }}>
       <div className="panel-head" style={{ padding: '18px 23px' }}><div><h3>Margem por categoria</h3><p className="muted">Como cada categoria de produto está performando</p></div></div>
@@ -743,6 +760,7 @@ function UsersPage({ me }) {
           </div></td>
         </tr>
       })}
+      {filtered.length === 0 && <tr><td colSpan={5} className="muted" style={{ padding: 16 }}>Nenhum usuário encontrado.</td></tr>}
     </tbody></table></div></section>
     {modal && <UserModal modal={modal} onClose={() => setModal(null)} onDone={() => { setModal(null); load(); }} />}
   </>
