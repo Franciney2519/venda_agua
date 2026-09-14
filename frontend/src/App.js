@@ -617,8 +617,11 @@ function MarginReport() {
   const [report, setReport] = useState(null);
   const [simBrand, setSimBrand] = useState('');
   const [simPrice, setSimPrice] = useState('');
-  async function load() { const { data } = await api.get('/reports/margin', auth()); setReport(data); }
-  useEffect(() => { load(); }, []);
+  const [start, setStart] = useState('');
+  const [end, setEnd] = useState('');
+  async function load() { const { data } = await api.get('/reports/margin', { ...auth(), params: { start: start || undefined, end: end || undefined } }); setReport(data); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [start, end]);
   useAutoRefresh(load);
 
   const rows = report?.rows || [];
@@ -630,7 +633,14 @@ function MarginReport() {
   const simMargin = simCost != null && simPriceNum > 0 ? (simPriceNum - simCost) / simPriceNum : null;
   const simSafe = simMargin != null && simMargin >= 0;
 
-  return <><Head eyebrow="LUCRATIVIDADE" title="Margem" subtitle="Quanto cada marca realmente deixa de lucro, considerando o custo de compra cadastrado." />
+  return <><Head eyebrow="LUCRATIVIDADE" title="Margem" subtitle="Quanto cada marca, categoria e cliente realmente deixa de lucro, considerando o custo de compra cadastrado." />
+    <div className="report-toolbar">
+      <div className="report-filters">
+        <label>De<input type="date" value={start} max={end || undefined} data-testid="margin-start-date" onChange={e => setStart(e.target.value)} /></label>
+        <label>Até<input type="date" value={end} min={start || undefined} data-testid="margin-end-date" onChange={e => setEnd(e.target.value)} /></label>
+        {(start || end) && <button className="ghost-btn" data-testid="margin-clear-dates" onClick={() => { setStart(''); setEnd(''); }}>Limpar período (mês atual)</button>}
+      </div>
+    </div>
     <div className="stats">
       <Stat label="Total de produtos" value={report?.total_produtos ?? '—'} detail="Marcas com venda no período" Icon={Package} />
       <Stat label="Saudáveis" value={report?.counts?.saudavel ?? '—'} detail="Margem dentro do alvo" Icon={CircleDollarSign} tone="green" />
@@ -640,6 +650,8 @@ function MarginReport() {
     <div className="stats" style={{ marginTop: -6 }}>
       <Stat label="Margem média" value={pct(report?.margin_media)} detail={`Considerando produtos com custo cadastrado · alvo padrão ${pct(report?.default_target_margin)}`} Icon={Percent} />
       <Stat label="Receita no período" value={money(report?.revenue_total)} detail={report ? `${report.start} a ${report.end}` : ''} Icon={ArrowUpRight} />
+      <Stat label="Despesas no período" value={money(report?.expenses_total)} detail="Combustível, pedágio etc. lançados pelos entregadores" Icon={WalletCards} tone="orange" />
+      <Stat label="Lucro líquido" value={money(report?.lucro_liquido)} detail="Margem bruta − despesas do período" Icon={CircleDollarSign} tone={report?.lucro_liquido < 0 ? 'red' : 'green'} />
     </div>
     {semCusto.length > 0 && <div className="stock-alert" data-testid="margin-no-cost-alert">
       <AlertTriangle size={19} /><div><b>{semCusto.length} marca{semCusto.length > 1 ? 's' : ''} sem custo cadastrado</b>
@@ -690,6 +702,18 @@ function MarginReport() {
           <td><span className={`tag ${MARGIN_STATUS_TAG[r.status]}`}>{MARGIN_STATUS_LABEL[r.status]}</span></td>
         </tr>)}
         {rows.length === 0 && <tr><td colSpan={7} className="muted" style={{ padding: 16 }}>Nenhuma venda no período.</td></tr>}
+      </tbody></table></div>
+    </section>
+
+    <section className="panel table-panel" style={{ marginBottom: 22 }}>
+      <div className="panel-head" style={{ padding: '18px 23px' }}><div><h3>Margem por cliente</h3><p className="muted">Quanto cada cliente realmente deixa de lucro</p></div></div>
+      <div className="table-wrap"><table><thead><tr><th>CLIENTE</th><th>ENTREGAS</th><th>VENDIDO</th><th>RECEITA</th><th>CUSTO</th><th>MARGEM</th></tr></thead><tbody>
+        {(report?.customers || []).map(c => <tr key={c.customer} data-testid={`margin-customer-${c.customer}`}>
+          <td><b>{c.customer}</b></td><td>{c.entregas}</td><td>{c.quantity}</td><td>{money(c.revenue)}</td>
+          <td>{c.cost_total != null ? money(c.cost_total) : <small className="muted">sem custo</small>}</td>
+          <td>{c.margin_value != null ? <><b className={c.margin_value < 0 ? 'orange-text' : ''}>{money(c.margin_value)}</b> <small className="muted">({pct(c.margin_pct)})</small></> : <small className="muted">—</small>}</td>
+        </tr>)}
+        {(report?.customers || []).length === 0 && <tr><td colSpan={6} className="muted" style={{ padding: 16 }}>Nenhuma venda no período.</td></tr>}
       </tbody></table></div>
     </section>
 

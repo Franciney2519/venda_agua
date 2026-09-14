@@ -993,6 +993,41 @@ async def margin_report(start: Optional[str] = None, end: Optional[str] = None, 
             if cost_unit is None: b["cost_known"] = False
             else: b["cost_total"] += qty * cost_unit
 
+    per_customer = {}
+    for e in entries:
+        cust = (e.get("customer") or "").strip()
+        if not cust: continue
+        items = e.get("items") or ([{"brand": e.get("brand"), "quantity": e.get("billed_quantity"), "price": e.get("price"), "mf_quantity": e.get("mf_quantity"), "sale_type": e.get("sale_type"), "cost_unit": e.get("cost_unit")}] if e.get("brand") else [])
+        c = per_customer.setdefault(cust, {"customer": cust, "quantity": 0.0, "revenue": 0.0, "cost_total": 0.0, "cost_known": True, "entregas": 0})
+        c["entregas"] += 1
+        for it in items:
+            name = (it.get("brand") or "").strip()
+            if not name: continue
+            key = name.lower()
+            sale_type = it.get("sale_type") or "exchange"
+            qty = float(it.get("quantity") or 0)
+            if e.get("mf_plan") == "swap": qty += float(it.get("mf_quantity") or 0)
+            revenue = qty * float(it.get("price") or 0)
+            cost_unit = it["cost_unit"] if it.get("cost_unit") is not None else cost_unit_for(brand_by_name.get(key), sale_type)
+            c["quantity"] += qty
+            c["revenue"] += revenue
+            if cost_unit is None: c["cost_known"] = False
+            else: c["cost_total"] += qty * cost_unit
+
+    customers_rows = []
+    for c in per_customer.values():
+        has_cost = c["cost_known"]
+        cost_total = c["cost_total"] if has_cost else None
+        margin_value = (c["revenue"] - cost_total) if has_cost else None
+        margin_pct = (margin_value / c["revenue"]) if has_cost and c["revenue"] > 0 else None
+        customers_rows.append({
+            "customer": c["customer"], "entregas": c["entregas"], "quantity": c["quantity"],
+            "revenue": round(c["revenue"], 2), "cost_total": round(cost_total, 2) if cost_total is not None else None,
+            "margin_value": round(margin_value, 2) if margin_value is not None else None,
+            "margin_pct": round(margin_pct, 4) if margin_pct is not None else None,
+        })
+    customers_rows.sort(key=lambda c: (c["margin_pct"] if c["margin_pct"] is not None else -999))
+
     def category_of(name, catalog):
         if catalog and catalog.get("category"): return catalog.get("category")
         match = match_product(products_catalog, name)
@@ -1073,10 +1108,17 @@ async def margin_report(start: Optional[str] = None, end: Optional[str] = None, 
         m = margin_for_entries(bucket)
         evolution.append({"label": f"{b_end.day:02d}/{b_end.month:02d}", "start": b_start_s, "end": b_end_s, "margin_pct": round(m, 4) if m is not None else None})
 
+    expenses = await db.expenses.find(
+        {"created_at": {"$gte": local_day_start_utc(start), "$lte": local_day_end_utc(end)}, "status": {"$ne": "rejected"}}, {"_id": 0}
+    ).to_list(5000)
+    expenses_total = sum(float(x.get("amount") or 0) for x in expenses)
+    lucro_liquido = margin_total - expenses_total
+
     return {
         "start": start, "end": end, "total_produtos": len(rows), "counts": counts,
         "margin_media": round(margin_media, 4) if margin_media is not None else None,
         "revenue_total": round(revenue_total, 2), "rows": rows, "categories": categories, "evolution": evolution,
+        "customers": customers_rows, "expenses_total": round(expenses_total, 2), "lucro_liquido": round(lucro_liquido, 2),
         "default_target_margin": DEFAULT_TARGET_MARGIN,
     }
 
