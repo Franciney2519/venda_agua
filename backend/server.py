@@ -224,6 +224,13 @@ def match_product(products_cache, brand):
     if not b: return None
     return next((p for p in products_cache if (p.get("brand") or p.get("name") or "").strip().lower() == b), None)
 
+def cost_unit_for(catalog, sale_type):
+    if not catalog: return None
+    if sale_type == "full":
+        full = catalog.get("cost_price_full")
+        if full is not None: return float(full)
+    return float(catalog["cost_price"]) if catalog.get("cost_price") is not None else None
+
 def viagem_ref(v):
     return {"id": v.get("id"), "entry_number": None, "customer": None, "driver": v.get("driver"), "viagem_codigo": v.get("codigo_viagem")}
 
@@ -440,8 +447,24 @@ async def brands(user=Depends(current_user)): return await list_resource("brands
 async def add_brand(data: ResourceInput, user=Depends(admin_user)): return await create_resource("brands", data, user)
 @api.patch("/brands/{item_id}")
 async def update_brand(item_id: str, data: ResourceInput, user=Depends(admin_user)):
-    values = data.model_dump(exclude_unset=True); await db.brands.update_one({"id": item_id}, {"$set": values})
+    before = await db.brands.find_one({"id": item_id}, {"_id": 0})
+    values = data.model_dump(exclude_unset=True)
+    if before:
+        for field in ("cost_price", "cost_price_full"):
+            if field in values and values[field] != before.get(field):
+                await db.cost_history.insert_one({
+                    "id": str(uuid.uuid4()), "brand_id": item_id, "brand_name": before.get("name"), "field": field,
+                    "old_value": before.get(field), "new_value": values[field],
+                    "changed_at": now(), "changed_by": user["name"],
+                })
+    await db.brands.update_one({"id": item_id}, {"$set": values})
     doc = await db.brands.find_one({"id": item_id}, {"_id": 0}); return doc
+
+@api.get("/brands/cost-history")
+async def brands_cost_history(brand_id: Optional[str] = None, user=Depends(admin_user)):
+    query = {"brand_id": brand_id} if brand_id else {}
+    return await db.cost_history.find(query, {"_id": 0}).sort("changed_at", -1).to_list(500)
+
 @api.delete("/brands/{item_id}")
 async def delete_brand(item_id: str, user=Depends(admin_user)):
     await db.brands.delete_one({"id": item_id})
@@ -507,6 +530,16 @@ async def add_daily_entry(data: ResourceInput, user=Depends(current_user)):
     doc["date"] = doc.get("date") or today_local()
     await ensure_day_open(doc["date"], doc["driver"], user)
     items = doc.get("items")
+    # Grava o custo do fornecedor vigente NA HORA DA VENDA em cada item — se o fornecedor
+    # reajustar o preço depois, vendas antigas continuam com a margem correta (histórica),
+    # em vez de serem recalculadas com o custo novo.
+    brands_catalog = await db.brands.find({}, {"_id": 0}).to_list(1000)
+    brand_by_name = {(b.get("name") or "").strip().lower(): b for b in brands_catalog}
+    if items:
+        for it in items:
+            it["cost_unit"] = cost_unit_for(brand_by_name.get((it.get("brand") or "").strip().lower()), it.get("sale_type") or "exchange")
+    else:
+        doc["cost_unit"] = cost_unit_for(brand_by_name.get((doc.get("brand") or "").strip().lower()), doc.get("sale_type") or "exchange")
     if items:
         billed_qty = sum(float(it.get("quantity") or 0) for it in items)
         mf_total = sum(float(it.get("mf_quantity") or 0) for it in items)
@@ -570,6 +603,25 @@ async def update_daily_entry(item_id: str, data: ResourceInput, user=Depends(cur
         # e ajusta o estoque pela diferença (desfaz o efeito antigo, aplica o novo).
         merged = {**target, **values}
         items = merged.get("items")
+        # Preserva o custo travado na venda original (histórico); só busca um custo novo
+        # se a linha não existia antes (ex: marca adicionada nesta revisão).
+        target_cost_by_brand = {}
+        for ti in (target.get("items") or []):
+            k = (ti.get("brand") or "").strip().lower()
+            if ti.get("cost_unit") is not None: target_cost_by_brand.setdefault(k, ti["cost_unit"])
+        if items and "items" in values:
+            brands_catalog = await db.brands.find({}, {"_id": 0}).to_list(1000)
+            brand_by_name = {(b.get("name") or "").strip().lower(): b for b in brands_catalog}
+            for it in items:
+                key = (it.get("brand") or "").strip().lower()
+                if it.get("cost_unit") is None:
+                    it["cost_unit"] = target_cost_by_brand.get(key, cost_unit_for(brand_by_name.get(key), it.get("sale_type") or "exchange"))
+        elif not items and "quantity" in values:
+            if merged.get("cost_unit") is None:
+                brands_catalog = await db.brands.find({}, {"_id": 0}).to_list(1000)
+                brand_by_name = {(b.get("name") or "").strip().lower(): b for b in brands_catalog}
+                key = (merged.get("brand") or "").strip().lower()
+                merged["cost_unit"] = target.get("cost_unit") or cost_unit_for(brand_by_name.get(key), merged.get("sale_type") or "exchange")
         if items:
             billed_qty = sum(float(it.get("quantity") or 0) for it in items)
             mf_total = sum(float(it.get("mf_quantity") or 0) for it in items)
@@ -921,16 +973,9 @@ async def margin_report(start: Optional[str] = None, end: Optional[str] = None, 
     products_catalog = await db.products.find({}, {"_id": 0}).to_list(1000)
     brand_by_name = {(b.get("name") or "").strip().lower(): b for b in brands_catalog}
 
-    def cost_unit_for(catalog, sale_type):
-        if not catalog: return None
-        if sale_type == "full":
-            full = catalog.get("cost_price_full")
-            if full is not None: return float(full)
-        return float(catalog["cost_price"]) if catalog.get("cost_price") is not None else None
-
     per_brand = {}
     for e in entries:
-        items = e.get("items") or ([{"brand": e.get("brand"), "quantity": e.get("billed_quantity"), "price": e.get("price"), "mf_quantity": e.get("mf_quantity"), "sale_type": e.get("sale_type")}] if e.get("brand") else [])
+        items = e.get("items") or ([{"brand": e.get("brand"), "quantity": e.get("billed_quantity"), "price": e.get("price"), "mf_quantity": e.get("mf_quantity"), "sale_type": e.get("sale_type"), "cost_unit": e.get("cost_unit")}] if e.get("brand") else [])
         for it in items:
             name = (it.get("brand") or "").strip()
             if not name: continue
@@ -939,8 +984,9 @@ async def margin_report(start: Optional[str] = None, end: Optional[str] = None, 
             qty = float(it.get("quantity") or 0)
             if e.get("mf_plan") == "swap": qty += float(it.get("mf_quantity") or 0)
             revenue = qty * float(it.get("price") or 0)
-            catalog = brand_by_name.get(key)
-            cost_unit = cost_unit_for(catalog, sale_type)
+            # Usa o custo travado na venda (histórico); só recorre ao custo atual do
+            # cadastro para lançamentos antigos, feitos antes dessa trava existir.
+            cost_unit = it["cost_unit"] if it.get("cost_unit") is not None else cost_unit_for(brand_by_name.get(key), sale_type)
             b = per_brand.setdefault(key, {"brand": name, "quantity": 0.0, "revenue": 0.0, "cost_total": 0.0, "cost_known": True})
             b["quantity"] += qty
             b["revenue"] += revenue
@@ -1002,12 +1048,11 @@ async def margin_report(start: Optional[str] = None, end: Optional[str] = None, 
         total_revenue = 0.0
         total_margin = 0.0
         for e in subset:
-            sub_items = e.get("items") or ([{"brand": e.get("brand"), "quantity": e.get("billed_quantity"), "price": e.get("price"), "mf_quantity": e.get("mf_quantity"), "sale_type": e.get("sale_type")}] if e.get("brand") else [])
+            sub_items = e.get("items") or ([{"brand": e.get("brand"), "quantity": e.get("billed_quantity"), "price": e.get("price"), "mf_quantity": e.get("mf_quantity"), "sale_type": e.get("sale_type"), "cost_unit": e.get("cost_unit")}] if e.get("brand") else [])
             for it in sub_items:
                 n = (it.get("brand") or "").strip()
                 if not n: continue
-                c = brand_by_name.get(n.lower())
-                cu = cost_unit_for(c, it.get("sale_type") or "exchange")
+                cu = it["cost_unit"] if it.get("cost_unit") is not None else cost_unit_for(brand_by_name.get(n.lower()), it.get("sale_type") or "exchange")
                 if cu is None: continue
                 q = float(it.get("quantity") or 0)
                 if e.get("mf_plan") == "swap": q += float(it.get("mf_quantity") or 0)

@@ -968,6 +968,9 @@ function BrandsCatalog() {
   const [costFullDraft, setCostFullDraft] = useState('');
   const [editingMargin, setEditingMargin] = useState(null);
   const [marginDraft, setMarginDraft] = useState('');
+  const [historyFor, setHistoryFor] = useState(null);
+  const [history, setHistory] = useState([]);
+  async function openHistory(b) { setHistoryFor(b); const { data } = await api.get('/brands/cost-history', { ...auth(), params: { brand_id: b.id } }); setHistory(data); }
   const [editingCategory, setEditingCategory] = useState(null);
   const [categoryDraft, setCategoryDraft] = useState('');
   const nextCode = String(Math.max(0, ...brands.map(b => parseInt(b.code, 10) || 0)) + 1).padStart(4, '0');
@@ -1038,12 +1041,29 @@ function BrandsCatalog() {
         </td>
         <td><span className={`tag ${active ? 'green' : 'gray'}`}>{active ? 'Ativa' : 'Inativa'}</span></td>
         <td><div className="row-actions">
+          <button className="action-btn ghost" data-testid={`brand-history-${b.id}`} onClick={() => openHistory(b)}><Clock3 size={13} /> Histórico</button>
           <button className="action-btn ghost" data-testid={`brand-toggle-${b.id}`} onClick={() => toggleActive(b)}>{active ? 'Desativar' : 'Ativar'}</button>
           <button className="action-btn reject" aria-label="Excluir marca" data-testid={`brand-delete-${b.id}`} onClick={() => remove(b)}><Trash2 size={13} /></button>
         </div></td>
       </tr> })}
       {brands.length === 0 && <tr><td colSpan={8} className="muted" style={{ padding: 16 }}>Nenhuma marca cadastrada.</td></tr>}
-    </tbody></table></div></section></>
+    </tbody></table></div></section>
+    {historyFor && <div className="modal-backdrop" onClick={() => setHistoryFor(null)}><div className="quick-modal" onClick={e => e.stopPropagation()}>
+      <button type="button" className="modal-close" onClick={() => setHistoryFor(null)} data-testid="brand-history-close"><X /></button>
+      <p className="eyebrow">HISTÓRICO DE CUSTO</p>
+      <h3>{historyFor.name}</h3>
+      {history.length === 0 && <p className="muted">Nenhuma alteração de custo registrada ainda para esta marca.</p>}
+      {history.length > 0 && <div style={{ display: 'grid', gap: 10 }}>
+        {history.map(h => <div key={h.id} className="stock-alert" style={{ marginBottom: 0 }} data-testid={`brand-history-row-${h.id}`}>
+          <Clock3 size={16} />
+          <div>
+            <b>{h.field === 'cost_price_full' ? 'Custo venda completa' : 'Custo somente água'}: {money(h.old_value)} → {money(h.new_value)}</b>
+            <span>{formatDateTimeManaus(h.changed_at)} · por {h.changed_by}</span>
+          </div>
+        </div>)}
+      </div>}
+    </div></div>}
+    </>
 }
 
 function OutOfCatalogBrands() {
