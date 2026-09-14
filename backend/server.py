@@ -84,6 +84,7 @@ class ResourceInput(BaseModel):
     viagem_id: Optional[str] = None
     rota_id: Optional[str] = None
     photo: Optional[str] = None
+    target_margin: Optional[float] = None
 
 class ViagemInput(BaseModel):
     turno: int  # 0 = manhã, 1 = tarde
@@ -905,6 +906,89 @@ async def finance_summary(driver: Optional[str] = None, user=Depends(current_use
         "comp_pending_total": comp_pending_total, "comp_received_total": comp_received_total,
         "expenses_today_total": expenses_today_total, "expenses_pending_total": expenses_pending_total,
         "balance_today": received_today - expenses_today_total,
+    }
+
+DEFAULT_TARGET_MARGIN = 0.30
+
+@api.get("/reports/margin")
+async def margin_report(start: Optional[str] = None, end: Optional[str] = None, user=Depends(admin_user)):
+    start = start or today_local()[:7] + "-01"
+    end = end or today_local()
+    query = {"date": {"$gte": start, "$lte": end}}
+    entries = await db.daily_entries.find(query, {"_id": 0}).to_list(5000)
+    brands_catalog = await db.brands.find({}, {"_id": 0}).to_list(1000)
+    products_catalog = await db.products.find({}, {"_id": 0}).to_list(1000)
+    brand_by_name = {(b.get("name") or "").strip().lower(): b for b in brands_catalog}
+
+    per_brand = {}
+    for e in entries:
+        items = e.get("items") or ([{"brand": e.get("brand"), "quantity": e.get("billed_quantity"), "price": e.get("price"), "mf_quantity": e.get("mf_quantity")}] if e.get("brand") else [])
+        for it in items:
+            name = (it.get("brand") or "").strip()
+            if not name: continue
+            key = name.lower()
+            qty = float(it.get("quantity") or 0)
+            if e.get("mf_plan") == "swap": qty += float(it.get("mf_quantity") or 0)
+            revenue = qty * float(it.get("price") or 0)
+            b = per_brand.setdefault(key, {"brand": name, "quantity": 0.0, "revenue": 0.0})
+            b["quantity"] += qty
+            b["revenue"] += revenue
+
+    def category_of(name, catalog):
+        if catalog and catalog.get("category"): return catalog.get("category")
+        match = match_product(products_catalog, name)
+        return match.get("category") if match else None
+
+    rows = []
+    for key, b in per_brand.items():
+        catalog = brand_by_name.get(key)
+        cost_price = catalog.get("cost_price") if catalog else None
+        target = (catalog.get("target_margin") if catalog and catalog.get("target_margin") is not None else DEFAULT_TARGET_MARGIN)
+        has_cost = cost_price is not None
+        cost_total = float(cost_price) * b["quantity"] if has_cost else None
+        margin_value = (b["revenue"] - cost_total) if has_cost else None
+        margin_pct = (margin_value / b["revenue"]) if has_cost and b["revenue"] > 0 else None
+        if not has_cost: status = "sem_custo"
+        elif margin_pct < 0: status = "prejuizo"
+        elif margin_pct < target * 0.5: status = "baixa"
+        elif margin_pct < target: status = "atencao"
+        else: status = "saudavel"
+        rows.append({
+            "brand": b["brand"], "category": category_of(b["brand"], catalog) or "Sem categoria", "quantity": b["quantity"],
+            "revenue": round(b["revenue"], 2), "cost_price": cost_price, "cost_total": round(cost_total, 2) if cost_total is not None else None,
+            "margin_value": round(margin_value, 2) if margin_value is not None else None, "margin_pct": round(margin_pct, 4) if margin_pct is not None else None,
+            "target_margin": target, "status": status,
+        })
+    rows.sort(key=lambda r: (r["margin_pct"] if r["margin_pct"] is not None else -999))
+
+    counts = {"saudavel": 0, "atencao": 0, "baixa": 0, "prejuizo": 0, "sem_custo": 0}
+    for r in rows: counts[r["status"]] += 1
+    revenue_total = sum(r["revenue"] for r in rows)
+    margin_total = sum(r["margin_value"] for r in rows if r["margin_value"] is not None)
+    margin_media = (margin_total / revenue_total) if revenue_total > 0 else None
+
+    by_category = {}
+    for r in rows:
+        c = by_category.setdefault(r["category"], {"category": r["category"], "revenue": 0.0, "margin_value": 0.0, "has_cost_revenue": 0.0, "produtos": 0, "em_risco": 0})
+        c["produtos"] += 1
+        c["revenue"] += r["revenue"]
+        if r["margin_value"] is not None:
+            c["margin_value"] += r["margin_value"]
+            c["has_cost_revenue"] += r["revenue"]
+        if r["status"] in ("baixa", "prejuizo"): c["em_risco"] += 1
+    categories = []
+    for c in by_category.values():
+        c["margin_pct"] = round(c["margin_value"] / c["has_cost_revenue"], 4) if c["has_cost_revenue"] > 0 else None
+        c.pop("has_cost_revenue")
+        c["revenue"] = round(c["revenue"], 2); c["margin_value"] = round(c["margin_value"], 2)
+        categories.append(c)
+    categories.sort(key=lambda c: (c["margin_pct"] if c["margin_pct"] is not None else -999))
+
+    return {
+        "start": start, "end": end, "total_produtos": len(rows), "counts": counts,
+        "margin_media": round(margin_media, 4) if margin_media is not None else None,
+        "revenue_total": round(revenue_total, 2), "rows": rows, "categories": categories,
+        "default_target_margin": DEFAULT_TARGET_MARGIN,
     }
 
 @api.get("/reports/receivables")

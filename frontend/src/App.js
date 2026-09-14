@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import axios from "axios";
 import { BrowserRouter, Routes, Route, NavLink, Navigate, Link } from "react-router-dom";
-import { LayoutDashboard, Truck, Package, WalletCards, Users, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, Clock3, CircleDollarSign, BarChart3, Save, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle, CalendarCheck, Wallet, Eye, EyeOff, Minus, Sun, Moon, Camera, Search, MoreHorizontal, Fuel, Utensils, Wrench, Receipt, ChevronRight, RefreshCw, Eraser } from "lucide-react";
+import { LayoutDashboard, Truck, Package, WalletCards, Users, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, Clock3, CircleDollarSign, BarChart3, Save, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle, CalendarCheck, Wallet, Eye, EyeOff, Minus, Sun, Moon, Camera, Search, MoreHorizontal, Fuel, Utensils, Wrench, Receipt, ChevronRight, RefreshCw, Eraser, Percent } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import logoImg from "./assets/logo.png";
@@ -131,7 +131,7 @@ function useAutoRefresh(refresh, intervalMs = 15000) {
     };
   }, [intervalMs]);
 }
-const nav = [['/', 'Visão geral', LayoutDashboard], ['/viagens', 'Viagens', Truck], ['/comprovantes', 'Comprovantes', FileText], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/marcas', 'Cadastro de Produto', Droplets], ['/marcas-extras', 'Marcas Extras', AlertTriangle], ['/usuarios', 'Cadastro de Usuário', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
+const nav = [['/', 'Visão geral', LayoutDashboard], ['/viagens', 'Viagens', Truck], ['/comprovantes', 'Comprovantes', FileText], ['/estoque', 'Estoque', Package], ['/financeiro', 'Financeiro', WalletCards], ['/margem', 'Margem', Percent], ['/provisao', 'Provisão de Pagamento', Wallet], ['/clientes', 'Clientes', Users], ['/marcas', 'Cadastro de Produto', Droplets], ['/marcas-extras', 'Marcas Extras', AlertTriangle], ['/usuarios', 'Cadastro de Usuário', ShieldCheck], ['/fechamento', 'Fechamento', CalendarCheck], ['/atividade', 'Atividade', Activity], ['/relatorios', 'Relatórios', BarChart3]];
 const driverNav = [['/', 'Visão geral', LayoutDashboard], ['/viagens', 'Viagens', Truck], ['/financeiro', 'Financeiro', WalletCards]];
 
 function Shell({ user, onLogout, notifications, children }) {
@@ -593,6 +593,96 @@ function Finance({ data, setData, create, user }) {
       </tbody></table></div></section></>
 }
 
+const MARGIN_STATUS_LABEL = { saudavel: 'Saudável', atencao: 'Em atenção', baixa: 'Margem baixa', prejuizo: 'Em prejuízo', sem_custo: 'Sem custo' };
+const MARGIN_STATUS_TAG = { saudavel: 'green', atencao: 'orange', baixa: 'orange', prejuizo: 'red', sem_custo: 'gray' };
+const pct = v => v == null ? '—' : `${(v * 100).toFixed(1)}%`;
+
+function MarginReport() {
+  const [report, setReport] = useState(null);
+  const [simBrand, setSimBrand] = useState('');
+  const [simPrice, setSimPrice] = useState('');
+  async function load() { const { data } = await api.get('/reports/margin', auth()); setReport(data); }
+  useEffect(() => { load(); }, []);
+  useAutoRefresh(load);
+
+  const rows = report?.rows || [];
+  const semCusto = rows.filter(r => r.status === 'sem_custo');
+  const abaixoMeta = rows.filter(r => r.status === 'baixa' || r.status === 'prejuizo');
+  const simRow = rows.find(r => r.brand === simBrand);
+  const simCost = simRow?.cost_price;
+  const simPriceNum = Number(simPrice) || 0;
+  const simMargin = simCost != null && simPriceNum > 0 ? (simPriceNum - simCost) / simPriceNum : null;
+  const simSafe = simMargin != null && simMargin >= 0;
+
+  return <><Head eyebrow="LUCRATIVIDADE" title="Margem" subtitle="Quanto cada marca realmente deixa de lucro, considerando o custo de compra cadastrado." />
+    <div className="stats">
+      <Stat label="Total de produtos" value={report?.total_produtos ?? '—'} detail="Marcas com venda no período" Icon={Package} />
+      <Stat label="Saudáveis" value={report?.counts?.saudavel ?? '—'} detail="Margem dentro do alvo" Icon={CircleDollarSign} tone="green" />
+      <Stat label="Em atenção / baixa" value={(report?.counts?.atencao ?? 0) + (report?.counts?.baixa ?? 0)} detail="Abaixo da meta, sem estar no prejuízo" Icon={AlertTriangle} tone="orange" />
+      <Stat label="Em prejuízo" value={report?.counts?.prejuizo ?? '—'} detail="Vendendo no vermelho" Icon={AlertTriangle} tone={report?.counts?.prejuizo > 0 ? 'red' : 'green'} />
+    </div>
+    <div className="stats" style={{ marginTop: -6 }}>
+      <Stat label="Margem média" value={pct(report?.margin_media)} detail={`Considerando produtos com custo cadastrado · alvo padrão ${pct(report?.default_target_margin)}`} Icon={Percent} />
+      <Stat label="Receita no período" value={money(report?.revenue_total)} detail={report ? `${report.start} a ${report.end}` : ''} Icon={ArrowUpRight} />
+    </div>
+    {semCusto.length > 0 && <div className="stock-alert" data-testid="margin-no-cost-alert">
+      <AlertTriangle size={19} /><div><b>{semCusto.length} marca{semCusto.length > 1 ? 's' : ''} sem custo cadastrado</b>
+        <span>{semCusto.map(r => r.brand).join(' · ')} — sem isso não dá para calcular a margem real. Cadastre o custo em <Link to="/marcas">Cadastro de Produto</Link>.</span>
+      </div>
+    </div>}
+    {abaixoMeta.length > 0 && <div className="stock-alert" data-testid="margin-below-target-alert">
+      <AlertTriangle size={19} /><div><b>{abaixoMeta.length} marca{abaixoMeta.length > 1 ? 's' : ''} abaixo da margem desejada</b>
+        <span>{abaixoMeta.map(r => `${r.brand} (${pct(r.margin_pct)})`).join(' · ')}</span>
+      </div>
+    </div>}
+
+    <section className="panel table-panel" style={{ marginBottom: 22 }}>
+      <div className="panel-head" style={{ padding: '18px 23px' }}><div><h3>Margem por categoria</h3><p className="muted">Como cada categoria de produto está performando</p></div></div>
+      <div className="table-wrap"><table><thead><tr><th>CATEGORIA</th><th>PRODUTOS</th><th>RECEITA</th><th>MARGEM MÉDIA</th><th>EM RISCO</th></tr></thead><tbody>
+        {(report?.categories || []).map(c => <tr key={c.category} data-testid={`margin-category-${c.category}`}>
+          <td><b>{c.category}</b></td><td>{c.produtos}</td><td>{money(c.revenue)}</td>
+          <td><span className={`tag ${c.margin_pct == null ? 'gray' : c.margin_pct < 0 ? 'red' : c.margin_pct < (report?.default_target_margin || 0.3) ? 'orange' : 'green'}`}>{pct(c.margin_pct)}</span></td>
+          <td>{c.em_risco > 0 ? <span className="tag orange">{c.em_risco}</span> : <small className="muted">0</small>}</td>
+        </tr>)}
+        {(report?.categories || []).length === 0 && <tr><td colSpan={5} className="muted" style={{ padding: 16 }}>Nenhuma venda no período.</td></tr>}
+      </tbody></table></div>
+    </section>
+
+    <section className="panel table-panel" style={{ marginBottom: 22 }}>
+      <div className="panel-head" style={{ padding: '18px 23px' }}><div><h3>Margem por marca (fornecedor)</h3><p className="muted">Compare o que cada marca deixa de lucro real</p></div></div>
+      <div className="table-wrap"><table><thead><tr><th>MARCA</th><th>CATEGORIA</th><th>VENDIDO</th><th>RECEITA</th><th>CUSTO</th><th>MARGEM</th><th>SITUAÇÃO</th></tr></thead><tbody>
+        {rows.map(r => <tr key={r.brand} data-testid={`margin-row-${r.brand}`}>
+          <td><b>{r.brand}</b></td><td>{r.category}</td><td>{r.quantity}</td><td>{money(r.revenue)}</td>
+          <td>{r.cost_total != null ? money(r.cost_total) : <small className="muted">sem custo</small>}</td>
+          <td>{r.margin_value != null ? <><b>{money(r.margin_value)}</b> <small className="muted">({pct(r.margin_pct)})</small></> : <small className="muted">—</small>}</td>
+          <td><span className={`tag ${MARGIN_STATUS_TAG[r.status]}`}>{MARGIN_STATUS_LABEL[r.status]}</span></td>
+        </tr>)}
+        {rows.length === 0 && <tr><td colSpan={7} className="muted" style={{ padding: 16 }}>Nenhuma venda no período.</td></tr>}
+      </tbody></table></div>
+    </section>
+
+    <section className="panel table-panel">
+      <div className="panel-head" style={{ padding: '18px 23px' }}><div><h3>Simulador de desconto seguro</h3><p className="muted">Veja até onde dá para descontar sem vender no prejuízo</p></div></div>
+      <div className="os-form" style={{ paddingTop: 0 }}>
+        <label>Marca<select value={simBrand} data-testid="margin-sim-brand" onChange={e => setSimBrand(e.target.value)}>
+          <option value="">Selecione</option>
+          {rows.filter(r => r.cost_price != null).map(r => <option key={r.brand} value={r.brand}>{r.brand}</option>)}
+        </select></label>
+        <label className="os-field-narrow">Preço de venda simulado (R$)<input type="number" step="0.01" value={simPrice} data-testid="margin-sim-price" onChange={e => setSimPrice(e.target.value)} /></label>
+      </div>
+      {simRow && <div style={{ padding: '0 23px 20px' }}>
+        <p className="muted">Custo de compra: <b>{money(simCost)}</b> {simPriceNum > 0 && <>· Preço mínimo pra não ter prejuízo: <b>{money(simCost)}</b></>}</p>
+        {simPriceNum > 0 && <div className={`stock-alert`} style={{ background: simSafe ? undefined : '#fff0f0', borderColor: simSafe ? undefined : '#f4c8c8' }} data-testid="margin-sim-result">
+          {simSafe ? <CircleDollarSign size={19} /> : <AlertTriangle size={19} />}
+          <div><b>{simSafe ? `Margem de ${pct(simMargin)} — seguro` : 'Vendendo no prejuízo com esse preço'}</b>
+            <span>Lucro por unidade: {money(simPriceNum - simCost)}{simSafe && ` · desconto máximo a partir do preço atual sem prejuízo: até ${money(simPriceNum - simCost)} por unidade`}</span>
+          </div>
+        </div>}
+      </div>}
+    </section>
+  </>
+}
+
 function Customers({ items, create, onEdit }) {
   const [search, setSearch] = useState('');
   const filtered = items.filter(x => x.name.toLowerCase().includes(search.toLowerCase()) || (x.code || '').toLowerCase().includes(search.toLowerCase())).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
@@ -837,10 +927,14 @@ function Receivables() {
 
 function BrandsCatalog() {
   const [brands, setBrands] = useState([]);
-  const [form, setForm] = useState({ name: '', cost_price: '' });
+  const [form, setForm] = useState({ name: '', cost_price: '', category: '' });
   const [error, setError] = useState('');
   const [editingCost, setEditingCost] = useState(null);
   const [costDraft, setCostDraft] = useState('');
+  const [editingMargin, setEditingMargin] = useState(null);
+  const [marginDraft, setMarginDraft] = useState('');
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [categoryDraft, setCategoryDraft] = useState('');
   const nextCode = String(Math.max(0, ...brands.map(b => parseInt(b.code, 10) || 0)) + 1).padStart(4, '0');
 
   async function load() { const { data } = await api.get('/brands', auth()); setBrands(data); }
@@ -854,7 +948,7 @@ function BrandsCatalog() {
       const payload = { ...form, code: nextCode, active: true };
       if (payload.cost_price !== '') payload.cost_price = Number(payload.cost_price); else delete payload.cost_price;
       const { data } = await api.post('/brands', payload, auth());
-      setBrands([data, ...brands]); setForm({ name: '', cost_price: '' });
+      setBrands([data, ...brands]); setForm({ name: '', cost_price: '', category: '' });
     } catch (e) { setError(e.response?.data?.detail || 'Não foi possível salvar.'); }
   }
 
@@ -864,23 +958,40 @@ function BrandsCatalog() {
     const { data } = await api.patch(`/brands/${b.id}`, { cost_price: Number(costDraft) || 0 }, auth());
     setBrands(brands.map(x => x.id === b.id ? data : x)); setEditingCost(null);
   }
+  async function saveMargin(b) {
+    const { data } = await api.patch(`/brands/${b.id}`, { target_margin: marginDraft === '' ? null : Number(marginDraft) / 100 }, auth());
+    setBrands(brands.map(x => x.id === b.id ? data : x)); setEditingMargin(null);
+  }
+  async function saveCategory(b) {
+    const { data } = await api.patch(`/brands/${b.id}`, { category: categoryDraft || null }, auth());
+    setBrands(brands.map(x => x.id === b.id ? data : x)); setEditingCategory(null);
+  }
 
   return <><Head eyebrow="CADASTRO" title="Cadastro de Produto" subtitle="Catálogo de marcas com código e custo de compra, usado no cadastro de clientes, nos lançamentos e no cálculo de lucro por marca." />
     <section className="panel table-panel" style={{ marginBottom: 22 }}>
-      <form className="daily-entry-form" style={{ gridTemplateColumns: '.6fr 1.2fr .8fr auto' }} onSubmit={submit}>
+      <form className="daily-entry-form" style={{ gridTemplateColumns: '.6fr 1fr .9fr .8fr auto' }} onSubmit={submit}>
         <label>Código<input readOnly value={nextCode} data-testid="brand-code-input" /></label>
         <label>Marca<input required placeholder="ex: Minalar" value={form.name} data-testid="brand-name-input" onChange={e => setForm({ ...form, name: e.target.value })} /></label>
+        <label>Categoria (opcional)<input placeholder="ex: Retornável" value={form.category} data-testid="brand-category-input" onChange={e => setForm({ ...form, category: e.target.value })} /></label>
         <label>Custo de compra (R$/un)<input type="number" step="0.01" placeholder="0,00" value={form.cost_price} data-testid="brand-cost-input" onChange={e => setForm({ ...form, cost_price: e.target.value })} /></label>
         <button className="primary" data-testid="brand-submit-button"><Plus size={15} /> Adicionar</button>
       </form>
       {error && <div className="error" style={{ margin: '0 23px 16px' }} data-testid="brand-form-error">{error}</div>}
     </section>
-    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>MARCA</th><th>CUSTO DE COMPRA</th><th>SITUAÇÃO</th><th /></tr></thead><tbody>
+    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>MARCA</th><th>CATEGORIA</th><th>CUSTO DE COMPRA</th><th>MARGEM ALVO</th><th>SITUAÇÃO</th><th /></tr></thead><tbody>
       {brands.map(b => { const active = b.active !== false; return <tr key={b.id} data-testid={`brand-row-${b.id}`}>
         <td>{b.code || '—'}</td><td><b>{b.name}</b></td>
+        <td>{editingCategory === b.id
+          ? <div className="row-actions"><input autoFocus style={{ width: 110 }} value={categoryDraft} data-testid={`brand-category-edit-${b.id}`} onChange={e => setCategoryDraft(e.target.value)} /><button type="button" className="action-btn approve" data-testid={`brand-category-save-${b.id}`} onClick={() => saveCategory(b)}><Check size={13} /></button></div>
+          : <button type="button" className="action-btn ghost" data-testid={`brand-category-${b.id}`} onClick={() => { setEditingCategory(b.id); setCategoryDraft(b.category || ''); }}>{b.category || <span className="muted">definir</span>} <Pencil size={12} /></button>}
+        </td>
         <td>{editingCost === b.id
           ? <div className="row-actions"><input type="number" step="0.01" autoFocus style={{ width: 90 }} value={costDraft} data-testid={`brand-cost-edit-${b.id}`} onChange={e => setCostDraft(e.target.value)} /><button type="button" className="action-btn approve" data-testid={`brand-cost-save-${b.id}`} onClick={() => saveCost(b)}><Check size={13} /></button></div>
           : <button type="button" className="action-btn ghost" data-testid={`brand-cost-${b.id}`} onClick={() => { setEditingCost(b.id); setCostDraft(b.cost_price ?? ''); }}>{b.cost_price ? money(b.cost_price) : <span className="muted">definir</span>} <Pencil size={12} /></button>}
+        </td>
+        <td>{editingMargin === b.id
+          ? <div className="row-actions"><input type="number" step="1" autoFocus style={{ width: 70 }} value={marginDraft} data-testid={`brand-margin-edit-${b.id}`} onChange={e => setMarginDraft(e.target.value)} /><button type="button" className="action-btn approve" data-testid={`brand-margin-save-${b.id}`} onClick={() => saveMargin(b)}><Check size={13} /></button></div>
+          : <button type="button" className="action-btn ghost" data-testid={`brand-margin-${b.id}`} onClick={() => { setEditingMargin(b.id); setMarginDraft(b.target_margin != null ? Math.round(b.target_margin * 100) : ''); }}>{b.target_margin != null ? `${Math.round(b.target_margin * 100)}%` : <span className="muted">padrão (30%)</span>} <Pencil size={12} /></button>}
         </td>
         <td><span className={`tag ${active ? 'green' : 'gray'}`}>{active ? 'Ativa' : 'Inativa'}</span></td>
         <td><div className="row-actions">
@@ -888,7 +999,7 @@ function BrandsCatalog() {
           <button className="action-btn reject" aria-label="Excluir marca" data-testid={`brand-delete-${b.id}`} onClick={() => remove(b)}><Trash2 size={13} /></button>
         </div></td>
       </tr> })}
-      {brands.length === 0 && <tr><td colSpan={5} className="muted" style={{ padding: 16 }}>Nenhuma marca cadastrada.</td></tr>}
+      {brands.length === 0 && <tr><td colSpan={7} className="muted" style={{ padding: 16 }}>Nenhuma marca cadastrada.</td></tr>}
     </tbody></table></div></section></>
 }
 
@@ -2523,6 +2634,7 @@ function App() {
       <Route path="/" element={<Dashboard data={data} onRefresh={loadDashboard} refreshing={refreshing} lastUpdated={lastUpdated} />} />
       <Route path="/estoque" element={<Stock data={data} setData={setData} create={setModal} />} />
       <Route path="/financeiro" element={<Finance data={data} setData={setData} create={setModal} user={user} />} />
+      <Route path="/margem" element={adminOnly(<MarginReport />)} />
       <Route path="/provisao" element={adminOnly(<Receivables />)} />
       <Route path="/viagens" element={<Viagens customers={customers} user={user} />} />
       <Route path="/comprovantes" element={adminOnly(<Receipts customers={customers} />)} />
