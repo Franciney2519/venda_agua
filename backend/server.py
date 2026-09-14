@@ -62,6 +62,7 @@ class ResourceInput(BaseModel):
     price: Optional[float] = None
     brands: Optional[List[dict]] = None
     cost_price: Optional[float] = None
+    cost_price_full: Optional[float] = None
     date: Optional[str] = None
     trip_number: Optional[str] = None
     mf_quantity: Optional[float] = None
@@ -920,19 +921,31 @@ async def margin_report(start: Optional[str] = None, end: Optional[str] = None, 
     products_catalog = await db.products.find({}, {"_id": 0}).to_list(1000)
     brand_by_name = {(b.get("name") or "").strip().lower(): b for b in brands_catalog}
 
+    def cost_unit_for(catalog, sale_type):
+        if not catalog: return None
+        if sale_type == "full":
+            full = catalog.get("cost_price_full")
+            if full is not None: return float(full)
+        return float(catalog["cost_price"]) if catalog.get("cost_price") is not None else None
+
     per_brand = {}
     for e in entries:
-        items = e.get("items") or ([{"brand": e.get("brand"), "quantity": e.get("billed_quantity"), "price": e.get("price"), "mf_quantity": e.get("mf_quantity")}] if e.get("brand") else [])
+        items = e.get("items") or ([{"brand": e.get("brand"), "quantity": e.get("billed_quantity"), "price": e.get("price"), "mf_quantity": e.get("mf_quantity"), "sale_type": e.get("sale_type")}] if e.get("brand") else [])
         for it in items:
             name = (it.get("brand") or "").strip()
             if not name: continue
             key = name.lower()
+            sale_type = it.get("sale_type") or "exchange"
             qty = float(it.get("quantity") or 0)
             if e.get("mf_plan") == "swap": qty += float(it.get("mf_quantity") or 0)
             revenue = qty * float(it.get("price") or 0)
-            b = per_brand.setdefault(key, {"brand": name, "quantity": 0.0, "revenue": 0.0})
+            catalog = brand_by_name.get(key)
+            cost_unit = cost_unit_for(catalog, sale_type)
+            b = per_brand.setdefault(key, {"brand": name, "quantity": 0.0, "revenue": 0.0, "cost_total": 0.0, "cost_known": True})
             b["quantity"] += qty
             b["revenue"] += revenue
+            if cost_unit is None: b["cost_known"] = False
+            else: b["cost_total"] += qty * cost_unit
 
     def category_of(name, catalog):
         if catalog and catalog.get("category"): return catalog.get("category")
@@ -942,10 +955,9 @@ async def margin_report(start: Optional[str] = None, end: Optional[str] = None, 
     rows = []
     for key, b in per_brand.items():
         catalog = brand_by_name.get(key)
-        cost_price = catalog.get("cost_price") if catalog else None
         target = (catalog.get("target_margin") if catalog and catalog.get("target_margin") is not None else DEFAULT_TARGET_MARGIN)
-        has_cost = cost_price is not None
-        cost_total = float(cost_price) * b["quantity"] if has_cost else None
+        has_cost = b["cost_known"]
+        cost_total = b["cost_total"] if has_cost else None
         margin_value = (b["revenue"] - cost_total) if has_cost else None
         margin_pct = (margin_value / b["revenue"]) if has_cost and b["revenue"] > 0 else None
         if not has_cost: status = "sem_custo"
@@ -955,7 +967,9 @@ async def margin_report(start: Optional[str] = None, end: Optional[str] = None, 
         else: status = "saudavel"
         rows.append({
             "brand": b["brand"], "category": category_of(b["brand"], catalog) or "Sem categoria", "quantity": b["quantity"],
-            "revenue": round(b["revenue"], 2), "cost_price": cost_price, "cost_total": round(cost_total, 2) if cost_total is not None else None,
+            "revenue": round(b["revenue"], 2), "cost_price": catalog.get("cost_price") if catalog else None,
+            "cost_price_full": catalog.get("cost_price_full") if catalog else None,
+            "cost_total": round(cost_total, 2) if cost_total is not None else None,
             "margin_value": round(margin_value, 2) if margin_value is not None else None, "margin_pct": round(margin_pct, 4) if margin_pct is not None else None,
             "target_margin": target, "status": status,
         })
@@ -988,18 +1002,18 @@ async def margin_report(start: Optional[str] = None, end: Optional[str] = None, 
         total_revenue = 0.0
         total_margin = 0.0
         for e in subset:
-            sub_items = e.get("items") or ([{"brand": e.get("brand"), "quantity": e.get("billed_quantity"), "price": e.get("price"), "mf_quantity": e.get("mf_quantity")}] if e.get("brand") else [])
+            sub_items = e.get("items") or ([{"brand": e.get("brand"), "quantity": e.get("billed_quantity"), "price": e.get("price"), "mf_quantity": e.get("mf_quantity"), "sale_type": e.get("sale_type")}] if e.get("brand") else [])
             for it in sub_items:
                 n = (it.get("brand") or "").strip()
                 if not n: continue
                 c = brand_by_name.get(n.lower())
-                cp = c.get("cost_price") if c else None
-                if cp is None: continue
+                cu = cost_unit_for(c, it.get("sale_type") or "exchange")
+                if cu is None: continue
                 q = float(it.get("quantity") or 0)
                 if e.get("mf_plan") == "swap": q += float(it.get("mf_quantity") or 0)
                 rev = q * float(it.get("price") or 0)
                 total_revenue += rev
-                total_margin += rev - q * float(cp)
+                total_margin += rev - q * cu
         return (total_margin / total_revenue) if total_revenue > 0 else None
 
     end_date = datetime.fromisoformat(end)

@@ -964,6 +964,8 @@ function BrandsCatalog() {
   const [error, setError] = useState('');
   const [editingCost, setEditingCost] = useState(null);
   const [costDraft, setCostDraft] = useState('');
+  const [editingCostFull, setEditingCostFull] = useState(null);
+  const [costFullDraft, setCostFullDraft] = useState('');
   const [editingMargin, setEditingMargin] = useState(null);
   const [marginDraft, setMarginDraft] = useState('');
   const [editingCategory, setEditingCategory] = useState(null);
@@ -991,6 +993,10 @@ function BrandsCatalog() {
     const { data } = await api.patch(`/brands/${b.id}`, { cost_price: Number(costDraft) || 0 }, auth());
     setBrands(brands.map(x => x.id === b.id ? data : x)); setEditingCost(null);
   }
+  async function saveCostFull(b) {
+    const { data } = await api.patch(`/brands/${b.id}`, { cost_price_full: costFullDraft === '' ? null : Number(costFullDraft) }, auth());
+    setBrands(brands.map(x => x.id === b.id ? data : x)); setEditingCostFull(null);
+  }
   async function saveMargin(b) {
     const { data } = await api.patch(`/brands/${b.id}`, { target_margin: marginDraft === '' ? null : Number(marginDraft) / 100 }, auth());
     setBrands(brands.map(x => x.id === b.id ? data : x)); setEditingMargin(null);
@@ -1011,7 +1017,7 @@ function BrandsCatalog() {
       </form>
       {error && <div className="error" style={{ margin: '0 23px 16px' }} data-testid="brand-form-error">{error}</div>}
     </section>
-    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>MARCA</th><th>CATEGORIA</th><th>CUSTO DE COMPRA</th><th>MARGEM ALVO</th><th>SITUAÇÃO</th><th /></tr></thead><tbody>
+    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>MARCA</th><th>CATEGORIA</th><th>CUSTO SOMENTE ÁGUA</th><th>CUSTO VENDA COMPLETA</th><th>MARGEM ALVO</th><th>SITUAÇÃO</th><th /></tr></thead><tbody>
       {brands.map(b => { const active = b.active !== false; return <tr key={b.id} data-testid={`brand-row-${b.id}`}>
         <td>{b.code || '—'}</td><td><b>{b.name}</b></td>
         <td>{editingCategory === b.id
@@ -1021,6 +1027,10 @@ function BrandsCatalog() {
         <td>{editingCost === b.id
           ? <div className="row-actions"><input type="number" step="0.01" autoFocus style={{ width: 90 }} value={costDraft} data-testid={`brand-cost-edit-${b.id}`} onChange={e => setCostDraft(e.target.value)} /><button type="button" className="action-btn approve" data-testid={`brand-cost-save-${b.id}`} onClick={() => saveCost(b)}><Check size={13} /></button></div>
           : <button type="button" className="action-btn ghost" data-testid={`brand-cost-${b.id}`} onClick={() => { setEditingCost(b.id); setCostDraft(b.cost_price ?? ''); }}>{b.cost_price ? money(b.cost_price) : <span className="muted">definir</span>} <Pencil size={12} /></button>}
+        </td>
+        <td>{editingCostFull === b.id
+          ? <div className="row-actions"><input type="number" step="0.01" autoFocus style={{ width: 90 }} value={costFullDraft} data-testid={`brand-cost-full-edit-${b.id}`} onChange={e => setCostFullDraft(e.target.value)} /><button type="button" className="action-btn approve" data-testid={`brand-cost-full-save-${b.id}`} onClick={() => saveCostFull(b)}><Check size={13} /></button></div>
+          : <button type="button" className="action-btn ghost" data-testid={`brand-cost-full-${b.id}`} onClick={() => { setEditingCostFull(b.id); setCostFullDraft(b.cost_price_full ?? ''); }}>{b.cost_price_full ? money(b.cost_price_full) : <span className="muted">= custo somente água</span>} <Pencil size={12} /></button>}
         </td>
         <td>{editingMargin === b.id
           ? <div className="row-actions"><input type="number" step="1" autoFocus style={{ width: 70 }} value={marginDraft} data-testid={`brand-margin-edit-${b.id}`} onChange={e => setMarginDraft(e.target.value)} /><button type="button" className="action-btn approve" data-testid={`brand-margin-save-${b.id}`} onClick={() => saveMargin(b)}><Check size={13} /></button></div>
@@ -1032,7 +1042,7 @@ function BrandsCatalog() {
           <button className="action-btn reject" aria-label="Excluir marca" data-testid={`brand-delete-${b.id}`} onClick={() => remove(b)}><Trash2 size={13} /></button>
         </div></td>
       </tr> })}
-      {brands.length === 0 && <tr><td colSpan={7} className="muted" style={{ padding: 16 }}>Nenhuma marca cadastrada.</td></tr>}
+      {brands.length === 0 && <tr><td colSpan={8} className="muted" style={{ padding: 16 }}>Nenhuma marca cadastrada.</td></tr>}
     </tbody></table></div></section></>
 }
 
