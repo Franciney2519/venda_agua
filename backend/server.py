@@ -172,7 +172,7 @@ async def login(data: LoginInput, response: Response):
     return {**user, "token": access_token}
 
 @api.get("/auth/me")
-async def me(user=Depends(current_user)): return user
+async def me(user=Depends(current_user)): return sanitize_user(user)
 
 @api.get("/dashboard")
 async def dashboard(user=Depends(current_user)):
@@ -185,7 +185,8 @@ async def dashboard(user=Depends(current_user)):
     expenses = await db.expenses.find({}, {"_id": 0}).to_list(200)
     revenue = sum(entry_total(e) for e in entries_month)
     month_start_utc = local_day_start_utc(month_start)
-    expenses_month = sum(float(e.get("amount", 0)) for e in expenses if (e.get("created_at") or "") >= month_start_utc and e.get("status") != "rejected")
+    month_expenses = await db.expenses.find({"created_at": {"$gte": month_start_utc}, "status": {"$ne": "rejected"}}, {"_id": 0, "amount": 1}).to_list(10000)
+    expenses_month = sum(float(e.get("amount", 0)) for e in month_expenses)
     return {"revenue": revenue, "expenses": expenses_month, "deliveries": entries_today, "products": products, "expenses_list": expenses, "user": user}
 
 MONTH_LABELS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
@@ -1136,20 +1137,6 @@ async def receivables(status: Optional[str] = None, start: Optional[str] = None,
     totals = {"pending": sum(float(e.get("comp_value") or 0) for e in entries if not e.get("received")), "received": sum(float(e.get("comp_value") or 0) for e in entries if e.get("received"))}
     return {"rows": entries, "totals": totals}
 
-def entry_item_rows(e):
-    """Yield (brand, quantity, price) for each product line of a daily entry, whether it used
-    the multi-brand items[] shape (desktop/mobile current) or the older single-brand shape."""
-    items = e.get("items")
-    if items:
-        for it in items:
-            qty = float(it.get("quantity") or 0)
-            if qty <= 0: continue
-            yield (it.get("brand") or "", qty, float(it.get("price") or 0))
-    else:
-        qty = float(e.get("billed_quantity") if e.get("billed_quantity") is not None else max(0.0, float(e.get("quantity") or 0) - float(e.get("mf_quantity") or 0)))
-        if qty > 0:
-            yield (e.get("brand") or "", qty, float(e.get("price") or 0))
-
 async def _profit_rows(start, end, group_by):
     query = {}
     if start or end:
@@ -1158,23 +1145,22 @@ async def _profit_rows(start, end, group_by):
         if end: rng["$lte"] = end
         query["date"] = rng
     entries = await db.daily_entries.find(query, {"_id": 0}).to_list(5000)
-    products = await db.products.find({}, {"_id": 0}).to_list(1000)
     brands_cat = await db.brands.find({}, {"_id": 0}).to_list(1000)
-    cost_by_brand = {}
-    for b in brands_cat:
-        if b.get("cost_price"):
-            cost_by_brand[(b.get("name") or "").strip().lower()] = float(b["cost_price"])
-    for p in products:
-        if not p.get("cost_price"): continue
-        upp = float(p.get("units_per_package") or 1) if (p.get("unit") or "").lower().startswith("fardo") else 1
-        unit_cost = float(p["cost_price"]) / upp if upp else float(p["cost_price"])
-        cost_by_brand[(p.get("brand") or p.get("name") or "").strip().lower()] = unit_cost
+    brand_by_name = {(b.get("name") or "").strip().lower(): b for b in brands_cat}
     rows = {}
     for e in entries:
         customer = e.get("customer") or "Sem cliente"
-        for brand, qty, price in entry_item_rows(e):
-            key = customer if group_by == "customer" else (brand.strip() or "Sem marca")
-            cost = cost_by_brand.get(brand.strip().lower(), 0)
+        items = e.get("items") or ([{"brand": e.get("brand"), "quantity": e.get("billed_quantity"), "price": e.get("price"), "mf_quantity": e.get("mf_quantity"), "sale_type": e.get("sale_type"), "cost_unit": e.get("cost_unit")}] if e.get("brand") else [])
+        for it in items:
+            brand = (it.get("brand") or "").strip()
+            qty = float(it.get("quantity") or 0)
+            if e.get("mf_plan") == "swap": qty += float(it.get("mf_quantity") or 0)
+            if qty <= 0: continue
+            price = float(it.get("price") or 0)
+            # Mesmo critério de /reports/margin: custo travado na venda, senão o do cadastro (completa vs somente água).
+            cost = it["cost_unit"] if it.get("cost_unit") is not None else cost_unit_for(brand_by_name.get(brand.lower()), it.get("sale_type") or "exchange")
+            cost = cost or 0
+            key = customer if group_by == "customer" else (brand or "Sem marca")
             row = rows.setdefault(key, {group_by: key, "quantity": 0.0, "revenue": 0.0, "cost": 0.0, "profit": 0.0})
             row["quantity"] += qty; row["revenue"] += qty * price; row["cost"] += qty * cost; row["profit"] += qty * (price - cost)
     result = sorted(rows.values(), key=lambda r: r["profit"], reverse=True)

@@ -1044,7 +1044,7 @@ function BrandsCatalog() {
       </form>
       {error && <div className="error" style={{ margin: '0 23px 16px' }} data-testid="brand-form-error">{error}</div>}
     </section>
-    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>MARCA</th><th>CATEGORIA</th><th>CUSTO SOMENTE ÁGUA</th><th>CUSTO VENDA COMPLETA</th><th>MARGEM ALVO</th><th>SITUAÇÃO</th><th /></tr></thead><tbody>
+    <section className="panel table-panel"><div className="table-wrap"><table className="brand-table"><thead><tr><th>CÓDIGO</th><th>MARCA</th><th>CATEGORIA</th><th>CUSTO SOMENTE ÁGUA</th><th>CUSTO VENDA COMPLETA</th><th>MARGEM ALVO</th><th>SITUAÇÃO</th><th /></tr></thead><tbody>
       {brands.map(b => { const active = b.active !== false; return <tr key={b.id} data-testid={`brand-row-${b.id}`}>
         <td>{b.code || '—'}</td><td><b>{b.name}</b></td>
         <td>{editingCategory === b.id

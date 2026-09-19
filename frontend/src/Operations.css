@@ -461,3 +461,18 @@
 .app-shell.dark .combobox-list{background:#15293c;border-color:var(--line)}
 .app-shell.dark .combobox-option{color:var(--ink)}
 .app-shell.dark .combobox-option:hover,.app-shell.dark .combobox-option:focus{background:#1c3350}
+
+.app-shell.dark .daily-entry-form{border-bottom-color:var(--line)}
+.app-shell.dark .daily-entry-form label{color:#9fb2c4}
+.app-shell.dark .daily-entry-form input,.app-shell.dark .daily-entry-form select{background:#15293c;border-color:var(--line);color:var(--ink);padding:10px 12px;border-radius:8px;font-size:13px}
+.app-shell.dark .daily-entry-form input::placeholder{color:#6f8499}
+.app-shell.dark .daily-entry-form input[readOnly]{background:#0f2031;color:#7f95aa;cursor:not-allowed}
+.app-shell.dark .daily-entry-form input:focus,.app-shell.dark .daily-entry-form select:focus{outline:none;border-color:#3f9be8;box-shadow:0 0 0 3px rgba(63,155,232,.18)}
+.app-shell.dark .table-wrap td input{background:#15293c;border:1px solid var(--line);color:var(--ink);padding:7px 10px;border-radius:8px;font-size:13px}
+.app-shell.dark .table-wrap td input:focus{outline:none;border-color:#3f9be8;box-shadow:0 0 0 3px rgba(63,155,232,.18)}
+.brand-table{min-width:0}
+.brand-table th,.brand-table td{padding-left:12px;padding-right:12px}
+.brand-table th:first-child,.brand-table td:first-child{padding-left:20px}
+.brand-table td:last-child{padding-right:16px}
+.brand-table td:last-child .row-actions{flex-wrap:nowrap}
+.brand-table .action-btn{white-space:nowrap;padding:6px 8px}
