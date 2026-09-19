@@ -575,6 +575,31 @@ async def delete_lot(lot_id: str, user=Depends(admin_user)):
 
 @api.get("/expenses")
 async def expenses(user=Depends(current_user)): return await list_resource("expenses")
+def trip_totals(entregas, despesas):
+    total_bruto = sum(entry_total(e) for e in entregas)
+    despesas_total = sum(float(d.get("amount") or 0) for d in despesas)
+    billed_total = sum(float(e.get("billed_quantity") or 0) for e in entregas)
+    mf_swap_total = 0.0
+    mf_problema_total = 0.0
+    for e in entregas:
+        items = e.get("items") or ([{"brand": e.get("brand"), "quantity": e.get("billed_quantity"), "mf_quantity": e.get("mf_quantity")}] if e.get("brand") else [])
+        for it in items:
+            mf_qty = float(it.get("mf_quantity") or 0)
+            if mf_qty <= 0: continue
+            mf_problema_total += mf_qty
+            if e.get("mf_plan") == "swap": mf_swap_total += mf_qty
+    return {"total_bruto": total_bruto, "quantidade_entregue": billed_total + mf_swap_total, "entregas": len(entregas),
+            "problemas": sum(1 for e in entregas if float(e.get("mf_quantity") or 0) > 0), "mf_quantity_total": mf_problema_total,
+            "despesas_total": despesas_total, "saldo_liquido": total_bruto - despesas_total}
+
+async def recompute_viagem_summary(viagem_id):
+    """Depois de editar/excluir uma venda de viagem já finalizada, refaz os totais mostrados no resumo da viagem."""
+    v = await db.viagens.find_one({"id": viagem_id}, {"_id": 0})
+    if not v or v.get("status") != "finalizada": return
+    entregas = await db.daily_entries.find({"viagem_id": viagem_id}, {"_id": 0}).to_list(None)
+    despesas = await db.expenses.find({"viagem_id": viagem_id, "status": {"$ne": "rejected"}}, {"_id": 0}).to_list(None)
+    await db.viagens.update_one({"id": viagem_id}, {"$set": {**trip_totals(entregas, despesas), "updated_at": now()}})
+
 async def recompute_viagem_finance(viagem_id):
     v = await db.viagens.find_one({"id": viagem_id}, {"_id": 0})
     if not v or v.get("status") != "finalizada": return
@@ -842,6 +867,7 @@ async def update_daily_entry(item_id: str, data: ResourceInput, user=Depends(cur
 
     await db.daily_entries.update_one({"id": item_id}, {"$set": values})
     doc = await db.daily_entries.find_one({"id": item_id}, {"_id": 0})
+    if doc.get("viagem_id"): await recompute_viagem_summary(doc["viagem_id"])
     if warnings: doc["warnings"] = warnings
     return doc
 
@@ -858,6 +884,7 @@ async def delete_daily_entry(item_id: str, user=Depends(current_user)):
     await release_lots(target)
     await apply_entry_stock_movements(target, "estorno", -1, user)
     await db.daily_entries.delete_one({"id": item_id})
+    if target.get("viagem_id"): await recompute_viagem_summary(target["viagem_id"])
     return {"message": "Excluído"}
 
 TURNO_LABELS = {0: "Manhã", 1: "Tarde"}
@@ -1087,25 +1114,7 @@ async def finalizar_viagem(item_id: str, user=Depends(current_user)):
     if v["status"] == "finalizada": raise HTTPException(400, "Viagem já está finalizada")
     entregas = await db.daily_entries.find({"viagem_id": item_id}, {"_id": 0}).to_list(None)
     despesas = await db.expenses.find({"viagem_id": item_id, "status": {"$ne": "rejected"}}, {"_id": 0}).to_list(None)
-    total_bruto = sum(entry_total(e) for e in entregas)
-    despesas_total = sum(float(d.get("amount") or 0) for d in despesas)
-    billed_total = sum(float(e.get("billed_quantity") or 0) for e in entregas)
-    mf_swap_total = 0.0
-    mf_problema_total = 0.0
-    for e in entregas:
-        items = e.get("items") or ([{"brand": e.get("brand"), "quantity": e.get("billed_quantity"), "mf_quantity": e.get("mf_quantity")}] if e.get("brand") else [])
-        for it in items:
-            mf_qty = float(it.get("mf_quantity") or 0)
-            if mf_qty <= 0: continue
-            mf_problema_total += mf_qty
-            if e.get("mf_plan") == "swap": mf_swap_total += mf_qty
-    # Um MF trocado na hora consome um galão bom extra do caminhão, então ele conta
-    # como "entregue" para bater com a carga — mesmo não sendo cobrado do cliente.
-    quantidade_entregue = billed_total + mf_swap_total
-    problemas = sum(1 for e in entregas if float(e.get("mf_quantity") or 0) > 0)
-    values = {"status": "finalizada", "total_bruto": total_bruto, "quantidade_entregue": quantidade_entregue,
-              "entregas": len(entregas), "problemas": problemas, "mf_quantity_total": mf_problema_total,
-              "despesas_total": despesas_total, "saldo_liquido": total_bruto - despesas_total, "updated_at": now()}
+    values = {"status": "finalizada", **trip_totals(entregas, despesas), "updated_at": now()}
 
     if v.get("carga_carregada") and v.get("carga_items"):
         used_by_brand = {}
