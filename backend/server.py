@@ -289,6 +289,9 @@ async def apply_lot_costs(doc):
         allocs, cost = await allocate_lots(products_cache, doc.get("brand"), q, doc.get("sale_type") or "exchange", doc.get("cost_unit"))
         if allocs: doc["lot_allocations"] = allocs; doc["cost_unit"] = cost
 
+def is_returnable(product):
+    return (product.get("category") or "").strip().lower().startswith("retorn")
+
 def viagem_ref(v):
     return {"id": v.get("id"), "entry_number": None, "customer": None, "driver": v.get("driver"), "viagem_codigo": v.get("codigo_viagem")}
 
@@ -371,7 +374,7 @@ async def apply_entry_stock_movements(doc, reason, sign, user):
                 for brand, qty in mf_brand_qty:
                     await apply_stock_delta(products_cache, brand, qty, reason, doc, user, skip_quantity=covered(brand))
 
-    # Vasilhame vazio: toda venda "somente água" (exchange) significa que o cliente
+    # Vasilhame vazio: toda venda "somente água" (exchange) de produto retornável significa que o cliente
     # devolveu um vasilhame vazio na hora — isso vira estoque de vazio, separado do
     # pronto-pra-venda, aguardando envio ao fornecedor.
     if items:
@@ -388,7 +391,7 @@ async def apply_entry_stock_movements(doc, reason, sign, user):
     if sign == 1:
         for brand, qty in empty_by_brand.items():
             match = match_product(products_cache, brand)
-            if not match: continue
+            if not match or not is_returnable(match): continue
             await db.products.update_one({"id": match["id"]}, {"$inc": {"empty_quantity": qty}})
             await db.stock_movements.insert_one({
                 "id": str(uuid.uuid4()), "product_id": match["id"], "product_name": match.get("name"), "brand": match.get("brand") or match.get("name"),
