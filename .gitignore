@@ -85,3 +85,6 @@ android-sdk/
 .env
 backend/.env
 frontend/.envfrontend/node_modules/.cache/default-development/0.pack
+
+# Database backups
+backend/backups/

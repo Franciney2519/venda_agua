@@ -528,14 +528,14 @@ function LotModal({ products, product, onClose, onSaved }) {
   </form></div>
 }
 
-function LotsPanel({ lots, products, onNew, onDelete }) {
+function LotsPanel({ lots, products, onNew, onDelete, onExport }) {
   const [showEmpty, setShowEmpty] = useState(false);
   const rows = (lots || []).filter(l => showEmpty || Number(l.quantity_remaining) > 0);
   const fmt = d => (d || '').split('-').reverse().join('/');
   return <section className="panel table-panel" style={{ marginTop: 22 }} data-testid="lots-panel">
     <div className="panel-head" style={{ padding: '18px 23px' }}>
       <div><h3>Lotes de compra</h3><p className="muted">Cada compra vira um lote com seu custo. As vendas saem do lote mais antigo primeiro e a margem usa o custo real desse lote.</p></div>
-      <div className="row-actions"><label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}><input type="checkbox" checked={showEmpty} onChange={e => setShowEmpty(e.target.checked)} /> mostrar esgotados</label><button type="button" className="primary" data-testid="lot-new-button" onClick={onNew} disabled={products.length === 0}><Plus size={15} /> Registrar compra</button></div>
+      <div className="row-actions"><button type="button" className="ghost-btn" data-testid="stock-export-csv" onClick={onExport}><FileDown size={15} /> CSV do estoque</button><label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}><input type="checkbox" checked={showEmpty} onChange={e => setShowEmpty(e.target.checked)} /> mostrar esgotados</label><button type="button" className="primary" data-testid="lot-new-button" onClick={onNew} disabled={products.length === 0}><Plus size={15} /> Registrar compra</button></div>
     </div>
     <div className="table-wrap"><table><thead><tr><th>LOTE</th><th>DATA</th><th>PRODUTO</th><th>COMPRADO</th><th>RESTANTE</th><th>CUSTO (ÁGUA / COMPLETA)</th><th>VALOR RESTANTE</th><th /></tr></thead><tbody>
       {rows.map(l => <tr key={l.id} data-testid={`lot-row-${l.code}`}>
@@ -620,6 +620,13 @@ function Stock({ data, setData, create }) {
   function loadLots() { api.get('/lots', auth()).then(x => setLots(x.data)).catch(() => setLots([])); }
   useEffect(() => { loadLots(); }, []);
   useAutoRefresh(loadLots);
+  async function exportStock() {
+    const res = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/reports/export-stock.csv`, auth());
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(await res.blob());
+    link.download = `distribuidora-diane-estoque-${todayISO(0)}.csv`;
+    link.click();
+  }
   async function refreshProducts() { const { data: d } = await api.get('/dashboard', auth()); setData(d); }
   async function deleteLot(l) {
     if (!window.confirm(`Excluir o lote ${l.code}? A quantidade dele sai do estoque.`)) return;
@@ -654,7 +661,7 @@ function Stock({ data, setData, create }) {
     {adjusting && <StockAdjustModal product={adjusting} onClose={() => setAdjusting(null)} onSave={saveAdjustment} />}
     {editing && <ProductModal product={editing} onClose={() => setEditing(null)} onSave={saveEdit} />}
     {buying && <LotModal products={products} product={buying.product} onClose={() => setBuying(null)} onSaved={() => { loadLots(); refreshProducts(); }} />}
-    <LotsPanel lots={lots} products={products} onNew={() => setBuying({ product: null })} onDelete={deleteLot} />
+    <LotsPanel lots={lots} products={products} onNew={() => setBuying({ product: null })} onDelete={deleteLot} onExport={exportStock} />
     <StockMovements />
   </> }
 
@@ -2722,7 +2729,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
   async function updateViagem(viagemId, changes) { const { data } = await api.patch(`/viagens/${viagemId}`, changes, auth()); await loadViagens(); return data; }
 
   const dayClosed = !!dayClosure?.closed;
-  function showToast(text, tone = 'green') { setToast(text); setToastTone(tone); setTimeout(() => setToast(''), 2600); }
+  function showToast(text, tone = 'green', ms = 2600) { setToast(text); setToastTone(tone); setTimeout(() => setToast(''), ms); }
   function requireViagem(action) { if (dayClosed) { showToast('O dia está fechado. Peça ao administrador para reabrir.', 'orange'); return; } if (!viagemAtiva) { setShowViagens(true); return; } action(); }
 
   function startOrder(o) { requireViagem(() => {
@@ -2750,7 +2757,8 @@ function DriverMobileApp({ user, customers, onLogout }) {
     setSheetOrder(null);
     setSheetCustomer(null);
     setPostDelivery(entry);
-    showToast('Entrega registrada!');
+    if (entry.warnings?.length) showToast(`Entrega registrada. Atenção: ${entry.warnings.join(' ')}`, 'orange', 9000);
+    else showToast('Entrega registrada!');
   }
 
   async function closeDay() {

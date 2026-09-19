@@ -117,7 +117,7 @@ async def expenses_for_day(day_str, driver=None):
     """Despesas lançadas no dia local (por created_at), com o mesmo recorte de fuso em todo o app."""
     query = {"created_at": {"$gte": local_day_start_utc(day_str), "$lte": local_day_end_utc(day_str)}}
     if driver: query["driver"] = driver
-    return await db.expenses.find(query, {"_id": 0}).to_list(2000)
+    return await db.expenses.find(query, {"_id": 0}).to_list(None)
 
 async def day_closing_record(day_str, driver):
     return await db.daily_closings.find_one({"date": day_str, "driver": driver, "status": "closed"}, {"_id": 0})
@@ -168,10 +168,27 @@ async def signup(data: SignupInput):
     await log_activity("signup", {"id": user["id"], "name": user["name"]}, user, {"role": "driver"})
     return {"message": "Cadastro recebido. Aguarde a aprovação do administrador.", "status": "pending"}
 
+LOGIN_FAILURES = {}
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_WINDOW_SECONDS = 600
+
+def login_throttle_key(request, email): return f"{email}|{request.client.host if request.client else '?'}"
+
 @api.post("/auth/login")
-async def login(data: LoginInput, response: Response):
-    user = await db.users.find_one({"email": data.email.lower().strip()}, {"_id": 0})
-    if not user or not check_password(data.password, user["password_hash"]): raise HTTPException(401, "E-mail ou senha inválidos")
+async def login(data: LoginInput, response: Response, request: Request):
+    email = data.email.lower().strip()
+    key = login_throttle_key(request, email)
+    cutoff = datetime.now(timezone.utc).timestamp() - LOGIN_WINDOW_SECONDS
+    recent = [t for t in LOGIN_FAILURES.get(key, []) if t > cutoff]
+    LOGIN_FAILURES[key] = recent
+    if len(recent) >= LOGIN_MAX_ATTEMPTS:
+        wait = int((recent[0] + LOGIN_WINDOW_SECONDS - datetime.now(timezone.utc).timestamp()) / 60) + 1
+        raise HTTPException(429, f"Muitas tentativas de login. Aguarde {wait} min e tente de novo.")
+    user = await db.users.find_one({"email": email}, {"_id": 0})
+    if not user or not check_password(data.password, user["password_hash"]):
+        LOGIN_FAILURES[key].append(datetime.now(timezone.utc).timestamp())
+        raise HTTPException(401, "E-mail ou senha inválidos")
+    LOGIN_FAILURES.pop(key, None)
     if user.get("status") == "pending": raise HTTPException(403, "Seu cadastro está aguardando aprovação do administrador")
     if user.get("status") == "rejected": raise HTTPException(403, "Cadastro não aprovado. Entre em contato com o administrador")
     if user.get("active") is False: raise HTTPException(403, "Conta desativada. Entre em contato com o administrador")
@@ -189,19 +206,19 @@ async def dashboard(user=Depends(current_user)):
     month_start = f"{now_dt.year:04d}-{now_dt.month:02d}-01"
     own = {} if user.get("role") == "admin" else {"driver": user["name"]}
     entries_today = await db.daily_entries.find({"date": today, **own}, {"_id": 0}).sort("created_at", -1).to_list(200)
-    entries_month = await db.daily_entries.find({"date": {"$gte": month_start}, **own}, {"_id": 0}).to_list(5000)
+    entries_month = await db.daily_entries.find({"date": {"$gte": month_start}, **own}, {"_id": 0}).to_list(None)
     products = await db.products.find({}, {"_id": 0}).to_list(100)
     expenses = await db.expenses.find(own, {"_id": 0}).to_list(200)
     revenue = sum(entry_total(e) for e in entries_month)
     month_start_utc = local_day_start_utc(month_start)
-    month_expenses = await db.expenses.find({"created_at": {"$gte": month_start_utc}, "status": {"$ne": "rejected"}, **own}, {"_id": 0, "amount": 1}).to_list(10000)
+    month_expenses = await db.expenses.find({"created_at": {"$gte": month_start_utc}, "status": {"$ne": "rejected"}, **own}, {"_id": 0, "amount": 1}).to_list(None)
     expenses_month = sum(float(e.get("amount", 0)) for e in month_expenses)
     return {"revenue": revenue, "expenses": expenses_month, "deliveries": entries_today, "products": products, "expenses_list": expenses, "user": user}
 
 MONTH_LABELS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
 
 @api.get("/dashboard/monthly")
-async def dashboard_monthly(months: int = 6, user=Depends(current_user)):
+async def dashboard_monthly(months: int = 6, user=Depends(admin_user)):
     months = max(1, min(24, months))
     _now = now_local()
     y, m = _now.year, _now.month
@@ -212,8 +229,8 @@ async def dashboard_monthly(months: int = 6, user=Depends(current_user)):
         if m == 0: m = 12; y -= 1
     keys.reverse()
     start = f"{keys[0][0]:04d}-{keys[0][1]:02d}-01"
-    entries = await db.daily_entries.find({"date": {"$gte": start}}, {"_id": 0}).to_list(5000)
-    expenses = await db.expenses.find({"created_at": {"$gte": local_day_start_utc(start)}}, {"_id": 0}).to_list(5000)
+    entries = await db.daily_entries.find({"date": {"$gte": start}}, {"_id": 0}).to_list(None)
+    expenses = await db.expenses.find({"created_at": {"$gte": local_day_start_utc(start)}}, {"_id": 0}).to_list(None)
     buckets = {f"{y:04d}-{m:02d}": {"month": f"{y:04d}-{m:02d}", "label": MONTH_LABELS[m - 1], "revenue": 0.0, "expenses": 0.0, "deliveries": 0, "delivered": 0} for (y, m) in keys}
     for e in entries:
         key = (e.get("date") or "")[:7]
@@ -252,7 +269,7 @@ def lot_unit_cost(lot, sale_type):
 async def allocate_lots(products_cache, brand, qty, sale_type, fallback_cost):
     """Baixa `qty` dos lotes abertos do produto (mais antigo primeiro) e devolve (alocações, custo médio ponderado)."""
     match = match_product(products_cache, brand)
-    if not match or qty <= 0: return [], None
+    if not match or qty <= 0: return [], None, 0.0
     lots = await db.lots.find({"product_id": match["id"], "quantity_remaining": {"$gt": 0}}, {"_id": 0}).sort([("purchase_date", 1), ("created_at", 1)]).to_list(500)
     left, allocs = qty, []
     for lot in lots:
@@ -261,12 +278,12 @@ async def allocate_lots(products_cache, brand, qty, sale_type, fallback_cost):
         await db.lots.update_one({"id": lot["id"]}, {"$inc": {"quantity_remaining": -take}})
         allocs.append({"lot_id": lot["id"], "lot_code": lot["code"], "quantity": take, "cost_unit": lot_unit_cost(lot, sale_type)})
         left -= take
-    if not allocs: return [], None
+    if not allocs: return [], None, 0.0
     covered = sum(a["quantity"] for a in allocs)
     total_cost = sum(a["quantity"] * a["cost_unit"] for a in allocs)
     if left > 0.0001 and fallback_cost is not None:
         total_cost += left * float(fallback_cost); covered += left
-    return allocs, total_cost / covered
+    return allocs, total_cost / covered, max(0.0, left)
 
 async def release_lots(doc):
     groups = [it.get("lot_allocations") or [] for it in doc["items"]] if doc.get("items") else [doc.get("lot_allocations") or []]
@@ -274,20 +291,31 @@ async def release_lots(doc):
         for a in allocs: await db.lots.update_one({"id": a["lot_id"]}, {"$inc": {"quantity_remaining": float(a["quantity"])}})
 
 async def apply_lot_costs(doc):
-    """Consome os lotes na ordem de compra e trava em cada item o custo médio real dos lotes usados."""
+    """Consome os lotes na ordem de compra e trava em cada item o custo médio real dos lotes usados.
+    Devolve avisos (marca fora do Estoque, saldo de lotes esgotado) para o app mostrar ao usuário."""
     products_cache = await db.products.find({}, {"_id": 0}).to_list(1000)
     swap = doc.get("mf_plan") == "swap"
+    warnings = []
+    async def handle(row, brand, q, sale_type, set_on):
+        brand = (brand or "").strip()
+        if not brand or q <= 0: return
+        if not match_product(products_cache, brand):
+            warnings.append(f'A marca "{brand}" não está no Estoque: a venda foi registrada, mas o estoque não foi baixado. Avise o administrador.')
+            return
+        allocs, cost, uncovered = await allocate_lots(products_cache, brand, q, sale_type, row.get("cost_unit"))
+        if allocs:
+            set_on["lot_allocations"] = allocs; set_on["cost_unit"] = cost
+            if uncovered > 0.0001: warnings.append(f'"{brand}": {uncovered:g} un passaram do saldo dos lotes e usaram o custo do cadastro. Registre a compra em Estoque.')
     if doc.get("items"):
         for it in doc["items"]:
             it.pop("lot_allocations", None)
             q = float(it.get("quantity") or 0) + (float(it.get("mf_quantity") or 0) if swap else 0)
-            allocs, cost = await allocate_lots(products_cache, it.get("brand"), q, it.get("sale_type") or "exchange", it.get("cost_unit"))
-            if allocs: it["lot_allocations"] = allocs; it["cost_unit"] = cost
+            await handle(it, it.get("brand"), q, it.get("sale_type") or "exchange", it)
     else:
         doc.pop("lot_allocations", None)
         q = float(doc.get("billed_quantity") or 0) + (float(doc.get("mf_quantity") or 0) if swap else 0)
-        allocs, cost = await allocate_lots(products_cache, doc.get("brand"), q, doc.get("sale_type") or "exchange", doc.get("cost_unit"))
-        if allocs: doc["lot_allocations"] = allocs; doc["cost_unit"] = cost
+        await handle(doc, doc.get("brand"), q, doc.get("sale_type") or "exchange", doc)
+    return warnings
 
 def is_returnable(product):
     return (product.get("category") or "").strip().lower().startswith("retorn")
@@ -328,7 +356,9 @@ async def apply_entry_stock_movements(doc, reason, sign, user):
     products_cache = await db.products.find({}, {"_id": 0}).to_list(1000)
     viagem = await db.viagens.find_one({"id": doc["viagem_id"]}, {"_id": 0}) if doc.get("viagem_id") else None
     carga_brands = set()
-    if viagem and viagem.get("carga_carregada"):
+    # Só enquanto a viagem está aberta a venda sai do caminhão; depois de finalizada a sobra já voltou
+    # ao depósito, então qualquer ajuste da venda mexe direto no estoque do depósito.
+    if viagem and viagem.get("carga_carregada") and viagem.get("status") != "finalizada":
         carga_brands = {(it.get("brand") or "").strip().lower() for it in (viagem.get("carga_items") or [])}
     def covered(brand): return (brand or "").strip().lower() in carga_brands
 
@@ -527,7 +557,7 @@ async def expenses(user=Depends(current_user)): return await list_resource("expe
 async def recompute_viagem_finance(viagem_id):
     v = await db.viagens.find_one({"id": viagem_id}, {"_id": 0})
     if not v or v.get("status") != "finalizada": return
-    despesas = await db.expenses.find({"viagem_id": viagem_id, "status": {"$ne": "rejected"}}, {"_id": 0}).to_list(500)
+    despesas = await db.expenses.find({"viagem_id": viagem_id, "status": {"$ne": "rejected"}}, {"_id": 0}).to_list(None)
     despesas_total = sum(float(d.get("amount") or 0) for d in despesas)
     total_bruto = float(v.get("total_bruto") or 0)
     await db.viagens.update_one({"id": viagem_id}, {"$set": {"despesas_total": despesas_total, "saldo_liquido": total_bruto - despesas_total}})
@@ -602,7 +632,7 @@ async def delete_brand(item_id: str, user=Depends(admin_user)):
 
 @api.get("/customers/out-of-catalog-brands")
 async def out_of_catalog_brands(user=Depends(admin_user)):
-    entries = await db.daily_entries.find({"items": {"$elemMatch": {"out_of_catalog": True, "promoted": {"$ne": True}}}}, {"_id": 0}).to_list(2000)
+    entries = await db.daily_entries.find({"items": {"$elemMatch": {"out_of_catalog": True, "promoted": {"$ne": True}}}}, {"_id": 0}).to_list(None)
     customers = await db.customers.find({}, {"_id": 0}).to_list(1000)
     by_name = {c["name"]: c for c in customers}
     groups = {}
@@ -713,9 +743,11 @@ async def add_daily_entry(data: ResourceInput, user=Depends(current_user)):
         added = billed_qty + (mf_total if doc.get("mf_plan") == "swap" else 0)
         await _check_delivered_carga_limit(doc["viagem_id"], added)
 
-    await apply_lot_costs(doc)
+    warnings = await apply_lot_costs(doc)
     await apply_entry_stock_movements(doc, "venda", 1, user)
-    await db.daily_entries.insert_one(doc); doc.pop("_id", None); return doc
+    await db.daily_entries.insert_one(doc); doc.pop("_id", None)
+    if warnings: doc["warnings"] = warnings
+    return doc
 
 @api.patch("/daily-entries/{item_id}")
 async def update_daily_entry(item_id: str, data: ResourceInput, user=Depends(current_user)):
@@ -724,6 +756,7 @@ async def update_daily_entry(item_id: str, data: ResourceInput, user=Depends(cur
     if user.get("role") != "admin" and target.get("created_by") != user["id"]: raise HTTPException(403, "Sem permissão")
     await ensure_day_open(target.get("date") or today_local(), target.get("driver") or user["name"], user)
     values = data.model_dump(exclude_unset=True)
+    warnings = []
 
     if "items" in values or "quantity" in values:
         if target.get("viagem_id"):
@@ -777,13 +810,15 @@ async def update_daily_entry(item_id: str, data: ResourceInput, user=Depends(cur
             added = billed_qty + (mf_total if merged.get("mf_plan") == "swap" else 0)
             await _check_delivered_carga_limit(target["viagem_id"], added, exclude_entry_id=item_id)
         await release_lots(target)
-        await apply_lot_costs(merged)
+        warnings = await apply_lot_costs(merged)
         await apply_entry_stock_movements(target, "estorno", -1, user)
         await apply_entry_stock_movements(merged, "venda", 1, user)
         values = {k: v for k, v in merged.items() if k not in ("id", "created_at", "created_by")}
 
     await db.daily_entries.update_one({"id": item_id}, {"$set": values})
-    doc = await db.daily_entries.find_one({"id": item_id}, {"_id": 0}); return doc
+    doc = await db.daily_entries.find_one({"id": item_id}, {"_id": 0})
+    if warnings: doc["warnings"] = warnings
+    return doc
 
 @api.delete("/daily-entries/{item_id}")
 async def delete_daily_entry(item_id: str, user=Depends(current_user)):
@@ -889,7 +924,7 @@ def _check_carga_limit(v, added_quantity, exclude_cliente_id=None):
         raise HTTPException(400, f"Isso passa da carga da viagem ({total:g}/{carga_total:g} un somando todas as rotas). Restam {restante:g} un disponíveis.")
 
 async def _delivered_quantity(viagem_id, exclude_entry_id=None):
-    entregas = await db.daily_entries.find({"viagem_id": viagem_id}, {"_id": 0}).to_list(2000)
+    entregas = await db.daily_entries.find({"viagem_id": viagem_id}, {"_id": 0}).to_list(None)
     total = 0.0
     for e in entregas:
         if e.get("id") == exclude_entry_id: continue
@@ -1012,8 +1047,8 @@ async def iniciar_viagem(item_id: str, user=Depends(current_user)):
 async def finalizar_viagem(item_id: str, user=Depends(current_user)):
     v = await _own_viagem_or_404(item_id, user)
     if v["status"] == "finalizada": raise HTTPException(400, "Viagem já está finalizada")
-    entregas = await db.daily_entries.find({"viagem_id": item_id}, {"_id": 0}).to_list(2000)
-    despesas = await db.expenses.find({"viagem_id": item_id, "status": {"$ne": "rejected"}}, {"_id": 0}).to_list(500)
+    entregas = await db.daily_entries.find({"viagem_id": item_id}, {"_id": 0}).to_list(None)
+    despesas = await db.expenses.find({"viagem_id": item_id, "status": {"$ne": "rejected"}}, {"_id": 0}).to_list(None)
     total_bruto = sum(entry_total(e) for e in entregas)
     despesas_total = sum(float(d.get("amount") or 0) for d in despesas)
     billed_total = sum(float(e.get("billed_quantity") or 0) for e in entregas)
@@ -1071,13 +1106,13 @@ async def finance_summary(driver: Optional[str] = None, user=Depends(current_use
 
     today_query = {"date": today}
     if scope_driver: today_query["driver"] = scope_driver
-    todays_entries = await db.daily_entries.find(today_query, {"_id": 0}).to_list(2000)
+    todays_entries = await db.daily_entries.find(today_query, {"_id": 0}).to_list(None)
     received_today = sum(float(e.get("pix_value") or 0) + float(e.get("cash_value") or 0) for e in todays_entries)
     comp_today = sum(float(e.get("comp_value") or 0) for e in todays_entries)
 
     comp_query = {"comp_value": {"$gt": 0}}
     if scope_driver: comp_query["driver"] = scope_driver
-    all_comp = await db.daily_entries.find(comp_query, {"_id": 0}).to_list(5000)
+    all_comp = await db.daily_entries.find(comp_query, {"_id": 0}).to_list(None)
     comp_pending_total = sum(float(e.get("comp_value") or 0) for e in all_comp if not e.get("received"))
     comp_received_total = sum(float(e.get("comp_value") or 0) for e in all_comp if e.get("received"))
 
@@ -1085,7 +1120,7 @@ async def finance_summary(driver: Optional[str] = None, user=Depends(current_use
     expenses_today_total = sum(float(e.get("amount") or 0) for e in todays_expenses if e.get("status") != "rejected")
 
     all_exp_query = {} if not scope_driver else {"driver": scope_driver}
-    all_expenses = await db.expenses.find(all_exp_query, {"_id": 0}).to_list(2000)
+    all_expenses = await db.expenses.find(all_exp_query, {"_id": 0}).to_list(None)
     expenses_pending_total = sum(float(e.get("amount") or 0) for e in all_expenses if e.get("status") == "pending")
 
     return {
@@ -1102,7 +1137,7 @@ async def margin_report(start: Optional[str] = None, end: Optional[str] = None, 
     start = start or today_local()[:7] + "-01"
     end = end or today_local()
     query = {"date": {"$gte": start, "$lte": end}}
-    entries = await db.daily_entries.find(query, {"_id": 0}).to_list(5000)
+    entries = await db.daily_entries.find(query, {"_id": 0}).to_list(None)
     brands_catalog = await db.brands.find({}, {"_id": 0}).to_list(1000)
     products_catalog = await db.products.find({}, {"_id": 0}).to_list(1000)
     brand_by_name = {(b.get("name") or "").strip().lower(): b for b in brands_catalog}
@@ -1232,7 +1267,7 @@ async def margin_report(start: Optional[str] = None, end: Optional[str] = None, 
 
     end_date = datetime.fromisoformat(end)
     evo_start = (end_date - timedelta(weeks=7)).date().isoformat()
-    evo_entries = entries if evo_start >= start else await db.daily_entries.find({"date": {"$gte": evo_start, "$lte": end}}, {"_id": 0}).to_list(5000)
+    evo_entries = entries if evo_start >= start else await db.daily_entries.find({"date": {"$gte": evo_start, "$lte": end}}, {"_id": 0}).to_list(None)
     evolution = []
     for i in range(7, -1, -1):
         b_end = end_date - timedelta(days=7 * i)
@@ -1244,7 +1279,7 @@ async def margin_report(start: Optional[str] = None, end: Optional[str] = None, 
 
     expenses = await db.expenses.find(
         {"created_at": {"$gte": local_day_start_utc(start), "$lte": local_day_end_utc(end)}, "status": {"$ne": "rejected"}}, {"_id": 0}
-    ).to_list(5000)
+    ).to_list(None)
     expenses_total = sum(float(x.get("amount") or 0) for x in expenses)
     lucro_liquido = margin_total - expenses_total
 
@@ -1266,7 +1301,7 @@ async def receivables(status: Optional[str] = None, start: Optional[str] = None,
         if start: rng["$gte"] = start
         if end: rng["$lte"] = end
         query["due_date"] = rng
-    entries = await db.daily_entries.find(query, {"_id": 0}).sort("due_date", 1).to_list(2000)
+    entries = await db.daily_entries.find(query, {"_id": 0}).sort("due_date", 1).to_list(None)
     totals = {"pending": sum(float(e.get("comp_value") or 0) for e in entries if not e.get("received")), "received": sum(float(e.get("comp_value") or 0) for e in entries if e.get("received"))}
     return {"rows": entries, "totals": totals}
 
@@ -1277,7 +1312,7 @@ async def _profit_rows(start, end, group_by):
         if start: rng["$gte"] = start
         if end: rng["$lte"] = end
         query["date"] = rng
-    entries = await db.daily_entries.find(query, {"_id": 0}).to_list(5000)
+    entries = await db.daily_entries.find(query, {"_id": 0}).to_list(None)
     brands_cat = await db.brands.find({}, {"_id": 0}).to_list(1000)
     brand_by_name = {(b.get("name") or "").strip().lower(): b for b in brands_cat}
     rows = {}
@@ -1409,7 +1444,7 @@ async def close_daily_closing(data: ResourceInput, user=Depends(current_user)):
         codes = ", ".join(v.get("codigo_viagem") or "sem código" for v in open_trips[:3])
         raise HTTPException(409, f"Finalize ou exclua as viagens abertas antes de fechar o dia: {codes}")
 
-    entries = await db.daily_entries.find({"date": day, "driver": driver_name}, {"_id": 0}).to_list(2000)
+    entries = await db.daily_entries.find({"date": day, "driver": driver_name}, {"_id": 0}).to_list(None)
     expenses = await expenses_for_day(day, driver_name)
     pix = sum(float(e.get("pix_value") or 0) for e in entries)
     cash = sum(float(e.get("cash_value") or 0) for e in entries)
@@ -1442,7 +1477,7 @@ async def reopen_daily_closing(data: ResourceInput, user=Depends(admin_user)):
 @api.get("/daily-closing")
 async def daily_closing(date: Optional[str] = None, user=Depends(admin_user)):
     day = date or today_local()
-    entries = await db.daily_entries.find({"date": day}, {"_id": 0}).to_list(1000)
+    entries = await db.daily_entries.find({"date": day}, {"_id": 0}).to_list(None)
     expenses = await expenses_for_day(day)
     closings = await db.daily_closings.find({"date": day, "status": "closed"}, {"_id": 0}).to_list(500)
     drivers = {}
@@ -1477,14 +1512,14 @@ async def reports(start: Optional[str] = None, end: Optional[str] = None, user=D
         if start: rng["$gte"] = start
         if end: rng["$lte"] = end
         query["date"] = rng
-    entries = await db.daily_entries.find(query, {"_id": 0}).to_list(5000)
+    entries = await db.daily_entries.find(query, {"_id": 0}).to_list(None)
     exp_query = {}
     if start or end:
         rng = {}
         if start: rng["$gte"] = start
         if end: rng["$lte"] = end + "T23:59:59"
         exp_query["created_at"] = rng
-    expenses = await db.expenses.find(exp_query, {"_id": 0}).to_list(1000)
+    expenses = await db.expenses.find(exp_query, {"_id": 0}).to_list(None)
     products = await db.products.find({}, {"_id": 0}).to_list(1000)
     drivers = {}
     for item in entries:
@@ -1501,14 +1536,14 @@ async def export_reports_csv(start: Optional[str] = None, end: Optional[str] = N
         if start: rng["$gte"] = start
         if end: rng["$lte"] = end
         query["date"] = rng
-    entries = await db.daily_entries.find(query, {"_id": 0}).to_list(5000)
+    entries = await db.daily_entries.find(query, {"_id": 0}).to_list(None)
     exp_query = {}
     if start or end:
         rng = {}
         if start: rng["$gte"] = start
         if end: rng["$lte"] = end + "T23:59:59"
         exp_query["created_at"] = rng
-    expenses = await db.expenses.find(exp_query, {"_id": 0}).to_list(1000)
+    expenses = await db.expenses.find(exp_query, {"_id": 0}).to_list(None)
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["Distribuidora Diane - Relatório Operacional"])
@@ -1527,6 +1562,29 @@ async def export_reports_csv(start: Optional[str] = None, end: Optional[str] = N
     for e in expenses:
         w.writerow([e.get("created_at",""), e.get("type",""), e.get("driver",""), e.get("amount",""), e.get("status","")])
     return Response(content=buf.getvalue(), media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="distribuidora-diane-relatorio.csv"'})
+
+@api.get("/reports/export-stock.csv", response_class=PlainTextResponse)
+async def export_stock_csv(user=Depends(admin_user)):
+    products = await db.products.find({}, {"_id": 0}).to_list(None)
+    lots = await db.lots.find({}, {"_id": 0}).sort([("purchase_date", 1), ("created_at", 1)]).to_list(None)
+    brands = await db.brands.find({}, {"_id": 0}).to_list(None)
+    code_of = {(b.get("name") or "").strip().lower(): b.get("code") for b in brands}
+    open_lots = {}
+    for l in lots:
+        if float(l.get("quantity_remaining") or 0) > 0: open_lots.setdefault(l["product_id"], []).append(l)
+    buf = io.StringIO(); w = csv.writer(buf)
+    w.writerow(["Distribuidora Diane - Estoque"]); w.writerow(["Gerado em", now_local().strftime("%d/%m/%Y %H:%M")]); w.writerow([])
+    w.writerow(["PRODUTOS"])
+    w.writerow(["SKU", "Produto", "Marca", "Categoria", "Disponível", "Mínimo", "Defeito", "Vazio", "Valor em estoque"])
+    for p in products:
+        pl = open_lots.get(p["id"])
+        value = sum(float(l["quantity_remaining"]) * float(l["cost_unit"]) for l in pl) if pl else float(p.get("quantity") or 0) * float(p.get("cost_price") or 0)
+        w.writerow([code_of.get((p.get("brand") or p.get("name") or "").strip().lower(), ""), p.get("name"), p.get("brand", ""), p.get("category", ""), p.get("quantity", 0), p.get("minimum", ""), p.get("defective_quantity", 0), p.get("empty_quantity", 0), f"{value:.2f}"])
+    w.writerow([]); w.writerow(["LOTES DE COMPRA"])
+    w.writerow(["Lote", "Data da compra", "Produto", "Comprado", "Restante", "Custo (água)", "Custo (completa)", "Valor restante", "Observação"])
+    for l in lots:
+        w.writerow([l.get("code"), l.get("purchase_date"), l.get("product_name"), l.get("quantity_initial"), l.get("quantity_remaining"), l.get("cost_unit"), l.get("cost_unit_full") if l.get("cost_unit_full") is not None else "", f"{float(l.get('quantity_remaining') or 0) * float(l.get('cost_unit') or 0):.2f}", l.get("notes") or ""])
+    return Response(content="﻿" + buf.getvalue(), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": 'attachment; filename="distribuidora-diane-estoque.csv"'})
 
 @app.on_event("startup")
 async def seed():
