@@ -317,6 +317,10 @@ async def apply_lot_costs(doc):
         await handle(doc, doc.get("brand"), q, doc.get("sale_type") or "exchange", doc)
     return warnings
 
+def normalize_unit(values):
+    if (values.get("unit") or "").strip().lower().startswith("fardo"): values["unit"] = "fardo"
+    return values
+
 def is_returnable(product):
     return (product.get("category") or "").strip().lower().startswith("retorn")
 
@@ -481,12 +485,13 @@ async def ensure_unique_product(name, brand, exclude_id=None):
 @api.post("/products")
 async def add_product(data: ResourceInput, user=Depends(admin_user)):
     await ensure_unique_product(data.name, data.brand)
+    if data.unit: normalize_unit(data.__dict__)
     return await create_resource("products", data, user)
 @api.patch("/products/{item_id}")
 async def update_product(item_id: str, data: ResourceInput, user=Depends(admin_user)):
     target = await db.products.find_one({"id": item_id}, {"_id": 0})
     if not target: raise HTTPException(404, "Produto não encontrado")
-    values = data.model_dump(exclude_unset=True)
+    values = normalize_unit(data.model_dump(exclude_unset=True))
     if "name" in values or "brand" in values:
         await ensure_unique_product(values.get("name", target.get("name")), values.get("brand", target.get("brand")), exclude_id=item_id)
     await db.products.update_one({"id": item_id}, {"$set": values})
@@ -526,7 +531,7 @@ async def add_lot(item_id: str, data: LotInput, user=Depends(admin_user)):
             "quantity": data.quantity, "reason": "compra", "lot_code": lot["code"], "created_at": now(), "created_by": user["id"], "created_by_name": user["name"],
         })
         brand = await db.brands.find_one({"name": {"$regex": f"^{re.escape((product.get('brand') or product.get('name') or '').strip())}$", "$options": "i"}}, {"_id": 0})
-        if brand and (product.get("unit") or "").lower() != "fardo":
+        if brand and not (product.get("unit") or "").strip().lower().startswith("fardo"):
             changes = {"cost_price": data.cost_price}
             if data.cost_price_full is not None: changes["cost_price_full"] = data.cost_price_full
             for field, value in changes.items():
@@ -1598,7 +1603,7 @@ async def seed():
     else:
         await db.users.update_many({"status": {"$exists": False}}, {"$set": {"status": "approved", "active": True}})
     if await db.products.count_documents({}) == 0:
-        await db.products.insert_many([{"id":"p1","name":"Galão 20L","category":"Retornável","quantity":84,"minimum":30,"unit":"un"},{"id":"p2","name":"Fardo 500ml (12un)","category":"Descartável","quantity":18,"minimum":25,"unit":"fardos"},{"id":"p3","name":"Água mineral 1,5L","category":"Descartável","quantity":42,"minimum":20,"unit":"fardos"}])
+        await db.products.insert_many([{"id":"p1","name":"Galão 20L","category":"Retornável","quantity":84,"minimum":30,"unit":"un"},{"id":"p2","name":"Fardo 500ml (12un)","category":"Descartável","quantity":18,"minimum":25,"unit":"fardo"},{"id":"p3","name":"Água mineral 1,5L","category":"Descartável","quantity":42,"minimum":20,"unit":"fardo"}])
 
 app.include_router(api)
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=[os.environ["FRONTEND_URL"]], allow_methods=["*"], allow_headers=["*"])

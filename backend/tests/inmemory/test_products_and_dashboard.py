@@ -73,3 +73,18 @@ def test_stock_csv_export(c):
     assert "Agua CSV" in r.text and "19092630" in r.text and "75.00" in r.text
     D = {"Authorization": "Bearer " + c.post("/api/auth/login", json={"email": "carlos@t.com", "password": "driver123"}).json()["token"]}
     assert c.get("/api/reports/export-stock.csv", headers=D).status_code == 403
+
+
+def test_fardo_products_use_lot_cost_per_fardo_and_keep_brand_cost(c):
+    H = _admin(c)
+    c.post("/api/brands", json={"name": "Agua Fardo", "cost_price": 0.5}, headers=H)
+    prod = c.post("/api/products", json={"name": "Agua Fardo", "brand": "Agua Fardo", "category": "Descartável", "unit": "fardos", "units_per_package": 12, "quantity": 0, "minimum": 1}, headers=H).json()
+    assert prod["unit"] == "fardo"
+    c.post(f"/api/products/{prod['id']}/lots", json={"quantity": 20, "cost_price": 6.0, "purchase_date": "2026-09-10"}, headers=H)
+    c.post(f"/api/products/{prod['id']}/lots", json={"quantity": 20, "cost_price": 7.0, "purchase_date": "2026-09-18"}, headers=H)
+    brand = next(b for b in c.get("/api/brands", headers=H).json() if b["name"] == "Agua Fardo")
+    assert brand["cost_price"] == 0.5  # per-bottle brand cost is not overwritten by a per-fardo purchase
+    r = c.post("/api/daily-entries", json={"customer": "Cli", "items": [{"brand": "Agua Fardo", "quantity": 25, "price": 10, "sale_type": "exchange"}], "cash_value": 250}, headers=H).json()
+    assert abs(r["items"][0]["cost_unit"] - (20 * 6 + 5 * 7) / 25) < 1e-9
+    prod_after = next(p for p in c.get("/api/products", headers=H).json() if p["id"] == prod["id"])
+    assert prod_after["quantity"] == 15 and not prod_after.get("empty_quantity")

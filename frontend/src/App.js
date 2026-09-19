@@ -517,8 +517,8 @@ function LotModal({ products, product, onClose, onSaved }) {
     <h3>Registrar compra (novo lote)</h3>
     <label>Produto<select value={productId} data-testid="lot-product" onChange={e => pick(e.target.value)}>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
     <label>Data da compra<input type="date" required value={purchaseDate} data-testid="lot-date" onChange={e => setPurchaseDate(e.target.value)} /></label>
-    <label>Quantidade comprada ({chosen?.unit === 'fardo' ? 'fardos' : 'unidades'})<input required type="number" min="1" value={quantity} data-testid="lot-quantity" onChange={e => setQuantity(e.target.value)} /></label>
-    <label>Custo somente água (R$ por {chosen?.unit === 'fardo' ? 'fardo' : 'unidade'})<input required type="number" step="0.01" min="0" value={cost} data-testid="lot-cost" onChange={e => setCost(e.target.value)} /></label>
+    <label>Quantidade comprada ({(chosen?.unit || '').startsWith('fardo') ? 'fardos' : 'unidades'})<input required type="number" min="1" value={quantity} data-testid="lot-quantity" onChange={e => setQuantity(e.target.value)} /></label>
+    <label>Custo somente água (R$ por {(chosen?.unit || '').startsWith('fardo') ? 'fardo' : 'unidade'})<input required type="number" step="0.01" min="0" value={cost} data-testid="lot-cost" onChange={e => setCost(e.target.value)} /></label>
     <label>Custo venda completa (opcional)<input type="number" step="0.01" min="0" value={costFull} placeholder="vazio = igual ao custo somente água" data-testid="lot-cost-full" onChange={e => setCostFull(e.target.value)} /></label>
     <label>Observação (fornecedor, nota fiscal...)<input value={notes} data-testid="lot-notes" onChange={e => setNotes(e.target.value)} /></label>
     <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="checkbox" style={{ width: 'auto' }} checked={opening} data-testid="lot-opening" onChange={e => setOpening(e.target.checked)} /> Já está no estoque (saldo anterior) — só cria o lote, sem somar a quantidade</label>
