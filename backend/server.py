@@ -87,6 +87,14 @@ class ResourceInput(BaseModel):
     photo: Optional[str] = None
     target_margin: Optional[float] = None
 
+class LotInput(BaseModel):
+    quantity: float
+    cost_price: float
+    cost_price_full: Optional[float] = None
+    purchase_date: Optional[str] = None
+    notes: Optional[str] = None
+    adjust_stock: bool = True
+
 class ViagemInput(BaseModel):
     turno: int  # 0 = manhã, 1 = tarde
     date: Optional[str] = None
@@ -179,13 +187,14 @@ async def dashboard(user=Depends(current_user)):
     now_dt = now_local()
     today = now_dt.date().isoformat()
     month_start = f"{now_dt.year:04d}-{now_dt.month:02d}-01"
-    entries_today = await db.daily_entries.find({"date": today}, {"_id": 0}).sort("created_at", -1).to_list(200)
-    entries_month = await db.daily_entries.find({"date": {"$gte": month_start}}, {"_id": 0}).to_list(5000)
+    own = {} if user.get("role") == "admin" else {"driver": user["name"]}
+    entries_today = await db.daily_entries.find({"date": today, **own}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    entries_month = await db.daily_entries.find({"date": {"$gte": month_start}, **own}, {"_id": 0}).to_list(5000)
     products = await db.products.find({}, {"_id": 0}).to_list(100)
-    expenses = await db.expenses.find({}, {"_id": 0}).to_list(200)
+    expenses = await db.expenses.find(own, {"_id": 0}).to_list(200)
     revenue = sum(entry_total(e) for e in entries_month)
     month_start_utc = local_day_start_utc(month_start)
-    month_expenses = await db.expenses.find({"created_at": {"$gte": month_start_utc}, "status": {"$ne": "rejected"}}, {"_id": 0, "amount": 1}).to_list(10000)
+    month_expenses = await db.expenses.find({"created_at": {"$gte": month_start_utc}, "status": {"$ne": "rejected"}, **own}, {"_id": 0, "amount": 1}).to_list(10000)
     expenses_month = sum(float(e.get("amount", 0)) for e in month_expenses)
     return {"revenue": revenue, "expenses": expenses_month, "deliveries": entries_today, "products": products, "expenses_list": expenses, "user": user}
 
@@ -231,6 +240,54 @@ def cost_unit_for(catalog, sale_type):
         full = catalog.get("cost_price_full")
         if full is not None: return float(full)
     return float(catalog["cost_price"]) if catalog.get("cost_price") is not None else None
+
+def lot_code(purchase_date, quantity, seq):
+    d = datetime.fromisoformat(purchase_date)
+    return f"{d.day:02d}{d.month:02d}{d.year % 100:02d}{int(round(quantity))}{seq:03d}"
+
+def lot_unit_cost(lot, sale_type):
+    if sale_type == "full" and lot.get("cost_unit_full") is not None: return float(lot["cost_unit_full"])
+    return float(lot["cost_unit"])
+
+async def allocate_lots(products_cache, brand, qty, sale_type, fallback_cost):
+    """Baixa `qty` dos lotes abertos do produto (mais antigo primeiro) e devolve (alocações, custo médio ponderado)."""
+    match = match_product(products_cache, brand)
+    if not match or qty <= 0: return [], None
+    lots = await db.lots.find({"product_id": match["id"], "quantity_remaining": {"$gt": 0}}, {"_id": 0}).sort([("purchase_date", 1), ("created_at", 1)]).to_list(500)
+    left, allocs = qty, []
+    for lot in lots:
+        if left <= 0: break
+        take = min(left, float(lot["quantity_remaining"]))
+        await db.lots.update_one({"id": lot["id"]}, {"$inc": {"quantity_remaining": -take}})
+        allocs.append({"lot_id": lot["id"], "lot_code": lot["code"], "quantity": take, "cost_unit": lot_unit_cost(lot, sale_type)})
+        left -= take
+    if not allocs: return [], None
+    covered = sum(a["quantity"] for a in allocs)
+    total_cost = sum(a["quantity"] * a["cost_unit"] for a in allocs)
+    if left > 0.0001 and fallback_cost is not None:
+        total_cost += left * float(fallback_cost); covered += left
+    return allocs, total_cost / covered
+
+async def release_lots(doc):
+    groups = [it.get("lot_allocations") or [] for it in doc["items"]] if doc.get("items") else [doc.get("lot_allocations") or []]
+    for allocs in groups:
+        for a in allocs: await db.lots.update_one({"id": a["lot_id"]}, {"$inc": {"quantity_remaining": float(a["quantity"])}})
+
+async def apply_lot_costs(doc):
+    """Consome os lotes na ordem de compra e trava em cada item o custo médio real dos lotes usados."""
+    products_cache = await db.products.find({}, {"_id": 0}).to_list(1000)
+    swap = doc.get("mf_plan") == "swap"
+    if doc.get("items"):
+        for it in doc["items"]:
+            it.pop("lot_allocations", None)
+            q = float(it.get("quantity") or 0) + (float(it.get("mf_quantity") or 0) if swap else 0)
+            allocs, cost = await allocate_lots(products_cache, it.get("brand"), q, it.get("sale_type") or "exchange", it.get("cost_unit"))
+            if allocs: it["lot_allocations"] = allocs; it["cost_unit"] = cost
+    else:
+        doc.pop("lot_allocations", None)
+        q = float(doc.get("billed_quantity") or 0) + (float(doc.get("mf_quantity") or 0) if swap else 0)
+        allocs, cost = await allocate_lots(products_cache, doc.get("brand"), q, doc.get("sale_type") or "exchange", doc.get("cost_unit"))
+        if allocs: doc["lot_allocations"] = allocs; doc["cost_unit"] = cost
 
 def viagem_ref(v):
     return {"id": v.get("id"), "entry_number": None, "customer": None, "driver": v.get("driver"), "viagem_codigo": v.get("codigo_viagem")}
@@ -381,18 +438,87 @@ async def create_resource(collection, payload, user):
 
 @api.get("/products")
 async def products(user=Depends(current_user)): return await list_resource("products")
+async def ensure_unique_product(name, brand, exclude_id=None):
+    key = (brand or name or "").strip().lower()
+    if not key: return
+    for p in await db.products.find({}, {"_id": 0, "id": 1, "name": 1, "brand": 1}).to_list(1000):
+        if p["id"] != exclude_id and (p.get("brand") or p.get("name") or "").strip().lower() == key:
+            raise HTTPException(409, f"Já existe um produto \"{p.get('name')}\" no estoque. Edite o existente em vez de criar outro com o mesmo nome.")
+
 @api.post("/products")
-async def add_product(data: ResourceInput, user=Depends(admin_user)): return await create_resource("products", data, user)
+async def add_product(data: ResourceInput, user=Depends(admin_user)):
+    await ensure_unique_product(data.name, data.brand)
+    return await create_resource("products", data, user)
 @api.patch("/products/{item_id}")
 async def update_product(item_id: str, data: ResourceInput, user=Depends(admin_user)):
     target = await db.products.find_one({"id": item_id}, {"_id": 0})
     if not target: raise HTTPException(404, "Produto não encontrado")
     values = data.model_dump(exclude_unset=True)
+    if "name" in values or "brand" in values:
+        await ensure_unique_product(values.get("name", target.get("name")), values.get("brand", target.get("brand")), exclude_id=item_id)
     await db.products.update_one({"id": item_id}, {"$set": values})
     doc = await db.products.find_one({"id": item_id}, {"_id": 0})
     if "quantity" in values and float(values["quantity"]) != float(target.get("quantity") or 0):
         await log_activity("stock_adjusted", user, {"id": item_id, "name": doc.get("name")}, {"from": target.get("quantity"), "to": doc.get("quantity"), "reason": values.get("notes")})
     return doc
+@api.get("/lots")
+async def list_lots(product_id: Optional[str] = None, only_open: bool = False, user=Depends(admin_user)):
+    query = {}
+    if product_id: query["product_id"] = product_id
+    if only_open: query["quantity_remaining"] = {"$gt": 0}
+    return await db.lots.find(query, {"_id": 0}).sort([("purchase_date", -1), ("created_at", -1)]).to_list(2000)
+
+@api.post("/products/{item_id}/lots")
+async def add_lot(item_id: str, data: LotInput, user=Depends(admin_user)):
+    product = await db.products.find_one({"id": item_id}, {"_id": 0})
+    if not product: raise HTTPException(404, "Produto não encontrado")
+    if data.quantity <= 0: raise HTTPException(400, "Informe uma quantidade maior que zero")
+    if data.cost_price < 0 or (data.cost_price_full is not None and data.cost_price_full < 0): raise HTTPException(400, "O custo não pode ser negativo")
+    purchase_date = data.purchase_date or today_local()
+    try: datetime.fromisoformat(purchase_date)
+    except ValueError: raise HTTPException(400, "Data de compra inválida")
+    seq = await next_sequence(f"lot_{purchase_date}")
+    lot = {
+        "id": str(uuid.uuid4()), "code": lot_code(purchase_date, data.quantity, seq), "sequence": seq,
+        "product_id": item_id, "product_name": product.get("name"), "brand": product.get("brand") or product.get("name"),
+        "purchase_date": purchase_date, "quantity_initial": data.quantity, "quantity_remaining": data.quantity,
+        "cost_unit": data.cost_price, "cost_unit_full": data.cost_price_full, "notes": data.notes,
+        "adjusted_stock": data.adjust_stock, "created_at": now(), "created_by": user["id"], "created_by_name": user["name"],
+    }
+    await db.lots.insert_one(lot); lot.pop("_id", None)
+    if data.adjust_stock:
+        await db.products.update_one({"id": item_id}, {"$inc": {"quantity": data.quantity}, "$set": {"cost_price": data.cost_price, "purchase_date": purchase_date, "batch": lot["code"]}})
+        await db.stock_movements.insert_one({
+            "id": str(uuid.uuid4()), "product_id": item_id, "product_name": product.get("name"), "brand": product.get("brand") or product.get("name"),
+            "quantity": data.quantity, "reason": "compra", "lot_code": lot["code"], "created_at": now(), "created_by": user["id"], "created_by_name": user["name"],
+        })
+        brand = await db.brands.find_one({"name": {"$regex": f"^{re.escape((product.get('brand') or product.get('name') or '').strip())}$", "$options": "i"}}, {"_id": 0})
+        if brand and (product.get("unit") or "").lower() != "fardo":
+            changes = {"cost_price": data.cost_price}
+            if data.cost_price_full is not None: changes["cost_price_full"] = data.cost_price_full
+            for field, value in changes.items():
+                if value != brand.get(field):
+                    await db.cost_history.insert_one({"id": str(uuid.uuid4()), "brand_id": brand["id"], "brand_name": brand.get("name"), "field": field, "old_value": brand.get(field), "new_value": value, "changed_at": now(), "changed_by": user["name"], "lot_code": lot["code"]})
+            await db.brands.update_one({"id": brand["id"]}, {"$set": changes})
+    await log_activity("lot_created", user, {"id": lot["id"], "name": lot["code"]}, {"product": product.get("name"), "quantity": data.quantity, "cost": data.cost_price})
+    return lot
+
+@api.delete("/lots/{lot_id}")
+async def delete_lot(lot_id: str, user=Depends(admin_user)):
+    lot = await db.lots.find_one({"id": lot_id}, {"_id": 0})
+    if not lot: raise HTTPException(404, "Lote não encontrado")
+    if float(lot.get("quantity_remaining") or 0) != float(lot.get("quantity_initial") or 0):
+        raise HTTPException(409, "Este lote já teve unidades vendidas e não pode ser excluído.")
+    if lot.get("adjusted_stock"):
+        await db.products.update_one({"id": lot["product_id"]}, {"$inc": {"quantity": -float(lot["quantity_initial"])}})
+        await db.stock_movements.insert_one({
+            "id": str(uuid.uuid4()), "product_id": lot["product_id"], "product_name": lot.get("product_name"), "brand": lot.get("brand"),
+            "quantity": -float(lot["quantity_initial"]), "reason": "ajuste", "lot_code": lot["code"], "created_at": now(), "created_by": user["id"], "created_by_name": user["name"],
+        })
+    await db.lots.delete_one({"id": lot_id})
+    await log_activity("lot_deleted", user, {"id": lot_id, "name": lot["code"]})
+    return {"message": "Excluído"}
+
 @api.get("/expenses")
 async def expenses(user=Depends(current_user)): return await list_resource("expenses")
 async def recompute_viagem_finance(viagem_id):
@@ -584,6 +710,7 @@ async def add_daily_entry(data: ResourceInput, user=Depends(current_user)):
         added = billed_qty + (mf_total if doc.get("mf_plan") == "swap" else 0)
         await _check_delivered_carga_limit(doc["viagem_id"], added)
 
+    await apply_lot_costs(doc)
     await apply_entry_stock_movements(doc, "venda", 1, user)
     await db.daily_entries.insert_one(doc); doc.pop("_id", None); return doc
 
@@ -646,6 +773,8 @@ async def update_daily_entry(item_id: str, data: ResourceInput, user=Depends(cur
         if target.get("viagem_id"):
             added = billed_qty + (mf_total if merged.get("mf_plan") == "swap" else 0)
             await _check_delivered_carga_limit(target["viagem_id"], added, exclude_entry_id=item_id)
+        await release_lots(target)
+        await apply_lot_costs(merged)
         await apply_entry_stock_movements(target, "estorno", -1, user)
         await apply_entry_stock_movements(merged, "venda", 1, user)
         values = {k: v for k, v in merged.items() if k not in ("id", "created_at", "created_by")}
@@ -663,6 +792,7 @@ async def delete_daily_entry(item_id: str, user=Depends(current_user)):
         viagem = await db.viagens.find_one({"id": target["viagem_id"]}, {"_id": 0})
         if viagem and viagem.get("status") == "finalizada" and user.get("role") != "admin":
             raise HTTPException(400, "Esta viagem já foi finalizada — peça ao admin para corrigir esse lançamento")
+    await release_lots(target)
     await apply_entry_stock_movements(target, "estorno", -1, user)
     await db.daily_entries.delete_one({"id": item_id})
     return {"message": "Excluído"}

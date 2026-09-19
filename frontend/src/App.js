@@ -286,20 +286,22 @@ function PerformanceChart({ refreshKey }) {
   </div></div>
 }
 
-function Dashboard({ data, onRefresh, refreshing, lastUpdated }) {
+function Dashboard({ data, onRefresh, refreshing, lastUpdated, isDriver }) {
   const today = (data?.deliveries || []);
   return <><section className="section-head"><div><p className="eyebrow">PAINEL DE CONTROLE</p><h2>Visão geral</h2><p className="muted">Acompanhe a saúde da sua operação em um só lugar.</p></div>
       <div className="dashboard-refresh"><small>{lastUpdated ? `Atualizado às ${lastUpdated.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : 'Aguardando atualização'}</small><button type="button" className="ghost-btn" data-testid="dashboard-refresh-button" disabled={refreshing} onClick={onRefresh}><RefreshCw size={15} className={refreshing ? 'spin' : ''} /> {refreshing ? 'Atualizando...' : 'Atualizar dados'}</button></div>
     </section>
     <div className="stats">
+      {!isDriver && <>
       <Stat label="Receita no mês" value={money(data?.revenue)} detail="Lançamentos do Controle Diário" Icon={CircleDollarSign} />
       <Stat label="Despesas no mês" value={money(data?.expenses)} detail="Lançadas pelos entregadores" Icon={WalletCards} tone="orange" />
       <Stat label="Receita líquida" value={money((data?.revenue || 0) - (data?.expenses || 0))} detail="Receita − despesas do mês" Icon={Wallet} tone={(data?.revenue || 0) - (data?.expenses || 0) >= 0 ? 'green' : 'red'} />
+      </>}
       <Stat label="Lançamentos hoje" value={today.length} detail="Registrados pelos entregadores" Icon={Truck} tone="green" />
       <Stat label="Alertas de estoque" value={data?.products?.filter(x => x.quantity < x.minimum).length || 0} detail="Itens abaixo do mínimo" Icon={AlertTriangle} tone="red" />
     </div>
     <div className="dashboard-grid">
-      <section className="panel performance"><div className="panel-head"><div><h3>Desempenho financeiro</h3><p className="muted">Últimos 6 meses · passe o mouse para ver os detalhes</p></div><BarChart3 className="blue-text" /></div><PerformanceChart refreshKey={lastUpdated} /></section>
+      {!isDriver && <section className="panel performance"><div className="panel-head"><div><h3>Desempenho financeiro</h3><p className="muted">Últimos 6 meses · passe o mouse para ver os detalhes</p></div><BarChart3 className="blue-text" /></div><PerformanceChart refreshKey={lastUpdated} /></section>}
       <section className="panel route-panel">
         <div className="panel-head"><div><h3>Últimos lançamentos</h3><p className="muted">Controle Diário de hoje</p></div><CalendarCheck size={20} className="blue-text" /></div>
         {today.length === 0 && <p className="muted" style={{ padding: '8px 0' }}>Nenhum lançamento ainda hoje.</p>}
@@ -472,12 +474,88 @@ function ProductModal({ onClose, onSave, product }) {
   </form></div>
 }
 
+function LotModal({ products, product, onClose, onSaved }) {
+  const [productId, setProductId] = useState(product?.id || products[0]?.id || '');
+  const chosen = products.find(p => p.id === productId);
+  const [purchaseDate, setPurchaseDate] = useState(todayISO(0));
+  const [quantity, setQuantity] = useState('');
+  const [cost, setCost] = useState(product?.cost_price ?? '');
+  const [costFull, setCostFull] = useState('');
+  const [notes, setNotes] = useState('');
+  const [opening, setOpening] = useState(false);
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [done, setDone] = useState(null);
+  function pick(id) { setProductId(id); const p = products.find(x => x.id === id); setCost(p?.cost_price ?? ''); }
+  const [y, m, d] = (purchaseDate || '').split('-');
+  const preview = y && quantity !== '' && Number(quantity) > 0 ? `${d}${m}${y.slice(2)}${Math.round(Number(quantity))}` : null;
+  async function submit(e) {
+    e.preventDefault(); setError('');
+    if (!chosen) return setError('Escolha o produto.');
+    if (!(Number(quantity) > 0)) return setError('Informe a quantidade comprada.');
+    if (cost === '' || Number(cost) < 0) return setError('Informe o custo por unidade.');
+    setSaving(true);
+    try {
+      const payload = { quantity: Number(quantity), cost_price: Number(cost), purchase_date: purchaseDate, adjust_stock: !opening };
+      if (costFull !== '') payload.cost_price_full = Number(costFull);
+      if (notes.trim()) payload.notes = notes.trim();
+      const { data: lot } = await api.post(`/products/${chosen.id}/lots`, payload, auth());
+      setDone(lot); onSaved(lot);
+    } catch (err) { setError(err.response?.data?.detail || 'Não foi possível registrar a compra.'); }
+    finally { setSaving(false); }
+  }
+  if (done) return <div className="modal-backdrop"><div className="quick-modal">
+    <button type="button" className="modal-close" onClick={onClose} data-testid="lot-close"><X /></button>
+    <p className="eyebrow">LOTE REGISTRADO</p>
+    <h3 data-testid="lot-created-code">{done.code}</h3>
+    <p className="muted">{done.product_name} · {done.quantity_initial} un a {money(done.cost_unit)}{opening ? ' (saldo anterior — estoque não alterado)' : ' — estoque atualizado'}.</p>
+    <button type="button" className="primary full" onClick={onClose}>Concluir</button>
+  </div></div>;
+  return <div className="modal-backdrop"><form className="quick-modal" onSubmit={submit}>
+    <button type="button" className="modal-close" onClick={onClose} data-testid="lot-close"><X /></button>
+    <p className="eyebrow">COMPRA DE ESTOQUE</p>
+    <h3>Registrar compra (novo lote)</h3>
+    <label>Produto<select value={productId} data-testid="lot-product" onChange={e => pick(e.target.value)}>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+    <label>Data da compra<input type="date" required value={purchaseDate} data-testid="lot-date" onChange={e => setPurchaseDate(e.target.value)} /></label>
+    <label>Quantidade comprada ({chosen?.unit === 'fardo' ? 'fardos' : 'unidades'})<input required type="number" min="1" value={quantity} data-testid="lot-quantity" onChange={e => setQuantity(e.target.value)} /></label>
+    <label>Custo somente água (R$ por {chosen?.unit === 'fardo' ? 'fardo' : 'unidade'})<input required type="number" step="0.01" min="0" value={cost} data-testid="lot-cost" onChange={e => setCost(e.target.value)} /></label>
+    <label>Custo venda completa (opcional)<input type="number" step="0.01" min="0" value={costFull} placeholder="vazio = igual ao custo somente água" data-testid="lot-cost-full" onChange={e => setCostFull(e.target.value)} /></label>
+    <label>Observação (fornecedor, nota fiscal...)<input value={notes} data-testid="lot-notes" onChange={e => setNotes(e.target.value)} /></label>
+    <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="checkbox" style={{ width: 'auto' }} checked={opening} data-testid="lot-opening" onChange={e => setOpening(e.target.checked)} /> Já está no estoque (saldo anterior) — só cria o lote, sem somar a quantidade</label>
+    <p className="muted" style={{ fontSize: 12 }}>Código do lote: <b>{preview ? `${preview}NNN` : 'ddmmaa + quantidade + NNN'}</b> — NNN é o número da compra no dia, gerado ao salvar.</p>
+    {error && <div className="error" data-testid="lot-error">{error}</div>}
+    <button className="primary full" disabled={saving} data-testid="lot-submit"><Save size={16} /> {saving ? 'Salvando...' : 'Registrar compra'}</button>
+  </form></div>
+}
+
+function LotsPanel({ lots, products, onNew, onDelete }) {
+  const [showEmpty, setShowEmpty] = useState(false);
+  const rows = (lots || []).filter(l => showEmpty || Number(l.quantity_remaining) > 0);
+  const fmt = d => (d || '').split('-').reverse().join('/');
+  return <section className="panel table-panel" style={{ marginTop: 22 }} data-testid="lots-panel">
+    <div className="panel-head" style={{ padding: '18px 23px' }}>
+      <div><h3>Lotes de compra</h3><p className="muted">Cada compra vira um lote com seu custo. As vendas saem do lote mais antigo primeiro e a margem usa o custo real desse lote.</p></div>
+      <div className="row-actions"><label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}><input type="checkbox" checked={showEmpty} onChange={e => setShowEmpty(e.target.checked)} /> mostrar esgotados</label><button type="button" className="primary" data-testid="lot-new-button" onClick={onNew} disabled={products.length === 0}><Plus size={15} /> Registrar compra</button></div>
+    </div>
+    <div className="table-wrap"><table><thead><tr><th>LOTE</th><th>DATA</th><th>PRODUTO</th><th>COMPRADO</th><th>RESTANTE</th><th>CUSTO (ÁGUA / COMPLETA)</th><th>VALOR RESTANTE</th><th /></tr></thead><tbody>
+      {rows.map(l => <tr key={l.id} data-testid={`lot-row-${l.code}`}>
+        <td><b>{l.code}</b>{l.notes && <small>{l.notes}</small>}</td><td>{fmt(l.purchase_date)}</td><td>{l.product_name}</td><td>{l.quantity_initial}</td>
+        <td><span className={`tag ${Number(l.quantity_remaining) > 0 ? 'green' : 'gray'}`}>{l.quantity_remaining}</span></td>
+        <td>{money(l.cost_unit)}{l.cost_unit_full != null ? ` / ${money(l.cost_unit_full)}` : ''}</td>
+        <td>{money(Number(l.quantity_remaining) * Number(l.cost_unit))}</td>
+        <td>{Number(l.quantity_remaining) === Number(l.quantity_initial) && <button type="button" className="action-btn reject" aria-label="Excluir lote" data-testid={`lot-delete-${l.code}`} onClick={() => onDelete(l)}><Trash2 size={13} /></button>}</td>
+      </tr>)}
+      {rows.length === 0 && <tr><td colSpan={8} className="muted" style={{ padding: 16 }}>Nenhum lote {showEmpty ? 'registrado' : 'com saldo'}. Registre a próxima compra para controlar o custo por lote.</td></tr>}
+    </tbody></table></div>
+  </section>
+}
+
 function StockMovements() {
   const [movements, setMovements] = useState(null);
   function load() { api.get('/stock-movements', auth()).then(x => setMovements(x.data)).catch(() => setMovements([])); }
   useEffect(() => { load(); }, []);
   useAutoRefresh(load);
-  const reasonLabel = { venda: 'Venda', estorno: 'Estorno', ajuste: 'Ajuste', mf_defeito: 'Defeito (MF)', mf_reagendado: 'MF reagendado', sem_correspondencia: 'Sem produto correspondente', vasilhame_vazio: 'Vasilhame vazio' };
+  const reasonLabel = { venda: 'Venda', estorno: 'Estorno', ajuste: 'Ajuste', mf_defeito: 'Defeito (MF)', mf_reagendado: 'MF reagendado', sem_correspondencia: 'Sem produto correspondente', vasilhame_vazio: 'Vasilhame vazio', compra: 'Compra (lote)' };
   const pendingExchange = (movements || []).filter(m => m.reason === 'mf_defeito' && !m.resolved);
   const pendingReschedule = (movements || []).filter(m => m.reason === 'mf_reagendado' && !m.resolved);
   const unmatched = (movements || []).filter(m => m.reason === 'sem_correspondencia');
@@ -522,7 +600,7 @@ function StockMovements() {
           <td><b>{m.product_name || m.brand}</b></td>
           <td>{m.reason === 'mf_reagendado' ? <span className="tag orange">pendente ({m.pending_quantity})</span> : m.reason === 'sem_correspondencia' ? <span className="tag gray">—</span> : <span className={`tag ${m.quantity < 0 ? 'red' : 'green'}`}>{m.quantity > 0 ? '+' : ''}{m.quantity}</span>}</td>
           <td>{(m.reason === 'mf_defeito' || m.reason === 'mf_reagendado' || m.reason === 'sem_correspondencia' || m.reason === 'vasilhame_vazio') ? <span className="tag orange">{reasonLabel[m.reason]}</span> : (reasonLabel[m.reason] || m.reason)}</td>
-          <td>{m.entry_number ? <small>Nº {m.entry_number} · {m.customer}{m.driver ? ` · ${m.driver}` : ''}{m.rota_codigo ? ` · ${m.rota_codigo}` : (m.viagem_codigo ? ` · ${m.viagem_codigo}` : '')}</small> : <small className="muted">{m.viagem_codigo || '—'}</small>}</td>
+          <td>{m.lot_code ? <small>Lote {m.lot_code}</small> : m.entry_number ? <small>Nº {m.entry_number} · {m.customer}{m.driver ? ` · ${m.driver}` : ''}{m.rota_codigo ? ` · ${m.rota_codigo}` : (m.viagem_codigo ? ` · ${m.viagem_codigo}` : '')}</small> : <small className="muted">{m.viagem_codigo || '—'}</small>}</td>
           <td>{(m.reason === 'mf_defeito' || m.reason === 'mf_reagendado' || m.reason === 'vasilhame_vazio') && (m.resolved ? <span className="tag green" title={m.resolved_note}>{m.resolved_note?.includes('fornecedor') ? 'Enviado' : 'Trocado'}</span> : <button className="action-btn ghost" data-testid={`mf-mark-exchanged-${m.id}`} onClick={() => markExchanged(m)}>{m.reason === 'mf_reagendado' ? 'Troca realizada' : m.reason === 'vasilhame_vazio' ? 'Marcar enviado' : 'Marcar trocado'}</button>)}</td>
         </tr>)}
         {movements?.length === 0 && <tr><td colSpan={6} className="muted" style={{ padding: 16 }}>Nenhuma movimentação registrada ainda.</td></tr>}
@@ -534,6 +612,20 @@ function StockMovements() {
 function Stock({ data, setData, create }) {
   const [adjusting, setAdjusting] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [lots, setLots] = useState(null);
+  const [buying, setBuying] = useState(null);
+  const [brandCodes, setBrandCodes] = useState({});
+  useEffect(() => { api.get('/brands', auth()).then(x => setBrandCodes(Object.fromEntries(x.data.map(b => [(b.name || '').trim().toLowerCase(), b.code])))).catch(() => { }); }, []);
+  const skuOf = p => brandCodes[(p.brand || p.name || '').trim().toLowerCase()];
+  function loadLots() { api.get('/lots', auth()).then(x => setLots(x.data)).catch(() => setLots([])); }
+  useEffect(() => { loadLots(); }, []);
+  useAutoRefresh(loadLots);
+  async function refreshProducts() { const { data: d } = await api.get('/dashboard', auth()); setData(d); }
+  async function deleteLot(l) {
+    if (!window.confirm(`Excluir o lote ${l.code}? A quantidade dele sai do estoque.`)) return;
+    try { await api.delete(`/lots/${l.id}`, auth()); loadLots(); refreshProducts(); }
+    catch (e) { window.alert(e.response?.data?.detail || 'Não foi possível excluir o lote.'); }
+  }
   async function saveAdjustment(payload) {
     const { data: updated } = await api.patch(`/products/${adjusting.id}`, payload, auth());
     setData({ ...data, products: data.products.map(p => p.id === updated.id ? updated : p) });
@@ -545,19 +637,24 @@ function Stock({ data, setData, create }) {
     setEditing(null);
   }
   const products = data?.products || [];
-  const stockValue = products.reduce((s, p) => s + (Number(p.quantity) || 0) * (Number(p.cost_price) || 0), 0);
+  const openLotsByProduct = (lots || []).reduce((acc, l) => { if (Number(l.quantity_remaining) > 0) (acc[l.product_id] = acc[l.product_id] || []).push(l); return acc; }, {});
+  const lotRemaining = p => (openLotsByProduct[p.id] || []).reduce((s, l) => s + Number(l.quantity_remaining), 0);
+  const productValue = p => openLotsByProduct[p.id] ? openLotsByProduct[p.id].reduce((s, l) => s + Number(l.quantity_remaining) * Number(l.cost_unit), 0) : (Number(p.quantity) || 0) * (Number(p.cost_price) || 0);
+  const stockValue = products.reduce((s, p) => s + productValue(p), 0);
   const missingCost = products.filter(p => p.cost_price == null && p.quantity > 0).length;
   const defectiveTotal = products.reduce((s, p) => s + (Number(p.defective_quantity) || 0), 0);
   const emptyTotal = products.reduce((s, p) => s + (Number(p.empty_quantity) || 0), 0);
   return <><Head eyebrow="INVENTÁRIO" title="Estoque" subtitle="Produtos, galões retornáveis e níveis mínimos." action="Novo produto" onAction={() => create('product')} />
     <div className="stats">
-      <Stat label="Valor em estoque" value={money(stockValue)} detail={missingCost > 0 ? `${missingCost} produto${missingCost > 1 ? 's' : ''} sem custo cadastrado` : 'Custo de compra × quantidade disponível'} Icon={WalletCards} tone={missingCost > 0 ? 'orange' : ''} />
+      <Stat label="Valor em estoque" value={money(stockValue)} detail={missingCost > 0 ? `${missingCost} produto${missingCost > 1 ? 's' : ''} sem custo cadastrado` : 'Soma dos lotes abertos (custo de cada compra); sem lote, custo × quantidade'} Icon={WalletCards} tone={missingCost > 0 ? 'orange' : ''} />
       <Stat label="Galões com defeito" value={defectiveTotal} detail="Parados no depósito, aguardando troca com o fornecedor" Icon={AlertTriangle} tone={defectiveTotal > 0 ? 'red' : 'green'} />
       <Stat label="Vasilhames vazios" value={emptyTotal} detail="Recebidos dos clientes, aguardando envio ao fornecedor" Icon={Package} tone={emptyTotal > 0 ? 'orange' : 'green'} />
     </div>
-    <div className="stock-alert" data-testid="stock-alert"><AlertTriangle size={19} /><div><b>{products.filter(x => x.quantity < x.minimum).length} produtos precisam de reposição</b><span>Confira os itens antes da próxima rota.</span></div></div><section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>MARCA</th><th>CATEGORIA</th><th>DISPONÍVEL</th><th>MÍNIMO</th><th>DEFEITO</th><th>VAZIO</th><th>VALOR EM ESTOQUE</th><th>SITUAÇÃO</th><th>LOTE / COMPRA</th><th /></tr></thead><tbody>{products.map(p => <tr key={p.id} data-testid={`stock-row-${p.id}`}><td><b>{p.name}</b><small>SKU-{p.id}</small></td><td>{p.brand || '—'}</td><td>{p.category}</td><td>{p.quantity} {p.unit || 'un'}</td><td>{p.minimum}</td><td>{p.defective_quantity ? <span className="tag red" data-testid={`stock-defective-${p.id}`}>{p.defective_quantity}</span> : <small className="muted">—</small>}</td><td>{p.empty_quantity ? <span className="tag orange" data-testid={`stock-empty-${p.id}`}>{p.empty_quantity}</span> : <small className="muted">—</small>}</td><td>{p.cost_price != null ? money((Number(p.quantity) || 0) * Number(p.cost_price)) : <small className="muted">sem custo</small>}</td><td><span className={`tag ${p.quantity < p.minimum ? 'red' : 'green'}`}>{p.quantity < p.minimum ? 'Repor' : 'Saudável'}</span></td><td><small className="muted">{p.batch ? `Lote ${p.batch}` : '—'}{p.purchase_date ? ` · ${p.purchase_date}` : ''}</small></td><td className="row-actions"><button className="action-btn ghost" data-testid={`stock-edit-${p.id}`} onClick={() => setEditing(p)}><Pencil size={13} /> Editar</button><button className="action-btn ghost" data-testid={`stock-adjust-${p.id}`} onClick={() => setAdjusting(p)}>Ajustar</button></td></tr>)}{products.length === 0 && <tr><td colSpan={11} className="muted" style={{ padding: 16 }}>Nenhum produto cadastrado.</td></tr>}</tbody></table></div></section>
+    <div className="stock-alert" data-testid="stock-alert"><AlertTriangle size={19} /><div><b>{products.filter(x => x.quantity < x.minimum).length} produtos precisam de reposição</b><span>Confira os itens antes da próxima rota.</span></div></div><section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>MARCA</th><th>CATEGORIA</th><th>DISPONÍVEL</th><th>MÍNIMO</th><th>DEFEITO</th><th>VAZIO</th><th>VALOR EM ESTOQUE</th><th>SITUAÇÃO</th><th>LOTE / COMPRA</th><th /></tr></thead><tbody>{products.map(p => <tr key={p.id} data-testid={`stock-row-${p.id}`}><td><b>{p.name}</b><small data-testid={`stock-sku-${p.id}`}>{skuOf(p) ? `SKU ${skuOf(p)}` : 'sem código'}</small></td><td>{p.brand || '—'}</td><td>{p.category}</td><td>{p.quantity} {p.unit || 'un'}</td><td>{p.minimum}</td><td>{p.defective_quantity ? <span className="tag red" data-testid={`stock-defective-${p.id}`}>{p.defective_quantity}</span> : <small className="muted">—</small>}</td><td>{p.empty_quantity ? <span className="tag orange" data-testid={`stock-empty-${p.id}`}>{p.empty_quantity}</span> : <small className="muted">—</small>}</td><td>{openLotsByProduct[p.id] || p.cost_price != null ? money(productValue(p)) : <small className="muted">sem custo</small>}{lots && (Number(p.quantity) > lotRemaining(p) + 0.0001) && <small className="orange-text" data-testid={`stock-no-lot-${p.id}`}>{Number(p.quantity) - lotRemaining(p)} un sem lote</small>}</td><td><span className={`tag ${p.quantity < p.minimum ? 'red' : 'green'}`}>{p.quantity < p.minimum ? 'Repor' : 'Saudável'}</span></td><td><small className="muted">{p.batch ? `Lote ${p.batch}` : '—'}{p.purchase_date ? ` · ${p.purchase_date}` : ''}</small></td><td className="row-actions"><button className="action-btn ghost" data-testid={`stock-edit-${p.id}`} onClick={() => setEditing(p)}><Pencil size={13} /> Editar</button><button className="action-btn ghost" data-testid={`stock-buy-${p.id}`} onClick={() => setBuying({ product: p })}>Compra</button><button className="action-btn ghost" data-testid={`stock-adjust-${p.id}`} onClick={() => setAdjusting(p)}>Ajustar</button></td></tr>)}{products.length === 0 && <tr><td colSpan={11} className="muted" style={{ padding: 16 }}>Nenhum produto cadastrado.</td></tr>}</tbody></table></div></section>
     {adjusting && <StockAdjustModal product={adjusting} onClose={() => setAdjusting(null)} onSave={saveAdjustment} />}
     {editing && <ProductModal product={editing} onClose={() => setEditing(null)} onSave={saveEdit} />}
+    {buying && <LotModal products={products} product={buying.product} onClose={() => setBuying(null)} onSaved={() => { loadLots(); refreshProducts(); }} />}
+    <LotsPanel lots={lots} products={products} onNew={() => setBuying({ product: null })} onDelete={deleteLot} />
     <StockMovements />
   </> }
 
@@ -2718,7 +2815,7 @@ function App() {
   const adminOnly = el => user.role === 'admin' ? el : <Navigate to="/" replace />;
   return <Shell user={user} onLogout={logout} notifications={notifications}>
     <Routes>
-      <Route path="/" element={<Dashboard data={data} onRefresh={loadDashboard} refreshing={refreshing} lastUpdated={lastUpdated} />} />
+      <Route path="/" element={<Dashboard data={data} onRefresh={loadDashboard} refreshing={refreshing} lastUpdated={lastUpdated} isDriver={user.role === 'driver'} />} />
       <Route path="/estoque" element={<Stock data={data} setData={setData} create={setModal} />} />
       <Route path="/financeiro" element={<Finance data={data} setData={setData} create={setModal} user={user} />} />
       <Route path="/margem" element={adminOnly(<MarginReport />)} />
