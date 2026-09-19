@@ -54,7 +54,7 @@ def test_core_flow(c):
     # --- entry B: legacy single-brand, MF swap, fora da carga (baixa estoque) ---
     eB = post(D, "/daily-entries", {"customer": "Cliente Y", "brand": "Minalar 500ML", "quantity": 10, "price": 2, "mf_quantity": 2, "mf_plan": "swap", "sale_type": "full", "pix_value": 20}).json()
     check("entry B total (8 cobrados + 2 swap cobrados)", eB["total"], 20)
-    check("estoque Minalar (8 vendidos + 1 bom por MF swap x2 = 10 saem)", stock("Minalar 500ML")["quantity"], 90)
+    check("estoque Minalar (8 vendidos + 2 trocas + 2 com defeito = 12 saem)", stock("Minalar 500ML")["quantity"], 88)
     check("Minalar defeituoso", stock("Minalar 500ML").get("defective_quantity", 0), 2)
 
     # --- entry C: fora do cadastro ---

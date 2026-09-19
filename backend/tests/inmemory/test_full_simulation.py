@@ -148,9 +148,9 @@ def test_full_simulation(c):
     v1 = P(D, f"/viagens/{T1['id']}/finalizar").json()
     check("T1 total_bruto", v1["total_bruto"], 462); check("T1 despesas", v1["despesas_total"], 40); check("T1 saldo", v1["saldo_liquido"], 422)
     check("T1 entregas", v1["entregas"], 4); check("T1 quantidade entregue (69 + 2 swap)", v1["quantidade_entregue"], 71); check("T1 problemas MF", (v1["problemas"], v1["mf_quantity_total"]), (2, 3))
-    check("T1 carga devolvida (29 Galão + 60 Água)", v1["carga_devolvida_total"], 89)
+    check("T1 carga devolvida (27 Galão + 60 Água; MF trocado gasta 2)", v1["carga_devolvida_total"], 87)
     v2 = P(Ana, f"/viagens/{T2['id']}/finalizar").json(); check("T2 devolvida (30-12)", v2["carga_devolvida_total"], 18); check("T2 saldo", v2["saldo_liquido"], 144 - 20)
-    check("estoque Galão final (300-60-30-170+29+18)", stock("Garrafão 20L")["quantity"], 87); check("estoque Água final (500-100+60-10 venda de ontem sem carga)", stock("Água 500ML")["quantity"], 450)
+    check("estoque Galão final (300-60-30-170+27+18)", stock("Garrafão 20L")["quantity"], 85); check("estoque Água final (500-100+60-10 venda de ontem sem carga)", stock("Água 500ML")["quantity"], 450)
     check("finalizar 2x => 400", P(D, f"/viagens/{T1['id']}/finalizar").status_code, 400)
     check("lançar em viagem finalizada (entregador) bloqueia edição", PA(D, f"/daily-entries/{S1['id']}", {"items": [{"brand": "Garrafão 20L", "quantity": 11, "price": 12}], "pix_value": 132}).status_code, 400)
 
@@ -165,7 +165,7 @@ def test_full_simulation(c):
     resched = next(m for m in mv if m["reason"] == "mf_reagendado")
     check("resolver MF reagendado (troca realizada)", PA(A, f"/stock-movements/{resched['id']}", {}).status_code, 200)
     check("Galão defeituoso 2 -> 3 após troca do reagendado", stock("Garrafão 20L").get("defective_quantity", 0), 3)
-    check("Galão depósito -1 pela troca reagendada", stock("Garrafão 20L")["quantity"], 86)
+    check("Galão depósito -1 pela troca reagendada", stock("Garrafão 20L")["quantity"], 84)
     for m in G(A, "/stock-movements").json():
         if m["reason"] == "mf_defeito" and not m["resolved"]: PA(A, f"/stock-movements/{m['id']}", {})
     check("defeitos enviados ao fornecedor => 0", stock("Garrafão 20L").get("defective_quantity", 0), 0)

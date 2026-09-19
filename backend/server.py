@@ -321,6 +321,11 @@ def normalize_unit(values):
     if (values.get("unit") or "").strip().lower().startswith("fardo"): values["unit"] = "fardo"
     return values
 
+def next_business_day(from_date_str=None):
+    d = (datetime.fromisoformat(from_date_str).date() if from_date_str else now_local().date()) + timedelta(days=1)
+    while d.weekday() >= 5: d += timedelta(days=1)
+    return d.isoformat()
+
 def is_returnable(product):
     return (product.get("category") or "").strip().lower().startswith("retorn")
 
@@ -367,12 +372,13 @@ async def apply_entry_stock_movements(doc, reason, sign, user):
     def covered(brand): return (brand or "").strip().lower() in carga_brands
 
     items = doc.get("items")
+    swap_now = doc.get("mf_plan") == "swap"
     if items:
         for it in items:
-            qty = float(it.get("quantity") or 0)
+            qty = float(it.get("quantity") or 0) + (float(it.get("mf_quantity") or 0) if swap_now else 0)
             if qty > 0: await apply_stock_delta(products_cache, it.get("brand"), sign * -qty, reason, doc, user, skip_quantity=covered(it.get("brand")))
     else:
-        qty = float(doc.get("billed_quantity") or 0)
+        qty = float(doc.get("billed_quantity") or 0) + (float(doc.get("mf_quantity") or 0) if swap_now else 0)
         if qty > 0: await apply_stock_delta(products_cache, doc.get("brand"), sign * -qty, reason, doc, user, skip_quantity=covered(doc.get("brand")))
     mf_plan = doc.get("mf_plan")
     if mf_plan in ("swap", "reschedule"):
@@ -394,7 +400,7 @@ async def apply_entry_stock_movements(doc, reason, sign, user):
                         "id": str(uuid.uuid4()), "product_id": match["id"] if match else None, "product_name": match.get("name") if match else None, "brand": (match.get("brand") or match.get("name")) if match else brand,
                         "quantity": 0, "pending_quantity": qty, "reason": "mf_reagendado", "resolved": False,
                         "entry_id": doc.get("id"), "entry_number": doc.get("entry_number"), "customer": doc.get("customer"), "driver": doc.get("driver"),
-                        "mf_date": doc.get("mf_date"), "created_at": now(), "created_by": user.get("id") if user else None, "created_by_name": user.get("name") if user else "sistema",
+                        "mf_date": doc.get("mf_date"), "mf_due_date": doc.get("mf_due_date"), "created_at": now(), "created_by": user.get("id") if user else None, "created_by_name": user.get("name") if user else "sistema",
                     })
         else:
             # Estorno: any pending defect tracking for this entry no longer applies.
@@ -443,6 +449,16 @@ async def apply_entry_stock_movements(doc, reason, sign, user):
 
 @api.get("/stock-movements")
 async def stock_movements(user=Depends(admin_user)): return await db.stock_movements.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+
+@api.get("/mf-pendentes")
+async def mf_pendentes(user=Depends(current_user)):
+    """Trocas de MF reagendadas ainda não resolvidas — lembrete para incluir na carga da próxima viagem."""
+    query = {"reason": "mf_reagendado", "resolved": False}
+    if user.get("role") != "admin": query["driver"] = user["name"]
+    rows = await db.stock_movements.find(query, {"_id": 0}).sort("created_at", 1).to_list(None)
+    today = today_local()
+    return [{"id": m["id"], "brand": m.get("brand"), "quantity": float(m.get("pending_quantity") or 0), "customer": m.get("customer"), "driver": m.get("driver"),
+             "entry_number": m.get("entry_number"), "due_date": m.get("mf_due_date"), "due": (m.get("mf_due_date") or "") <= today} for m in rows]
 
 @api.patch("/stock-movements/{item_id}")
 async def update_stock_movement(item_id: str, user=Depends(admin_user)):
@@ -723,6 +739,7 @@ async def add_daily_entry(data: ResourceInput, user=Depends(current_user)):
     doc["billed_quantity"] = billed_qty
     doc["mf_quantity"] = mf_total
     doc["total"] = total
+    if doc.get("mf_plan") == "reschedule" and mf_total > 0: doc["mf_due_date"] = next_business_day(doc["date"])
     comp_value = float(doc.get("comp_value") or 0)
     pix_value = float(doc.get("pix_value") or 0)
     cash_value = float(doc.get("cash_value") or 0)
@@ -745,7 +762,8 @@ async def add_daily_entry(data: ResourceInput, user=Depends(current_user)):
                 rota = _find_rota(viagem, doc["rota_id"])
                 if not rota: raise HTTPException(400, "Rota não encontrada nesta viagem")
                 doc["rota_codigo"] = rota.get("codigo_rota")
-        added = billed_qty + (mf_total if doc.get("mf_plan") == "swap" else 0)
+        added = billed_qty + (2 * mf_total if doc.get("mf_plan") == "swap" else 0)
+        if doc.get("mf_plan") == "swap": await _check_swap_has_spare(doc["viagem_id"], doc.get("customer"), added)
         await _check_delivered_carga_limit(doc["viagem_id"], added)
 
     warnings = await apply_lot_costs(doc)
@@ -806,13 +824,15 @@ async def update_daily_entry(item_id: str, data: ResourceInput, user=Depends(cur
         merged["billed_quantity"] = billed_qty
         merged["mf_quantity"] = mf_total
         merged["total"] = total
+        if merged.get("mf_plan") == "reschedule" and mf_total > 0: merged["mf_due_date"] = merged.get("mf_due_date") or next_business_day(merged.get("date") or today_local())
         comp_value = float(merged.get("comp_value") or 0)
         pix_value = float(merged.get("pix_value") or 0)
         cash_value = float(merged.get("cash_value") or 0)
         if round(pix_value + cash_value + comp_value, 2) != round(total, 2):
             raise HTTPException(400, f"Pix + Dinheiro + A prazo (R$ {pix_value + cash_value + comp_value:.2f}) precisa somar o total do lançamento (R$ {total:.2f})")
         if target.get("viagem_id"):
-            added = billed_qty + (mf_total if merged.get("mf_plan") == "swap" else 0)
+            added = billed_qty + (2 * mf_total if merged.get("mf_plan") == "swap" else 0)
+            if merged.get("mf_plan") == "swap": await _check_swap_has_spare(target["viagem_id"], merged.get("customer"), added, exclude_entry_id=item_id)
             await _check_delivered_carga_limit(target["viagem_id"], added, exclude_entry_id=item_id)
         await release_lots(target)
         warnings = await apply_lot_costs(merged)
@@ -936,8 +956,21 @@ async def _delivered_quantity(viagem_id, exclude_entry_id=None):
         total += float(e.get("billed_quantity") or 0)
         if e.get("mf_plan") == "swap":
             items = e.get("items") or ([{"mf_quantity": e.get("mf_quantity")}] if e.get("mf_quantity") else [])
-            total += sum(float(it.get("mf_quantity") or 0) for it in items)
+            total += 2 * sum(float(it.get("mf_quantity") or 0) for it in items)
     return total
+
+async def _check_swap_has_spare(viagem_id, customer, this_use, exclude_entry_id=None):
+    """Troca de MF na hora só é possível se a carga tem sobra além do que ainda falta entregar na rota."""
+    viagem = await db.viagens.find_one({"id": viagem_id}, {"_id": 0})
+    carga_total = viagem.get("carga_total") if viagem else None
+    if not carga_total: return
+    entregas = await db.daily_entries.find({"viagem_id": viagem_id}, {"_id": 0, "id": 1, "customer": 1}).to_list(None)
+    entregues = {e.get("customer") for e in entregas if e.get("id") != exclude_entry_id}
+    pendente = sum(float(c.get("quantity") or 0) for r in (viagem.get("rotas") or []) for c in (r.get("clientes") or [])
+                   if c.get("name") not in entregues and c.get("name") != customer and c.get("status") != "nao_entregue")
+    usado = await _delivered_quantity(viagem_id, exclude_entry_id)
+    if usado + float(this_use) + pendente > float(carga_total):
+        raise HTTPException(400, "A carga desta viagem está certa para a rota e não tem sobra para trocar o galão com microfuro agora. Escolha \"Entregar outro dia\": a troca fica para o próximo dia útil e entra como lembrete para incluir na próxima viagem.")
 
 async def _check_delivered_carga_limit(viagem_id, added_quantity, exclude_entry_id=None):
     viagem = await db.viagens.find_one({"id": viagem_id}, {"_id": 0})
@@ -1082,7 +1115,7 @@ async def finalizar_viagem(item_id: str, user=Depends(current_user)):
                 key = (it.get("brand") or "").strip().lower()
                 if not key: continue
                 used_by_brand[key] = used_by_brand.get(key, 0) + float(it.get("quantity") or 0)
-                if e.get("mf_plan") == "swap": used_by_brand[key] += float(it.get("mf_quantity") or 0)
+                if e.get("mf_plan") == "swap": used_by_brand[key] += 2 * float(it.get("mf_quantity") or 0)
         products_cache = await db.products.find({}, {"_id": 0}).to_list(1000)
         ref = viagem_ref(v)
         carga_devolvida_total = 0.0
