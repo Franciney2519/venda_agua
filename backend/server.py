@@ -60,6 +60,7 @@ class ResourceInput(BaseModel):
     notes: Optional[str] = None
     brand: Optional[str] = None
     price: Optional[float] = None
+    price_full: Optional[float] = None
     brands: Optional[List[dict]] = None
     cost_price: Optional[float] = None
     cost_price_full: Optional[float] = None
@@ -102,6 +103,7 @@ class ViagemInput(BaseModel):
     notes: Optional[str] = None
     driver: Optional[str] = None  # admin only: criar viagem para outro entregador
     carga_items: Optional[List[dict]] = None  # [{brand, quantity}] carregado no caminhão, por produto
+    create_first_rota: Optional[bool] = None  # já devolve a viagem com a Rota 01 vazia
 
 class RotaInput(BaseModel):
     clientes: Optional[List[dict]] = None  # clientes do cadastro incluídos nesta rota
@@ -451,14 +453,17 @@ async def apply_entry_stock_movements(doc, reason, sign, user):
 async def stock_movements(user=Depends(admin_user)): return await db.stock_movements.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
 
 @api.get("/mf-pendentes")
-async def mf_pendentes(user=Depends(current_user)):
-    """Trocas de MF reagendadas ainda não resolvidas — lembrete para incluir na carga da próxima viagem."""
+async def mf_pendentes(include_scheduled: bool = False, user=Depends(current_user)):
+    """Trocas de MF reagendadas ainda não resolvidas — lembrete para incluir na carga da próxima viagem.
+    As que já foram encaixadas numa viagem ficam de fora, a menos que include_scheduled=1."""
     query = {"reason": "mf_reagendado", "resolved": False}
     if user.get("role") != "admin": query["driver"] = user["name"]
+    if not include_scheduled: query["scheduled_viagem_id"] = {"$in": [None, ""]}
     rows = await db.stock_movements.find(query, {"_id": 0}).sort("created_at", 1).to_list(None)
     today = today_local()
     return [{"id": m["id"], "brand": m.get("brand"), "quantity": float(m.get("pending_quantity") or 0), "customer": m.get("customer"), "driver": m.get("driver"),
-             "entry_number": m.get("entry_number"), "due_date": m.get("mf_due_date"), "due": (m.get("mf_due_date") or "") <= today} for m in rows]
+             "entry_number": m.get("entry_number"), "due_date": m.get("mf_due_date"), "due": (m.get("mf_due_date") or "") <= today,
+             "scheduled_viagem_id": m.get("scheduled_viagem_id"), "scheduled_rota_id": m.get("scheduled_rota_id")} for m in rows]
 
 @api.patch("/stock-movements/{item_id}")
 async def update_stock_movement(item_id: str, user=Depends(admin_user)):
@@ -794,6 +799,7 @@ async def add_daily_entry(data: ResourceInput, user=Depends(current_user)):
     warnings = await apply_lot_costs(doc)
     await apply_entry_stock_movements(doc, "venda", 1, user)
     await db.daily_entries.insert_one(doc); doc.pop("_id", None)
+    if doc.get("viagem_id"): await _resolve_scheduled_mf(doc, user)
     if warnings: doc["warnings"] = warnings
     return doc
 
@@ -883,6 +889,7 @@ async def delete_daily_entry(item_id: str, user=Depends(current_user)):
             raise HTTPException(400, "Esta viagem já foi finalizada — peça ao admin para corrigir esse lançamento")
     await release_lots(target)
     await apply_entry_stock_movements(target, "estorno", -1, user)
+    await _unresolve_scheduled_mf(item_id)
     await db.daily_entries.delete_one({"id": item_id})
     if target.get("viagem_id"): await recompute_viagem_summary(target["viagem_id"])
     return {"message": "Excluído"}
@@ -921,6 +928,8 @@ async def create_viagem(data: ViagemInput, user=Depends(current_user)):
         "notes": data.notes, "rotas": [], "status": "planejada",
         "created_at": now(), "created_by": user["id"], "updated_at": now(),
     }
+    if data.create_first_rota:
+        doc["rotas"] = [{"id": str(uuid.uuid4()), "numero": 1, "codigo_rota": f"{codigo}-R01", "clientes": [], "created_at": now()}]
     await db.viagens.insert_one(doc); doc.pop("_id", None)
     await log_activity("viagem_criada", user, {"id": doc["id"], "name": codigo}, {"driver": driver_name, "turno": data.turno})
     return doc
@@ -960,13 +969,79 @@ def _find_rota(v, rota_id):
         if r.get("id") == rota_id: return r
     return None
 
+def _merged_swap_quantity(c):
+    """Trocas de MF somadas a um pedido que já existia: ocupam carga além da quantidade do pedido."""
+    return sum(float(s.get("quantity") or 0) for s in (c.get("mf_swaps") or []) if s.get("merged"))
+
+def _cliente_load(c):
+    return float(c.get("quantity") or 0) + _merged_swap_quantity(c)
+
 def _planned_quantity(v, exclude_cliente_id=None):
     total = 0.0
     for r in (v.get("rotas") or []):
         for c in (r.get("clientes") or []):
             if c.get("id") == exclude_cliente_id: continue
-            total += float(c.get("quantity") or 0)
+            total += _cliente_load(c)
     return total
+
+async def _save_rotas(v):
+    """Grava as rotas da viagem depois de alterar clientes em memória (v vem de _own_viagem_or_404)."""
+    await db.viagens.update_one({"id": v["id"]}, {"$set": {"rotas": v.get("rotas") or [], "updated_at": now()}})
+
+def _same(a, b): return (a or "").strip().lower() == (b or "").strip().lower()
+
+async def _rota_cliente_doc(data):
+    """Cliente de rota: marca produto fora do cadastro do cliente e puxa o preço (do cliente ou do catálogo de marcas)."""
+    cliente = {"id": data["id"], "name": data["name"], "brand": data.get("brand"), "quantity": data.get("quantity"), "sale_type": data.get("sale_type"), "notes": data.get("notes")}
+    brand = (data.get("brand") or "").strip()
+    if not brand: return cliente
+    customer = await db.customers.find_one({"id": data["id"]}, {"_id": 0})
+    own = (customer.get("brands") or ([{"brand": customer["brand"], "price": customer.get("price")}] if customer.get("brand") else [])) if customer else []
+    match = next((b for b in own if _same(b.get("brand"), brand)), None)
+    if match:
+        cliente.update({"out_of_catalog": False, "price": match.get("price"), "price_full": match.get("price_full")})
+    else:
+        catalog = next((b for b in await db.brands.find({}, {"_id": 0}).to_list(1000) if _same(b.get("name"), brand)), None) or {}
+        cliente.update({"out_of_catalog": True,
+                        "price": catalog.get("price") if catalog.get("price") is not None else data.get("price"),
+                        "price_full": catalog.get("price_full") if catalog.get("price_full") is not None else data.get("price_full")})
+    return cliente
+
+MF_SCHEDULE_FIELDS = {"scheduled_viagem_id": "", "scheduled_rota_id": "", "scheduled_cliente_id": ""}
+
+async def _unschedule_mf(query):
+    """Devolve trocas de MF agendadas (e ainda não feitas) para a lista de pendentes."""
+    await db.stock_movements.update_many({"reason": "mf_reagendado", "resolved": False, **query}, {"$unset": MF_SCHEDULE_FIELDS})
+
+async def _resolve_scheduled_mf(entry, user):
+    """Entrega lançada para um cliente com troca de MF agendada nesta viagem: a troca foi feita.
+    O galão bom já saiu do estoque pela própria venda; aqui só entra o defeituoso recolhido."""
+    viagem = await db.viagens.find_one({"id": entry["viagem_id"]}, {"_id": 0})
+    if not viagem: return
+    ids = [mid for r in (viagem.get("rotas") or []) for c in (r.get("clientes") or [])
+           if _same(c.get("name"), entry.get("customer")) for mid in (c.get("mf_swap_movement_ids") or [])]
+    for mid in ids:
+        m = await db.stock_movements.find_one({"id": mid, "reason": "mf_reagendado", "resolved": False}, {"_id": 0})
+        if not m: continue
+        qty = float(m.get("pending_quantity") or 0)
+        if m.get("product_id") and qty > 0:
+            await db.products.update_one({"id": m["product_id"]}, {"$inc": {"defective_quantity": qty}})
+            await db.stock_movements.insert_one({
+                "id": str(uuid.uuid4()), "product_id": m["product_id"], "product_name": m.get("product_name"), "brand": m.get("brand"),
+                "quantity": -qty, "reason": "mf_defeito", "resolved": False, "swap_entry_id": entry["id"],
+                "entry_id": m.get("entry_id"), "entry_number": m.get("entry_number"), "customer": m.get("customer"), "driver": m.get("driver"),
+                "created_at": now(), "created_by": user["id"], "created_by_name": user["name"],
+            })
+        await db.stock_movements.update_one({"id": mid}, {"$set": {"resolved": True, "resolved_note": "Troca realizada", "resolved_by": user["name"], "resolved_at": now(), "resolved_entry_id": entry["id"]}})
+
+async def _unresolve_scheduled_mf(entry_id):
+    """Estorno da entrega que fez a troca: a troca volta a ficar agendada."""
+    defects = await db.stock_movements.find({"reason": "mf_defeito", "swap_entry_id": entry_id, "resolved": False}, {"_id": 0}).to_list(50)
+    for d in defects:
+        if d.get("product_id"): await db.products.update_one({"id": d["product_id"]}, {"$inc": {"defective_quantity": -abs(float(d.get("quantity") or 0))}})
+    await db.stock_movements.update_many({"reason": "mf_defeito", "swap_entry_id": entry_id, "resolved": False}, {"$set": {"resolved": True, "resolved_note": "Estornado"}})
+    await db.stock_movements.update_many({"reason": "mf_reagendado", "resolved_entry_id": entry_id},
+                                         {"$set": {"resolved": False}, "$unset": {"resolved_note": "", "resolved_by": "", "resolved_at": "", "resolved_entry_id": ""}})
 
 def _check_carga_limit(v, added_quantity, exclude_cliente_id=None):
     carga_total = v.get("carga_total")
@@ -994,7 +1069,7 @@ async def _check_swap_has_spare(viagem_id, customer, this_use, exclude_entry_id=
     if not carga_total: return
     entregas = await db.daily_entries.find({"viagem_id": viagem_id}, {"_id": 0, "id": 1, "customer": 1}).to_list(None)
     entregues = {e.get("customer") for e in entregas if e.get("id") != exclude_entry_id}
-    pendente = sum(float(c.get("quantity") or 0) for r in (viagem.get("rotas") or []) for c in (r.get("clientes") or [])
+    pendente = sum(_cliente_load(c) for r in (viagem.get("rotas") or []) for c in (r.get("clientes") or [])
                    if c.get("name") not in entregues and c.get("name") != customer and c.get("status") != "nao_entregue")
     usado = await _delivered_quantity(viagem_id, exclude_entry_id)
     if usado + float(this_use) + pendente > float(carga_total):
@@ -1017,10 +1092,11 @@ async def add_rota(item_id: str, data: RotaInput, user=Depends(current_user)):
     if v["status"] == "finalizada": raise HTTPException(400, "Viagem já está finalizada")
     added = sum(float(c.get("quantity") or 0) for c in (data.clientes or []))
     _check_carga_limit(v, added)
-    numero = len(v.get("rotas") or []) + 1
+    numero = max([int(r.get("numero") or 0) for r in (v.get("rotas") or [])], default=0) + 1
+    clientes = [{**c, **(await _rota_cliente_doc(c))} if c.get("id") and c.get("name") else c for c in (data.clientes or [])]
     rota = {
         "id": str(uuid.uuid4()), "numero": numero, "codigo_rota": f"{v['codigo_viagem']}-R{str(numero).zfill(2)}",
-        "clientes": data.clientes or [], "created_at": now(),
+        "clientes": clientes, "created_at": now(),
     }
     await db.viagens.update_one({"id": item_id}, {"$push": {"rotas": rota}, "$set": {"updated_at": now()}})
     return await db.viagens.find_one({"id": item_id}, {"_id": 0})
@@ -1036,11 +1112,46 @@ async def add_rota_cliente(item_id: str, rota_id: str, data: dict, user=Depends(
     if any(c.get("id") == data["id"] for c in (rota.get("clientes") or [])):
         return await db.viagens.find_one({"id": item_id}, {"_id": 0})
     _check_carga_limit(v, data.get("quantity"))
-    cliente = {"id": data["id"], "name": data["name"], "brand": data.get("brand"), "quantity": data.get("quantity"), "sale_type": data.get("sale_type"), "notes": data.get("notes")}
-    await db.viagens.update_one({"id": item_id, "rotas.id": rota_id}, {"$push": {"rotas.$.clientes": cliente}, "$set": {"updated_at": now()}})
+    rota["clientes"] = (rota.get("clientes") or []) + [await _rota_cliente_doc(data)]
+    await _save_rotas(v)
     return await db.viagens.find_one({"id": item_id}, {"_id": 0})
 
-CLIENTE_ROTA_EDITABLE_FIELDS = ("status", "name", "brand", "quantity", "sale_type", "notes")
+@api.post("/viagens/{item_id}/rotas/{rota_id}/mf-troca")
+async def schedule_mf_troca(item_id: str, rota_id: str, data: dict, user=Depends(current_user)):
+    """Encaixa uma troca de MF pendente na viagem: soma ao pedido do cliente se ele já está na viagem, senão cria a parada na rota."""
+    v = await _own_viagem_or_404(item_id, user)
+    await ensure_day_open(v.get("date") or today_local(), v.get("driver") or user["name"], user)
+    if v["status"] == "finalizada": raise HTTPException(400, "Viagem já está finalizada")
+    rota = _find_rota(v, rota_id)
+    if not rota: raise HTTPException(404, "Rota não encontrada")
+    m = await db.stock_movements.find_one({"id": data.get("movement_id"), "reason": "mf_reagendado", "resolved": False}, {"_id": 0})
+    if not m or (user.get("role") != "admin" and m.get("driver") != user["name"]): raise HTTPException(404, "Troca de MF pendente não encontrada")
+    if m.get("scheduled_viagem_id"): raise HTTPException(400, "Esta troca de MF já está agendada numa viagem")
+    qty = float(m.get("pending_quantity") or 0)
+    if await db.daily_entries.count_documents({"viagem_id": item_id, "customer": m.get("customer")}) > 0:
+        raise HTTPException(400, f"{m.get('customer')} já teve a entrega lançada nesta viagem — inclua a troca em outra viagem")
+    _check_carga_limit(v, qty)
+    note = f"Troca de MF: levar {qty:g} × {m.get('brand')} (entrega Nº {m.get('entry_number')})"
+    swap = {"movement_id": m["id"], "brand": m.get("brand"), "quantity": qty, "entry_number": m.get("entry_number")}
+    target_rota, existing = next(((r, c) for r in (v.get("rotas") or []) for c in (r.get("clientes") or [])
+                                  if _same(c.get("name"), m.get("customer")) and c.get("status") != "nao_entregue"), (None, None))
+    if existing:
+        existing["mf_swap_quantity"] = float(existing.get("mf_swap_quantity") or 0) + qty
+        existing["mf_swap_movement_ids"] = (existing.get("mf_swap_movement_ids") or []) + [m["id"]]
+        existing["mf_swaps"] = (existing.get("mf_swaps") or []) + [{**swap, "merged": True}]
+        existing["notes"] = f"{existing['notes']} · {note}" if existing.get("notes") else note
+        cliente = existing
+    else:
+        target_rota = rota
+        customer = await db.customers.find_one({"name": m.get("customer")}, {"_id": 0})
+        cliente = await _rota_cliente_doc({"id": customer["id"] if customer else f"mf-{m['id']}", "name": m.get("customer"), "brand": m.get("brand"), "quantity": qty, "sale_type": "exchange", "notes": note})
+        cliente.update({"mf_swap_quantity": qty, "mf_swap_movement_ids": [m["id"]], "mf_swaps": [{**swap, "merged": False}]})
+        rota["clientes"] = (rota.get("clientes") or []) + [cliente]
+    await _save_rotas(v)
+    await db.stock_movements.update_one({"id": m["id"]}, {"$set": {"scheduled_viagem_id": item_id, "scheduled_rota_id": target_rota["id"], "scheduled_cliente_id": cliente["id"]}})
+    return await db.viagens.find_one({"id": item_id}, {"_id": 0})
+
+CLIENTE_ROTA_EDITABLE_FIELDS = ("status", "name", "brand", "quantity", "sale_type", "notes", "out_of_catalog", "price", "price_full")
 
 @api.patch("/viagens/{item_id}/rotas/{rota_id}/clientes/{cliente_id}")
 async def update_rota_cliente(item_id: str, rota_id: str, cliente_id: str, data: dict, user=Depends(current_user)):
@@ -1048,16 +1159,24 @@ async def update_rota_cliente(item_id: str, rota_id: str, cliente_id: str, data:
     await ensure_day_open(v.get("date") or today_local(), v.get("driver") or user["name"], user)
     rota = _find_rota(v, rota_id)
     if not rota: raise HTTPException(404, "Rota não encontrada")
-    if "quantity" in data: _check_carga_limit(v, data.get("quantity"), exclude_cliente_id=cliente_id)
     clientes = rota.get("clientes") or []
+    current = next((c for c in clientes if c.get("id") == cliente_id), None)
+    if "quantity" in data: _check_carga_limit(v, float(data.get("quantity") or 0) + (_merged_swap_quantity(current) if current else 0), exclude_cliente_id=cliente_id)
     for c in clientes:
         if c.get("id") == cliente_id:
             for f in CLIENTE_ROTA_EDITABLE_FIELDS:
                 if f in data: c[f] = data[f]
+            if "brand" in data and not any(f in data for f in ("out_of_catalog", "price", "price_full")):
+                c.update({k: val for k, val in (await _rota_cliente_doc({**c, "price": None, "price_full": None})).items() if k in ("out_of_catalog", "price", "price_full")})
+            if data.get("status") == "nao_entregue" and c.get("mf_swap_movement_ids"):
+                # A troca não foi feita: volta para a lista de pendentes.
+                await _unschedule_mf({"id": {"$in": c["mf_swap_movement_ids"]}})
+                for f in ("mf_swap_quantity", "mf_swap_movement_ids", "mf_swaps"): c.pop(f, None)
             break
     else:
         clientes.append({"id": cliente_id, "name": data.get("name") or cliente_id, "status": data.get("status")})
-    await db.viagens.update_one({"id": item_id, "rotas.id": rota_id}, {"$set": {"rotas.$.clientes": clientes, "updated_at": now()}})
+    rota["clientes"] = clientes
+    await _save_rotas(v)
     return await db.viagens.find_one({"id": item_id}, {"_id": 0})
 
 @api.delete("/viagens/{item_id}/rotas/{rota_id}/clientes/{cliente_id}")
@@ -1067,7 +1186,9 @@ async def remove_rota_cliente(item_id: str, rota_id: str, cliente_id: str, user=
     if v["status"] == "finalizada": raise HTTPException(400, "Viagem já está finalizada")
     rota = _find_rota(v, rota_id)
     if not rota: raise HTTPException(404, "Rota não encontrada")
-    await db.viagens.update_one({"id": item_id, "rotas.id": rota_id}, {"$pull": {"rotas.$.clientes": {"id": cliente_id}}, "$set": {"updated_at": now()}})
+    await _unschedule_mf({"scheduled_viagem_id": item_id, "scheduled_rota_id": rota_id, "scheduled_cliente_id": cliente_id})
+    rota["clientes"] = [c for c in (rota.get("clientes") or []) if c.get("id") != cliente_id]
+    await _save_rotas(v)
     return await db.viagens.find_one({"id": item_id}, {"_id": 0})
 
 @api.delete("/viagens/{item_id}/rotas/{rota_id}")
@@ -1079,6 +1200,7 @@ async def delete_rota(item_id: str, rota_id: str, user=Depends(current_user)):
     if not rota: raise HTTPException(404, "Rota não encontrada")
     if await db.daily_entries.count_documents({"rota_id": rota_id}) > 0:
         raise HTTPException(400, "Não é possível excluir uma rota que já tem entregas lançadas")
+    await _unschedule_mf({"scheduled_viagem_id": item_id, "scheduled_rota_id": rota_id})
     await db.viagens.update_one({"id": item_id}, {"$pull": {"rotas": {"id": rota_id}}, "$set": {"updated_at": now()}})
     return await db.viagens.find_one({"id": item_id}, {"_id": 0})
 
@@ -1138,12 +1260,14 @@ async def finalizar_viagem(item_id: str, user=Depends(current_user)):
         values["carga_devolvida_total"] = carga_devolvida_total
 
     await db.viagens.update_one({"id": item_id}, {"$set": values})
+    await _unschedule_mf({"scheduled_viagem_id": item_id})
     return await db.viagens.find_one({"id": item_id}, {"_id": 0})
 
 @api.delete("/viagens/{item_id}")
 async def delete_viagem(item_id: str, user=Depends(current_user)):
     v = await _own_viagem_or_404(item_id, user)
     if v["status"] != "planejada": raise HTTPException(400, f"Só é possível excluir viagens planejadas (esta está {v['status']})")
+    await _unschedule_mf({"scheduled_viagem_id": item_id})
     await db.viagens.delete_one({"id": item_id})
     return {"message": "Excluída", "codigo_viagem": v["codigo_viagem"]}
 
