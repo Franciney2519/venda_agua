@@ -2125,7 +2125,7 @@ function MobileReceiptPrompt({ entry, customer, onSavePhone, onClose }) {
     <div className="mob-sheet" onClick={e => e.stopPropagation()}>
       <div className="mob-sheet-handle" />
       <div className="mob-sheet-head">
-        <div><h3>Entrega registrada!</h3><p>{entry.customer} · {money(entry.total)}</p></div>
+        <div><h3>Comprovante da entrega</h3><p>{entry.customer}{entry.entry_number ? ` · Nº ${entry.entry_number}` : ''} · {money(entry.total)}</p></div>
         <button aria-label="Fechar" type="button" className="mob-close" data-testid="mob-receipt-close" onClick={onClose}><X size={18} /></button>
       </div>
       <p className="muted" style={{ padding: '0 2px 12px' }}>O cliente quer o comprovante de entrega?</p>
