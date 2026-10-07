@@ -2206,6 +2206,7 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
   const [config, setConfig] = useState(null);
   const [asking, setAsking] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [showDone, setShowDone] = useState(false);
   useEffect(() => { api.get('/brands', auth()).then(({ data }) => setBrandsCatalog(data.filter(b => b.active !== false))).catch(() => { }); }, []);
 
   async function run(fn, fallback) {
@@ -2251,11 +2252,19 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
 
   const statusOf = (v, c) => entries.some(e => e.viagem_id === v.id && sameName(e.customer, c.name)) ? 'done' : c.status === 'nao_entregue' ? 'failed' : 'pending';
   const pq = pickQ.trim().toLowerCase();
+  // Montando uma viagem: a tela mostra só ela. As concluídas ficam recolhidas no fim da lista.
+  const focus = viagens.find(v => v.id === openTripId && v.status !== 'finalizada' && !dayClosed);
+  const abertas = viagens.filter(v => v.status !== 'finalizada').sort((a, b) => (a.status === 'execucao' ? 0 : 1) - (b.status === 'execucao' ? 0 : 1));
+  const concluidas = viagens.filter(v => v.status === 'finalizada');
+  const shown = focus ? [focus] : [...abertas, ...(showDone ? concluidas : [])];
+  function closeFocus() { setOpenTripId(null); setPicker(null); setConfig(null); }
 
   return <>
-    <button type="button" className="mob-link dark h44" data-testid="mob-viagens-close" onClick={onBack}><ArrowLeft size={18} />Voltar para a rota</button>
+    {focus
+      ? <button type="button" className="mob-link dark h44" data-testid="mob-viagens-all" onClick={closeFocus}><ArrowLeft size={18} />Todas as viagens</button>
+      : <button type="button" className="mob-link dark h44" data-testid="mob-viagens-close" onClick={onBack}><ArrowLeft size={18} />Voltar para a rota</button>}
 
-    {dayClosed
+    {focus ? null : dayClosed
       ? <section className="mob-band" data-testid="mob-day-closed-banner"><Lock size={20} /><b>Dia fechado — viagens somente para consulta.</b></section>
       : <section className="mob-card" data-testid="mob-viagem-form">
         <div className="mob-card-head"><b>Criar viagem</b></div>
@@ -2264,7 +2273,7 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
             <div className="mob-seg" data-testid="mob-viagem-turno">{[0, 1].map(t => <button type="button" key={t} className={turno === t ? 'on' : ''} data-testid={`mob-viagem-turno-${t}`} onClick={() => setTurno(t)}>{TURNO_LABELS[t]}</button>)}</div>
           </div>
           {cargaItems.length === 0 && <div className="mob-qrow wrap">
-            <span><b>Carga por viagem</b><small>Galões no caminhão · digite ou use − +</small></span>
+            <span><b>Carga da viagem</b><small>Galões no caminhão</small></span>
             <MobileStepper label="carga" testid="mob-viagem-carga" value={carga} onType={v => { const d = onlyDigits(v); setCarga(d === '' ? '' : Number(d)); }} onDec={() => setCarga(Math.max(0, (Number(carga) || 0) - 5))} onInc={() => setCarga((Number(carga) || 0) + 5)} />
           </div>}
           <button type="button" className="mob-link h44" data-testid="mob-viagem-more" onClick={() => setShowMore(!showMore)}>{showMore ? <ChevronUp size={18} /> : <ChevronDown size={18} />}Carga por produto (opcional){cargaItems.length > 0 ? ` · total ${cargaItemsTotal} un` : ''}</button>
@@ -2285,9 +2294,10 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
       </section>}
 
     <section className="mob-list">
-      <div className="mob-sec-head"><b>Viagens de hoje</b><b>{viagens.length}/{VIAGENS_POR_DIA}</b></div>
+      <div className="mob-sec-head"><b>{focus ? 'Montando a viagem' : 'Viagens de hoje'}</b><b>{focus ? '' : `${viagens.length}/${VIAGENS_POR_DIA}`}</b></div>
       {viagens.length === 0 && <p className="mob-muted pad">Nenhuma viagem criada hoje.</p>}
-      {viagens.map(v => {
+      {viagens.length > 0 && shown.length === 0 && <p className="mob-muted pad">Nenhuma viagem em aberto.</p>}
+      {shown.map(v => {
         const rotas = v.rotas || [];
         const allClients = rotas.flatMap(r => (r.clientes || []).map(c => ({ ...c, rota: r, st: statusOf(v, c) })));
         const editable = v.status !== 'finalizada' && !dayClosed;
@@ -2316,7 +2326,7 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
               <MobBtn h={52} kind="outline" icon={Flag} data-testid={`mob-viagem-finalizar-${v.id}`} onClick={() => setAsking(`fin:${v.id}`)}>Concluir</MobBtn>
             </div>)}
 
-          <button type="button" className="mob-link h44" data-testid={`mob-viagem-toggle-${v.id}`} onClick={() => { setOpenTripId(isOpen ? null : v.id); setPicker(null); setConfig(null); }}>{isOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}{isOpen ? 'Ocultar' : 'Ver'} rotas e clientes ({rotas.length} rota{rotas.length === 1 ? '' : 's'} · {allClients.length} cliente{allClients.length === 1 ? '' : 's'})</button>
+          {!focus && <button type="button" className="mob-link h44" data-testid={`mob-viagem-toggle-${v.id}`} onClick={() => { setOpenTripId(isOpen ? null : v.id); setPicker(null); setConfig(null); }}>{isOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}{isOpen ? 'Ocultar' : 'Ver'} rotas e clientes ({rotas.length} rota{rotas.length === 1 ? '' : 's'} · {allClients.length} cliente{allClients.length === 1 ? '' : 's'})</button>}
 
           {isOpen && <div className="mob-editor" data-testid={`mob-viagem-editor-${v.id}`}>
             {editable && mfPending.length > 0 && <div className="mob-mfblock" data-testid="mob-viagem-mf-pendentes">
@@ -2375,8 +2385,10 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
             {rotas.length === 0 && !editable && <p className="mob-muted pad">Viagem sem rotas.</p>}
             {editable && <button type="button" className="mob-dashed" disabled={busy} data-testid={`mob-viagem-rota-add-${v.id}`} onClick={() => addRota(v)}><Plus size={18} />Nova rota</button>}
           </div>}
+          {focus && <MobBtn kind="outline" h={52} icon={Check} data-testid="mob-viagem-focus-done" onClick={closeFocus}>Pronto — ver todas as viagens</MobBtn>}
         </div>
       })}
+      {!focus && concluidas.length > 0 && <button type="button" className="mob-link h48" data-testid="mob-viagens-done-toggle" onClick={() => setShowDone(!showDone)}>{showDone ? <ChevronUp size={18} /> : <ChevronDown size={18} />}{showDone ? 'Ocultar' : 'Ver'} viagens concluídas ({concluidas.length})</button>}
     </section>
   </>
 }
