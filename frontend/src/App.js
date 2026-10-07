@@ -1591,10 +1591,11 @@ function MobileConfirm({ title, text, cancelLabel = 'Voltar', confirmLabel, onCa
   </section>
 }
 
-function MobileHeader({ user, title }) {
+function MobileHeader({ user, title, theme, onToggleTheme }) {
   const today = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Manaus', weekday: 'short', day: '2-digit', month: '2-digit' }).replace('.', '');
   return <header className="mob-header">
     <div className="mob-header-text"><span className="mob-eyebrow">Portal do entregador · {today}</span><b data-testid="mob-title">{title}</b></div>
+    <button type="button" className="mob-theme-btn" data-testid="mob-theme-toggle" aria-label={theme === 'dark' ? 'Usar fundo claro' : 'Usar fundo escuro'} onClick={onToggleTheme}>{theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}</button>
     <span className="mob-avatar">{user.name.split(' ').map(x => x[0]).join('').slice(0, 2)}</span>
   </header>
 }
@@ -1643,7 +1644,7 @@ function MobileSignatureBox({ canvasRef, onSigned }) {
   function move(e) {
     if (!drawing.current) return;
     const ctx = canvasRef.current.getContext('2d'), p = pt(e);
-    ctx.strokeStyle = '#201e1d'; ctx.lineWidth = 2.6; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#10253f'; ctx.lineWidth = 2.6; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     ctx.beginPath(); ctx.moveTo(last.current[0], last.current[1]); ctx.lineTo(p[0], p[1]); ctx.stroke(); last.current = p;
     onSigned(true);
   }
@@ -2565,7 +2566,7 @@ function MobileAjustesTab({ user, theme, setTheme, scale, setTextScale, onLogout
       <div className="mob-seg">{MOBILE_SCALES.map(([v, label]) => <button type="button" key={v} className={scale === v ? 'on' : ''} style={{ fontSize: `${16 * v}px` }} data-testid={`mob-scale-${v}`} onClick={() => setTextScale(v)}>{label}</button>)}</div>
     </section>
     <section className="mob-field">
-      <b className="mob-label">Tema</b>
+      <b className="mob-label">Fundo</b>
       <div className="mob-seg">
         <button type="button" className={theme !== 'dark' ? 'on' : ''} data-testid="mob-theme-light" onClick={() => setTheme('light')}><Sun size={18} /> Claro</button>
         <button type="button" className={theme === 'dark' ? 'on' : ''} data-testid="mob-theme-dark" onClick={() => setTheme('dark')}><Moon size={18} /> Escuro</button>
@@ -2702,7 +2703,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
   const expensesTotal = todaysExpenses.reduce((s, x) => s + Number(x.amount || 0), 0);
 
   return <div ref={rootRef} className={`mobile-app${theme === 'dark' ? ' dark' : ''}`} style={{ '--s': scale }} data-testid="mobile-driver-app">
-    <MobileHeader user={user} title={MOBILE_TITLES[tab]} />
+    <MobileHeader user={user} title={MOBILE_TITLES[tab]} theme={theme} onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />
     <div className="mob-body">
       <main className="mob-main"><div className="mob-col">
         {tab === 'rota' && <MobileRotaTab viagemAtiva={viagemAtiva} viagens={viagensComProgresso} stops={stops} entries={entries} date={date} search={search} setSearch={setSearch} mfPending={mfPending} viagensPresas={viagensPresas} onFinalizarPresa={finishTrip} dayClosed={dayClosed} onOpenStop={openStop} onOpenViagens={openViagens} onStartTrip={startTrip} onFinishTrip={finishTrip} offRoute={offRoute} onPickOffRoute={pickOffRoute} onReceipt={setReceiptEntry} onEditEntry={setEditingEntry} onDeleteEntry={deleteEntry} />}
