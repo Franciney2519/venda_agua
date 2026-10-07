@@ -1846,7 +1846,7 @@ function MobileLaunchPanel({ stop, user, date, viagemId, cargaRestante, othersPe
   </>
 }
 
-function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, setSearch, mfPending, viagensPresas, onFinalizarPresa, dayClosed, onOpenStop, onOpenViagens, onStartTrip, onFinishTrip, offRoute, onPickOffRoute, onReceipt, onEditEntry, onDeleteEntry }) {
+function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, setSearch, mfPending, viagensPresas, onFinalizarPresa, dayClosed, onOpenStop, onOpenViagens, onStartTrip, onFinishTrip, offRoute, onPickOffRoute, onReceipt, onEditEntry, onDeleteEntry, onIncludeMf }) {
   const [finishAsk, setFinishAsk] = useState(false);
   const [openDone, setOpenDone] = useState(null);
   const [deleteAsk, setDeleteAsk] = useState(null);
@@ -1860,6 +1860,7 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
   const tripTotal = done.reduce((a, s) => a + Number(s.entry?.total || 0), 0);
   const nextPlanned = viagens.find(v => v.status === 'planejada');
   const lastDone = [...viagens].reverse().find(v => v.status === 'finalizada');
+  const mfTarget = viagemAtiva || nextPlanned;
   const carga = viagemAtiva?.carga_total, atual = viagemAtiva?.quantidade_atual || 0;
   const showNext = !!viagemAtiva && !q && pending.length > 0;
   const next = showNext ? pending[0] : null;
@@ -1897,13 +1898,12 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
       </div>
     </section>}
 
-    {mfPending.length > 0 && <section className="mob-alert" data-testid="mob-mf-reminder">
-      <TriangleAlert size={20} />
-      <div>
-        <b>Troca de MF pendente</b>
-        <span>{mfPending.map(m => `${m.customer} · ${m.quantity} un de ${m.brand}`).join(' · ')}</span>
-        {!dayClosed && <MobBtn kind="warn-outline" h={40} icon={ArrowRight} data-testid="mob-mf-include" onClick={() => onOpenViagens((viagemAtiva || nextPlanned)?.id)}>Incluir numa viagem</MobBtn>}
-      </div>
+    {mfPending.length > 0 && <section className="mob-alert col" data-testid="mob-mf-reminder">
+      <div className="mob-alert-head"><TriangleAlert size={20} /><b>Troca de MF pendente</b></div>
+      {mfPending.map(m => <div className="mob-mfitem" key={m.id}>
+        <span><b>{m.customer}</b><small>{m.quantity} un de {m.brand}{m.due_date ? ` · prevista ${shortDate(m.due_date)}` : ''}</small></span>
+        {!dayClosed && <MobBtn kind="warn" h={48} lead={Plus} data-testid={`mob-mf-include-${m.id}`} onClick={() => onIncludeMf(m)}>{mfTarget ? `Incluir na viagem ${mfTarget.numero}` : 'Criar viagem para incluir'}</MobBtn>}
+      </div>)}
     </section>}
 
     {viagemAtiva && stops.length > 0 && pending.length === 0 && <section className="mob-card" data-testid="mob-all-done">
@@ -2682,6 +2682,21 @@ function DriverMobileApp({ user, customers, onLogout }) {
     setSearch(''); if (rota) setLaunchKey(`${rota.id}:${c.id}`);
   }, 'Não foi possível incluir o cliente na rota.');
 
+  // Um toque no aviso já encaixa a troca na viagem em execução (ou na próxima planejada).
+  const includeMf = async m => {
+    const target = viagemAtiva || viagensComProgresso.find(v => v.status === 'planejada');
+    if (!target) { openViagens(); return showToast('Crie a viagem; depois toque de novo em incluir a troca de MF.', 5000); }
+    try {
+      let rota = (target.rotas || [])[(target.rotas || []).length - 1];
+      if (!rota) { const updated = await addRota(target.id, { clientes: [] }); rota = updated.rotas[updated.rotas.length - 1]; }
+      await scheduleMf(target.id, rota.id, m.id);
+      showToast(`Troca de MF de ${m.customer} incluída na viagem ${target.numero}.`, 4000);
+    } catch (e) {
+      const missing = [404, 405].includes(e?.response?.status) && !['Rota não encontrada', 'Troca de MF pendente não encontrada', 'Viagem não encontrada'].includes(e?.response?.data?.detail);
+      showToast(missing ? 'O servidor ainda não tem a função de incluir troca de MF na viagem — publique a versão nova do backend.' : apiError(e, 'Não foi possível incluir a troca de MF.'), 8000);
+    }
+  };
+
   function onEntryComplete(entry) {
     setEntries([entry, ...entries]);
     setLaunchKey(null); setTab('rota'); setSearch('');
@@ -2706,7 +2721,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
     <MobileHeader user={user} title={MOBILE_TITLES[tab]} theme={theme} onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />
     <div className="mob-body">
       <main className="mob-main"><div className="mob-col">
-        {tab === 'rota' && <MobileRotaTab viagemAtiva={viagemAtiva} viagens={viagensComProgresso} stops={stops} entries={entries} date={date} search={search} setSearch={setSearch} mfPending={mfPending} viagensPresas={viagensPresas} onFinalizarPresa={finishTrip} dayClosed={dayClosed} onOpenStop={openStop} onOpenViagens={openViagens} onStartTrip={startTrip} onFinishTrip={finishTrip} offRoute={offRoute} onPickOffRoute={pickOffRoute} onReceipt={setReceiptEntry} onEditEntry={setEditingEntry} onDeleteEntry={deleteEntry} />}
+        {tab === 'rota' && <MobileRotaTab viagemAtiva={viagemAtiva} viagens={viagensComProgresso} stops={stops} entries={entries} date={date} search={search} setSearch={setSearch} mfPending={mfPending} viagensPresas={viagensPresas} onFinalizarPresa={finishTrip} dayClosed={dayClosed} onOpenStop={openStop} onOpenViagens={openViagens} onStartTrip={startTrip} onFinishTrip={finishTrip} offRoute={offRoute} onPickOffRoute={pickOffRoute} onReceipt={setReceiptEntry} onEditEntry={setEditingEntry} onDeleteEntry={deleteEntry} onIncludeMf={includeMf} />}
         {tab === 'viagens' && <MobileViagensScreen viagens={viagensComProgresso} customers={customers} entries={entries} mfPending={mfPending} dayClosed={dayClosed} viagemAtiva={viagemAtiva} openTripId={openTripId} setOpenTripId={setOpenTripId} onBack={() => setTab('rota')} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} onAddRota={addRota} onAddRotaCliente={addRotaCliente} onUpdateRotaCliente={updateRotaCliente} onRemoveRotaCliente={removeRotaCliente} onRemoveRota={removeRota} onScheduleMf={scheduleMf} toast={showToast} />}
         {tab === 'diario' && <MobileDiarioTab entries={entries} date={date} />}
         {tab === 'caixa' && <MobileCaixaTab entries={entries} expenses={todaysExpenses} expensesTotal={expensesTotal} viagens={viagensComProgresso} date={date} pendingStops={pendingStops.length} onCloseDay={closeDay} dayClosed={dayClosed} closingDay={closingDay} />}
