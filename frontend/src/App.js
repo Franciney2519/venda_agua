@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import axios from "axios";
 import { BrowserRouter, Routes, Route, NavLink, Navigate, Link } from "react-router-dom";
-import { LayoutDashboard, Truck, Package, WalletCards, Users, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, Clock3, CircleDollarSign, BarChart3, Save, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle, CalendarCheck, Wallet, Eye, EyeOff, Minus, Sun, Moon, Camera, Search, MoreHorizontal, Fuel, Utensils, Wrench, Receipt, ChevronRight, RefreshCw, Eraser, Percent } from "lucide-react";
+import { LayoutDashboard, Truck, Package, WalletCards, Users, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, Clock3, CircleDollarSign, BarChart3, Save, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle, CalendarCheck, Wallet, Eye, EyeOff, Minus, Sun, Moon, Camera, Search, Fuel, Utensils, Wrench, Receipt, ChevronRight, RefreshCw, Eraser, Percent, Route as RouteIcon, Ellipsis, ArrowRight, ArrowLeft, ChevronUp, ChevronDown, CircleCheck, CircleX, TriangleAlert, Flag, Lock, QrCode, Banknote, Split, CalendarClock, MessageCircle, MessageSquareText, Hand, Play } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import logoImg from "./assets/logo.png";
@@ -1541,45 +1541,6 @@ function Reports() {
 
 function brandListOf(c) { return c?.brands?.length ? c.brands : (c?.brand ? [{ brand: c.brand, price: c.price }] : []); }
 
-function MobileHeader({ user, title, subtitle, theme, onToggleTheme }) {
-  return <header className="mob-header">
-    <span className="mob-avatar">{user.name.split(' ').map(x => x[0]).join('').slice(0, 2)}</span>
-    <div className="mob-header-text"><b>{title}</b><span>{subtitle}</span></div>
-    <button type="button" className="mob-theme-btn" data-testid="mob-theme-toggle" aria-label="Alternar tema" onClick={onToggleTheme}>{theme === 'dark' ? <Moon size={18} /> : <Sun size={18} />}</button>
-  </header>
-}
-
-function MobileBottomNav({ tab, setTab }) {
-  const items = [['clientes', 'Clientes', Users], ['diario', 'Diário', CalendarCheck], ['caixa', 'Caixa', CircleDollarSign], ['despesas', 'Despesas', WalletCards], ['ajustes', 'Mais', MoreHorizontal]];
-  return <nav className="mob-bottom-nav">{items.map(([key, label, Icon]) => <button type="button" key={key} className={tab === key ? 'active' : ''} data-testid={`mob-tab-${key}`} onClick={() => setTab(key)}><Icon size={20} /><span>{label}</span></button>)}</nav>
-}
-
-function MobileToast({ text, tone = 'green' }) { if (!text) return null; return <div className={`mob-toast ${tone}`} data-testid="mob-toast">{text}</div> }
-
-function MobileStopRow({ c, done, failed, onClick }) {
-  const brands = brandListOf(c);
-  const priceLine = brands.map(b => `${b.brand} ${money(b.price)}`).join(' · ');
-  return <button type="button" className={`mob-customer-row${done ? ' done' : ''}`} data-testid={`mob-customer-row-${c.id}`} onClick={onClick}>
-    <span className="mob-customer-avatar done-aware">{done ? '✓' : (c.name?.[0] || '?')}</span>
-    <span className="mob-customer-info">
-      <b>{c.name}{c.payment_type === 'prazo' && <span className="mob-tag orange" style={{ marginLeft: 6 }}>especial</span>}</b>
-      <small>{c.address}</small>
-      {priceLine && <small>{priceLine}</small>}
-    </span>
-    <span className={`mob-tag${done ? ' done' : failed ? ' orange' : ' neutral'}`}>{done ? 'Lançado' : failed ? 'Não entregue' : 'Lançar'}</span>
-  </button>
-}
-
-function MobilePickerRow({ c, onClick }) {
-  const brands = brandListOf(c);
-  const line = brands.length ? `${brands.length} ${brands.length === 1 ? 'marca' : 'marcas'} · ${brands.map(b => b.brand).join(', ')}` : 'sem marca cadastrada';
-  return <button type="button" className="mob-customer-row" data-testid={`mob-picker-row-${c.id || 'new'}`} onClick={onClick}>
-    <span className="mob-customer-avatar">{c.name?.[0] || '?'}</span>
-    <span className="mob-customer-info"><b>{c.name}{c.code && <span className="mob-tag neutral" style={{ marginLeft: 6 }}>#{c.code}</span>}</b><small>{line}</small></span>
-    <ChevronRight size={20} color="var(--mob-blue)" />
-  </button>
-}
-
 const TURNO_LABELS = { 0: 'Manhã', 1: 'Tarde' };
 const VIAGENS_POR_TURNO = 6;
 const VIAGENS_POR_DIA = VIAGENS_POR_TURNO * 2;
@@ -1594,118 +1555,438 @@ function nextBusinessDay() {
   }
 }
 const shortDate = iso => (iso || '').split('-').reverse().slice(0, 2).join('/');
+const pad2 = n => String(n).padStart(2, '0');
+const sameName = (a, b) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase();
+const onlyDigits = (raw, max = 4) => String(raw).replace(/\D/g, '').slice(0, max);
+const parseMoney = raw => Math.max(0, Number(String(raw ?? '').replace(',', '.')) || 0);
+const round2 = v => Math.round(v * 100) / 100;
+const galoes = n => `${n} ${n === 1 ? 'galão' : 'galões'}`;
+const apiError = (e, fallback) => { const d = e?.response?.data?.detail; return typeof d === 'string' && d ? d : fallback; };
+// Trocas de MF somadas a um pedido que já existia ocupam carga além da quantidade do pedido.
+const mergedSwapQty = c => (c.mf_swaps || []).filter(s => s.merged).reduce((a, s) => a + Number(s.quantity || 0), 0);
+const clienteLoad = c => Number(c.quantity || 0) + mergedSwapQty(c);
+const entryItemsLabel = e => entryItemsList(e).map(it => `${it.quantity} ${it.brand}`).join(' + ') || galoes(Number(e.billed_quantity ?? e.quantity ?? 0));
+function entryPayLabel(e) {
+  const parts = [];
+  if (Number(e.pix_value) > 0) parts.push(`Pix ${money(e.pix_value)}`);
+  if (Number(e.cash_value) > 0) parts.push(`Dinheiro ${money(e.cash_value)}`);
+  if (Number(e.comp_value) > 0) parts.push(`A prazo ${e.comp_days || 15}d ${money(e.comp_value)}`);
+  return parts.join(' + ') || money(0);
+}
+const MOBILE_TITLES = { rota: 'Rota de hoje', viagens: 'Viagens do dia', diario: 'Controle diário', caixa: 'Caixa do dia', despesas: 'Despesas', mais: 'Ajustes' };
+const MOBILE_SCALES = [[1, 'Normal'], [1.15, 'Grande'], [1.3, 'Maior']];
+
+function MobBtn({ kind = 'primary', h = 60, icon: Icon, lead: Lead, children, className = '', ...rest }) {
+  return <button type="button" className={`mob-btn mob-btn-${kind} ${className}`} style={{ minHeight: h }} {...rest}>{Lead && <Lead size={20} />}<span>{children}</span>{Icon && <Icon size={20} />}</button>
+}
+
+function MobileConfirm({ title, text, cancelLabel = 'Voltar', confirmLabel, onCancel, onConfirm, busy, testid }) {
+  return <section className="mob-confirm" data-testid={testid}>
+    <b>{title}</b>
+    {text && <span>{text}</span>}
+    <div className="mob-grid2">
+      <MobBtn kind="outline" h={52} data-testid={testid && `${testid}-cancel`} onClick={onCancel}>{cancelLabel}</MobBtn>
+      <MobBtn kind="ink" h={52} disabled={busy} data-testid={testid && `${testid}-ok`} onClick={onConfirm}>{confirmLabel}</MobBtn>
+    </div>
+  </section>
+}
+
+function MobileHeader({ user, title }) {
+  const today = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Manaus', weekday: 'short', day: '2-digit', month: '2-digit' }).replace('.', '');
+  return <header className="mob-header">
+    <div className="mob-header-text"><span className="mob-eyebrow">Portal do entregador · {today}</span><b data-testid="mob-title">{title}</b></div>
+    <span className="mob-avatar">{user.name.split(' ').map(x => x[0]).join('').slice(0, 2)}</span>
+  </header>
+}
+
+function MobileBottomNav({ tab, setTab }) {
+  const items = [['rota', 'Rota', RouteIcon], ['diario', 'Diário', CalendarCheck], ['caixa', 'Caixa', CircleDollarSign], ['despesas', 'Despesas', WalletCards], ['mais', 'Mais', Ellipsis]];
+  return <nav className="mob-bottom-nav">{items.map(([key, label, Icon]) => <button type="button" key={key} className={tab === key || (key === 'rota' && tab === 'viagens') ? 'active' : ''} data-testid={`mob-tab-${key}`} onClick={() => setTab(key)}><Icon size={22} /><span>{label}</span></button>)}</nav>
+}
+
+function MobileToast({ text }) { if (!text) return null; return <div className="mob-toast" role="status" data-testid="mob-toast">{text}</div> }
 
 function MobileStuckTrips({ viagens, onFinalizar }) {
+  const [asking, setAsking] = useState(null);
   if (!viagens?.length) return null;
-  return <div className="mob-stuck-card" data-testid="mob-stuck-trips">
-    <p className="mob-eyebrow">VIAGEM ANTERIOR AINDA ABERTA</p>
-    <p className="mob-help" style={{ margin: 0 }}>Finalize para liberar as viagens de hoje.</p>
-    {viagens.map(v => <div className="mob-order-row" key={v.id}>
-      <div><b>{TURNO_LABELS[v.turno]} de {shortDate(v.date)}</b><small>{v.codigo_viagem}</small></div>
-      <button type="button" className="mob-outline-btn" data-testid={`mob-stuck-finalizar-${v.id}`} onClick={() => onFinalizar(v)}><Check size={16} /> Finalizar</button>
-    </div>)}
+  return <section className="mob-alert col" data-testid="mob-stuck-trips">
+    <div className="mob-alert-head"><TriangleAlert size={20} /><b>Viagem anterior ainda aberta</b></div>
+    <span>Conclua para liberar as viagens de hoje.</span>
+    {viagens.map(v => asking === v.id
+      ? <MobileConfirm key={v.id} testid={`mob-stuck-confirm-${v.id}`} title={`Concluir a viagem de ${shortDate(v.date)}?`} text="O que sobrou da carga volta para o estoque." confirmLabel="Concluir" onCancel={() => setAsking(null)} onConfirm={() => { setAsking(null); onFinalizar(v); }} />
+      : <MobBtn key={v.id} kind="warn" h={48} lead={Flag} data-testid={`mob-stuck-finalizar-${v.id}`} onClick={() => setAsking(v.id)}>{TURNO_LABELS[v.turno]} de {shortDate(v.date)} · {v.codigo_viagem}</MobBtn>)}
+  </section>
+}
+
+function MobileStepper({ value, onDec, onInc, onInc5, onType, small, testid, label }) {
+  return <div className={`mob-stepper${small ? ' sm' : ''}`}>
+    <button type="button" aria-label={`Diminuir ${label}`} data-testid={`${testid}-minus`} onClick={onDec}><Minus size={small ? 16 : 20} /></button>
+    {onType
+      ? <input type="number" inputMode="numeric" min="0" aria-label={label} value={value} data-testid={`${testid}-input`} onChange={e => onType(e.target.value)} onFocus={e => e.target.select()} />
+      : <span className="val" data-testid={`${testid}-value`}>{value}</span>}
+    <button type="button" className="plus" aria-label={`Aumentar ${label}`} data-testid={`${testid}-plus`} onClick={onInc}><Plus size={small ? 16 : 22} /></button>
+    {onInc5 && <button type="button" className="plus5" aria-label={`Aumentar ${label} em 5`} data-testid={`${testid}-plus5`} onClick={onInc5}>+5</button>}
   </div>
 }
 
-function MobileMfReminder({ items, forNewTrip, onAdd, inRouteNames }) {
-  if (!items?.length) return null;
-  const byBrand = Object.values(items.reduce((acc, m) => { acc[m.brand] = acc[m.brand] || { brand: m.brand, quantity: 0 }; acc[m.brand].quantity += Number(m.quantity) || 0; return acc; }, {}));
-  return <div className="mob-orders-card" data-testid="mob-mf-reminder" style={{ borderColor: 'var(--mob-orange)' }}>
-    <p className="mob-eyebrow">LEMBRETE · TROCA DE MF PENDENTE</p>
-    {forNewTrip && <p className="mob-help" style={{ color: 'var(--mob-orange)' }}>Inclua na carga desta viagem: {byBrand.map(b => `${b.quantity} un de ${b.brand}`).join(' + ')} para as trocas pendentes.</p>}
-    {items.map(m => <div className="mob-order-row" key={m.id}><div><b>{m.customer}</b><small>{m.quantity} un de {m.brand}{m.due_date ? ` · troca prevista para ${shortDate(m.due_date)}` : ''}{m.due ? ' · já pode entregar' : ''}</small></div>
-      {onAdd && (inRouteNames?.has(m.customer)
-        ? <span className="mob-tag done">Na rota</span>
-        : <button type="button" className="mob-outline-btn" data-testid={`mob-mf-add-${m.id}`} onClick={() => onAdd(m)}><Plus size={16} /> Pôr na rota</button>)}
-    </div>)}
-  </div>
-}
-
-function MobileTripBanner({ viagemAtiva, viagens, onOpen }) {
-  const carga = viagemAtiva?.carga_total;
-  const atual = viagemAtiva?.quantidade_atual || 0;
-  const pct = carga ? Math.min(100, Math.round((atual / carga) * 100)) : 0;
-  const numRotas = viagemAtiva?.rotas?.length || 0;
-  return <button type="button" className={`mob-trip-banner${viagemAtiva ? '' : ' pending'}`} data-testid="mob-trip-banner" onClick={onOpen}>
-    <Truck size={18} />
-    {viagemAtiva
-      ? <div><b>Viagem em execução · {TURNO_LABELS[viagemAtiva.turno]} · {numRotas} rota{numRotas !== 1 ? 's' : ''}</b><small>{viagemAtiva.codigo_viagem}{carga ? ` · ${atual}/${carga} un carregadas` : ''}</small>
-          {carga && <div className="mob-trip-progress"><div style={{ width: `${pct}%` }} className={atual > carga ? 'over' : ''} /></div>}
-        </div>
-      : <div><b>Nenhuma viagem em execução</b><small>{viagens?.length ? 'Toque para iniciar uma viagem e liberar os lançamentos' : 'Toque para criar a viagem do dia antes de lançar'}</small></div>}
-    <ChevronRight size={18} />
-  </button>
-}
-
-function MobileViagemClientPicker({ customers, selected, onAdd, onRemove, brandsCatalog }) {
-  const [q, setQ] = useState('');
-  const [configuring, setConfiguring] = useState(null);
-  const [brand, setBrand] = useState('');
-  const [customBrand, setCustomBrand] = useState(false);
-  const [quantity, setQuantity] = useState('');
-  const [saleType, setSaleType] = useState('exchange');
-  const [notes, setNotes] = useState('');
-  const inputRef = useRef(null);
-  const query = q.trim().toLowerCase();
-  const selectedIds = new Set(selected.map(c => c.id));
-  const filtered = customers
-    .filter(c => !selectedIds.has(c.id) && (!query || c.name.toLowerCase().includes(query) || (c.code || '').toLowerCase().includes(query)))
-    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
-
-  function startConfig(c) {
-    inputRef.current?.blur();
-    setConfiguring(c);
-    const brandOpts = brandListOf(c);
-    setBrand(brandOpts[0]?.brand || ''); setCustomBrand(brandOpts.length === 0); setQuantity(''); setSaleType('exchange'); setNotes('');
+function MobileSignatureBox({ canvasRef, onSigned }) {
+  const drawing = useRef(false), last = useRef([0, 0]);
+  useEffect(() => {
+    const c = canvasRef.current; if (!c) return undefined;
+    const d = window.devicePixelRatio || 1;
+    c.width = c.clientWidth * d; c.height = c.clientHeight * d; c.getContext('2d').scale(d, d);
+    return () => onSigned(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const pt = e => { const r = canvasRef.current.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  function down(e) { try { canvasRef.current.setPointerCapture(e.pointerId); } catch { /* ignore */ } drawing.current = true; last.current = pt(e); }
+  function move(e) {
+    if (!drawing.current) return;
+    const ctx = canvasRef.current.getContext('2d'), p = pt(e);
+    ctx.strokeStyle = '#201e1d'; ctx.lineWidth = 2.6; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(last.current[0], last.current[1]); ctx.lineTo(p[0], p[1]); ctx.stroke(); last.current = p;
+    onSigned(true);
   }
-  function confirmAdd() {
-    onAdd({ id: configuring.id, name: configuring.name, brand: brand || undefined, quantity: quantity ? Number(quantity) : undefined, sale_type: saleType, notes: notes || undefined });
-    setConfiguring(null); setQ('');
-  }
-
-  if (configuring) {
-    const brandOpts = brandListOf(configuring);
-    return <div className="mob-viagem-clients">
-      <div className="mob-add-brand">
-        <p className="mob-eyebrow" style={{ margin: 0 }}>{configuring.name}</p>
-        <label>Produto{brandOpts.length > 0 && !customBrand
-          ? <select value={brand} data-testid="mob-viagem-client-brand-select" onChange={e => setBrand(e.target.value)}>{brandOpts.map(b => <option key={b.brand} value={b.brand}>{b.brand} · {money(b.price)}</option>)}</select>
-          : (brandsCatalog?.length > 0
-            ? <select autoFocus={customBrand} value={brand} data-testid="mob-viagem-client-brand-catalog-select" onChange={e => setBrand(e.target.value)}><option value="">Selecione um produto</option>{brandsCatalog.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}</select>
-            : <input placeholder="ex: Minalar 20L" autoFocus={customBrand} value={brand} data-testid="mob-viagem-client-brand-input" onChange={e => setBrand(e.target.value)} />)}
-        </label>
-        {brandOpts.length > 0 && <button type="button" className="mob-brand-switch" data-testid="mob-viagem-client-brand-toggle" onClick={() => { setCustomBrand(!customBrand); setBrand(customBrand ? (brandOpts[0]?.brand || '') : ''); }}><RefreshCw size={13} /> {customBrand ? 'Usar produto do cadastro do cliente' : 'Cliente pediu outro produto (ver catálogo completo)'}</button>}
-        <label>Quantidade<input type="number" inputMode="numeric" min="0" value={quantity} data-testid="mob-viagem-client-qty" onChange={e => setQuantity(e.target.value)} /></label>
-        <div className="mob-sale-type">
-          <button type="button" className={saleType === 'exchange' ? 'active' : ''} data-testid="mob-viagem-client-exchange" onClick={() => setSaleType('exchange')}>Somente água</button>
-          <button type="button" className={saleType === 'full' ? 'active' : ''} data-testid="mob-viagem-client-full" onClick={() => setSaleType('full')}>Venda completa</button>
-        </div>
-        <label>Observações (opcional)<input value={notes} data-testid="mob-viagem-client-notes" onChange={e => setNotes(e.target.value)} /></label>
-        <div className="mob-row-actions">
-          <button type="button" className="mob-ghost-btn" onClick={() => setConfiguring(null)}>Cancelar</button>
-          <button type="button" className="primary" data-testid="mob-viagem-client-confirm" onClick={confirmAdd}>Adicionar cliente</button>
-        </div>
-      </div>
-    </div>;
-  }
-
-  return <div className="mob-viagem-clients">
-    <div className="mob-search"><Search size={15} /><input ref={inputRef} placeholder="Buscar cliente cadastrado" value={q} data-testid="mob-viagem-client-search" onChange={e => setQ(e.target.value)} /></div>
-    {selected.length > 0 && <div className="mob-viagem-client-chips">
-      {selected.map(c => <span className="mob-viagem-client-chip" key={c.id} data-testid={`mob-viagem-client-chip-${c.id}`}>{c.name}{c.brand ? ` · ${c.brand}` : ''}{c.quantity ? ` · ${c.quantity}` : ''}<button aria-label="Remover cliente selecionado" type="button" onClick={() => onRemove(c.id)}><X size={12} /></button></span>)}
-    </div>}
-    <div className="mob-viagem-client-list">
-      {filtered.slice(0, 30).map(c => {
-        const brands = brandListOf(c);
-        return <button type="button" key={c.id} className="mob-viagem-client-row" data-testid={`mob-viagem-client-${c.id}`} onMouseDown={e => e.preventDefault()} onClick={() => startConfig(c)}>
-          <span className="mob-customer-avatar">{c.name?.[0] || '?'}</span>
-          <span className="mob-customer-info"><b>{c.name}{c.code && <span className="mob-tag neutral" style={{ marginLeft: 6 }}>#{c.code}</span>}</b><small>{brands.length ? brands.map(b => b.brand).join(', ') : 'sem marca cadastrada'}</small></span>
-          <Plus size={18} color="var(--mob-muted)" />
-        </button>
-      })}
-      {filtered.length === 0 && <p className="muted" style={{ padding: '10px 4px' }}>Nenhum cliente encontrado.</p>}
+  function up() { drawing.current = false; }
+  function clear() { const c = canvasRef.current; c.getContext('2d').clearRect(0, 0, c.width, c.height); onSigned(false); }
+  return <div className="mob-field">
+    <div className="mob-sign-head"><b className="mob-label">Assinatura do cliente</b><button type="button" className="mob-link" data-testid="signature-clear" onClick={clear}><Eraser size={16} />Limpar</button></div>
+    <div className="mob-sign-box">
+      <canvas ref={canvasRef} data-testid="signature-canvas" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up} />
+      <span className="mob-sign-guide" />
+      <span className="mob-sign-hint">Assine com o dedo</span>
     </div>
   </div>
+}
+
+function buildLaunchLines(customer, stop) {
+  const lines = brandListOf(customer).map(b => ({ brand: b.brand, priceExchange: Number(b.price) || 0, priceFull: b.price_full != null ? Number(b.price_full) || 0 : null, qtyExchange: 0, qtyFull: 0, mf: 0 }));
+  const lineFor = brand => {
+    let l = lines.find(x => sameName(x.brand, brand));
+    if (!l) {
+      // Produto fora do cadastro do cliente: o preço vem do que ficou gravado na rota (catálogo); sem ele, o entregador informa.
+      const own = sameName(stop.brand, brand);
+      l = { brand, priceExchange: own && stop.price != null ? Number(stop.price) || 0 : 0, priceFull: own && stop.price_full != null ? Number(stop.price_full) || 0 : null, qtyExchange: 0, qtyFull: 0, mf: 0, outOfCatalog: true, askPrice: !(own && stop.price != null), priceStr: '' };
+      lines.push(l);
+    }
+    return l;
+  };
+  if (stop.brand) { const l = lineFor(stop.brand), q = Number(stop.quantity) || 0; if (stop.sale_type === 'full') l.qtyFull += q; else l.qtyExchange += q; }
+  for (const s of (stop.mf_swaps || [])) if (s.merged && s.brand) lineFor(s.brand).qtyExchange += Number(s.quantity) || 0;
+  return lines;
+}
+
+const LAUNCH_STEPS = ['Quantidade', 'Pagamento', 'Assinatura'];
+const PAY_MODES = [['pix', 'Pix', QrCode], ['dinheiro', 'Dinheiro', Banknote], ['misto', 'Pix + dinheiro', Split], ['prazo', 'A prazo', Clock3]];
+const MF_PLANS = [['reschedule', 'Entregar no próximo dia útil', CalendarClock], ['swap', 'Trocar agora no caminhão', RefreshCw], ['refused', 'Cliente não quis', CircleX]];
+
+function MobileLaunchPanel({ stop, user, date, viagemId, cargaRestante, othersPending, onClose, onComplete, onFailed, onOpenViagens }) {
+  const customer = stop.customer || { id: stop.id, name: stop.name, brands: [] };
+  const draftKey = `hydro_draft_${stop.id || 'novo_' + (stop.name || 'cliente')}`;
+  const draft = useMemo(() => { try { const d = JSON.parse(localStorage.getItem(draftKey)); return d?.v === 2 ? d : null; } catch { return null; } }, [draftKey]);
+
+  const [step, setStep] = useState(1);
+  const [lines, setLines] = useState(() => draft?.lines || buildLaunchLines(customer, stop));
+  const [mfPlan, setMfPlan] = useState(draft?.mfPlan ?? null);
+  const [payMode, setPayMode] = useState(draft?.payMode ?? (customer.payment_type === 'prazo' ? 'prazo' : null));
+  const [pixStr, setPixStr] = useState(draft?.pixStr ?? '');
+  const [compDays, setCompDays] = useState(draft?.compDays ?? 15);
+  const [signerName, setSignerName] = useState(draft?.signerName ?? '');
+  const [signed, setSigned] = useState(false);
+  const [failAsk, setFailAsk] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    try { localStorage.setItem(draftKey, JSON.stringify({ v: 2, lines, mfPlan, payMode, pixStr, compDays, signerName })); } catch { /* ignore quota errors */ }
+  }, [draftKey, lines, mfPlan, payMode, pixStr, compDays, signerName]);
+  function clearDraft() { try { localStorage.removeItem(draftKey); } catch { /* ignore */ } }
+
+  const fullPrice = l => l.priceFull != null ? l.priceFull : parseMoney(l.priceFullManual);
+  // MF trocado na hora entrega um galão bom no lugar do defeituoso — o cliente paga por ele normalmente.
+  const lineTotal = l => l.qtyExchange * l.priceExchange + l.qtyFull * fullPrice(l) + (mfPlan === 'swap' ? l.mf * l.priceExchange : 0);
+  const total = round2(lines.reduce((s, l) => s + lineTotal(l), 0));
+  const qty = lines.reduce((s, l) => s + l.qtyExchange + l.qtyFull, 0);
+  const totalMf = lines.reduce((s, l) => s + l.mf, 0);
+  const pix = payMode === 'pix' ? total : payMode === 'misto' ? Math.min(total, round2(parseMoney(pixStr))) : 0;
+  const cash = payMode === 'dinheiro' ? total : payMode === 'misto' ? round2(total - pix) : 0;
+  const comp = payMode === 'prazo' ? total : 0;
+  // A troca na hora gasta 2 unidades da carga por MF (a boa que fica e a com defeito que volta no caminhão) e a carga ainda precisa cobrir o resto da rota.
+  const swapDisabled = cargaRestante != null && (qty + 2 * totalMf + (othersPending || 0)) > cargaRestante;
+  useEffect(() => { if (swapDisabled) setMfPlan(prev => prev === 'swap' ? null : prev); }, [swapDisabled]);
+  useEffect(() => { if (totalMf === 0) setMfPlan(null); }, [totalMf]);
+
+  const mod = (i, fn) => setLines(prev => prev.map((l, j) => j === i ? fn(l) : l));
+  const typed = raw => Math.max(0, parseInt(onlyDigits(raw), 10) || 0);
+  const missingPrice = lines.some(l => ((l.qtyExchange > 0 || l.mf > 0) && l.askPrice && l.priceExchange <= 0) || (l.qtyFull > 0 && fullPrice(l) <= 0));
+
+  const qtyLabel = `${galoes(qty)}${totalMf ? ` · ${totalMf} MF` : ''}`;
+  const payShort = { pix: 'Pix', dinheiro: 'Dinheiro', misto: `Pix ${money(pix)} + Dinheiro ${money(cash)}`, prazo: `A prazo · ${compDays} dias` }[payMode] || '';
+  const canNext = step === 1 ? ((qty > 0 || totalMf > 0) && (totalMf === 0 || !!mfPlan) && !missingPrice) : step === 2 ? !!payMode : (signed && !saving);
+  const primaryLabel = step === 1
+    ? (qty + totalMf === 0 ? 'Informe a quantidade' : totalMf > 0 && !mfPlan ? 'Decida sobre o MF' : missingPrice ? 'Informe o preço' : 'Continuar')
+    : step === 2 ? (payMode ? 'Continuar' : 'Escolha o pagamento')
+      : (saving ? 'Enviando...' : signed ? 'Concluir entrega' : 'Aguardando assinatura');
+
+  async function complete() {
+    setSaving(true); setError('');
+    const items = [];
+    for (const l of lines) {
+      const extra = l.outOfCatalog ? { out_of_catalog: true } : {};
+      if (l.qtyExchange > 0 || l.mf > 0) items.push({ brand: l.brand, price: l.priceExchange, sale_type: 'exchange', quantity: l.qtyExchange, mf_quantity: l.mf, ...extra });
+      if (l.qtyFull > 0) items.push({ brand: l.brand, price: fullPrice(l), sale_type: 'full', quantity: l.qtyFull, ...extra });
+    }
+    const payload = {
+      customer: stop.name, driver: user.name, date, items,
+      pix_value: round2(pix), cash_value: round2(cash), comp_value: round2(comp), comp_days: comp > 0 ? compDays : undefined,
+      mf_plan: totalMf > 0 ? mfPlan : undefined, mf_date: totalMf > 0 && mfPlan === 'reschedule' ? 'Próximo dia útil' : undefined,
+      signature: canvasRef.current?.toDataURL('image/png'), signature_name: signerName.trim() || undefined,
+      viagem_id: viagemId || undefined, rota_id: stop.rota_id || undefined,
+    };
+    try {
+      const { data } = await api.post('/daily-entries', payload, auth());
+      clearDraft();
+      onComplete(data);
+    } catch (e) { setError(apiError(e, 'Não foi possível concluir.')); setSaving(false); }
+  }
+  function primary() {
+    if (!canNext) return;
+    setError('');
+    if (step < 3) return setStep(step + 1);
+    complete();
+  }
+  async function confirmFail() {
+    clearDraft();
+    try { await api.patch(`/viagens/${viagemId}/rotas/${stop.rota_id}/clientes/${stop.id}`, { name: stop.name, status: 'nao_entregue' }, auth()); onFailed(); }
+    catch (e) { setError(apiError(e, 'Não foi possível marcar como não entregue.')); setFailAsk(false); }
+  }
+
+  const swapQty = Number(stop.mf_swap_quantity) || 0;
+  return <>
+    <div className="mob-launch-head">
+      <button type="button" className="mob-sq" aria-label={step === 1 ? 'Fechar' : 'Voltar'} data-testid="mob-panel-close" onClick={() => step === 1 ? onClose() : setStep(step - 1)}>{step === 1 ? <X size={20} /> : <ArrowLeft size={20} />}</button>
+      <div><span className="mob-eyebrow">Rota {pad2(stop.rota_numero)} · Parada {pad2(stop.seq)}</span><b>{stop.name}</b></div>
+    </div>
+    <div className="mob-steps">{LAUNCH_STEPS.map((label, i) => <div key={label} className={i + 1 === step ? 'now' : i + 1 < step ? 'past' : ''} data-testid={`mob-step-${i + 1}`}>{i + 1} {label}</div>)}</div>
+
+    <div className="mob-launch-scroll"><div className="mob-launch-col">
+      {step === 1 && <>
+        {swapQty > 0 && <div className="mob-swap-band" data-testid="mob-swap-band"><RefreshCw size={20} /><b>Troca de MF · levar {swapQty} galão(ões) bom(ns) e recolher o com defeito</b></div>}
+        {stop.brand && <div className="mob-order-box" data-testid="mob-order-banner">
+          <span className="mob-eyebrow">Pedido da rota</span>
+          <b>{Number(stop.quantity) || 0} × {stop.brand} · {stop.sale_type === 'full' ? 'completo (vasilhame + água)' : 'somente água'}{stop.out_of_catalog ? ' · produto novo p/ cliente' : ''}</b>
+          {stop.notes && <span>{stop.notes}</span>}
+        </div>}
+        {lines.length === 0 && <p className="mob-muted">Este cliente não tem produto no cadastro nem pedido na rota. Volte em Viagens do dia e escolha o produto da parada.</p>}
+        {lines.map((l, i) => <section className="mob-brand-sec" key={l.brand} data-testid={`mob-line-${i}`}>
+          <div className="mob-brand-top"><b>{l.brand}</b><b>{money(lineTotal(l))}</b></div>
+          {l.askPrice && <label className="mob-field"><b className="mob-label">Preço combinado (R$ por galão)</b><input className="mob-input" inputMode="decimal" placeholder="0,00" value={l.priceStr || ''} data-testid={`mob-line-price-${i}`} onChange={e => mod(i, x => ({ ...x, priceStr: e.target.value, priceExchange: parseMoney(e.target.value) }))} onFocus={e => e.target.select()} /></label>}
+          <div className="mob-qrow">
+            <span><b>Somente água</b><small>{money(l.priceExchange)} / galão</small></span>
+            <MobileStepper label="somente água" testid={`mob-qty-exchange-${i}`} value={l.qtyExchange} onType={v => mod(i, x => ({ ...x, qtyExchange: typed(v) }))} onDec={() => mod(i, x => ({ ...x, qtyExchange: Math.max(0, x.qtyExchange - 1) }))} onInc={() => mod(i, x => ({ ...x, qtyExchange: x.qtyExchange + 1 }))} onInc5={() => mod(i, x => ({ ...x, qtyExchange: x.qtyExchange + 5 }))} />
+          </div>
+          {(l.priceFull != null || l.qtyFull > 0) && <div className="mob-qrow">
+            <span><b>Completo</b><small>{l.priceFull != null ? `${money(l.priceFull)} · vasilhame + água` : 'vasilhame + água · sem preço no cadastro'}</small></span>
+            <MobileStepper label="completo" testid={`mob-qty-full-${i}`} value={l.qtyFull} onType={v => mod(i, x => ({ ...x, qtyFull: typed(v) }))} onDec={() => mod(i, x => ({ ...x, qtyFull: Math.max(0, x.qtyFull - 1) }))} onInc={() => mod(i, x => ({ ...x, qtyFull: x.qtyFull + 1 }))} onInc5={() => mod(i, x => ({ ...x, qtyFull: x.qtyFull + 5 }))} />
+          </div>}
+          {l.qtyFull > 0 && l.priceFull == null && <label className="mob-field"><b className="mob-label">Preço da venda completa</b><input className="mob-input" inputMode="decimal" placeholder="0,00" value={l.priceFullManual || ''} data-testid={`mob-sale-full-price-${i}`} onChange={e => mod(i, x => ({ ...x, priceFullManual: e.target.value }))} onFocus={e => e.target.select()} /></label>}
+          <div className="mob-qrow mf">
+            <span><b>Microfuro (MF)</b><small>Galão com defeito</small></span>
+            <MobileStepper small label="MF" testid={`mob-mf-${i}`} value={l.mf} onDec={() => mod(i, x => x.mf > 0 ? { ...x, qtyExchange: x.qtyExchange + 1, mf: x.mf - 1 } : x)} onInc={() => mod(i, x => x.qtyExchange > 0 ? { ...x, qtyExchange: x.qtyExchange - 1, mf: x.mf + 1 } : x)} />
+          </div>
+        </section>)}
+        {totalMf > 0 && <section className="mob-mf-ask" data-testid="mob-mf-decision">
+          <b>{totalMf} galão{totalMf > 1 ? 'ões' : ''} com microfuro · o que foi decidido?</b>
+          {MF_PLANS.map(([k, label, Icon]) => <button type="button" key={k} className={`mob-pick${mfPlan === k ? ' on' : ''}`} disabled={k === 'swap' && swapDisabled} data-testid={`mob-mf-${k}`} onClick={() => setMfPlan(k)}><Icon size={20} /><span>{label}</span></button>)}
+          {swapDisabled && <span className="mob-muted" data-testid="mob-mf-no-spare">A carga desta viagem está certa para a rota e não tem sobra para trocar agora. A troca fica para o próximo dia útil ({shortDate(nextBusinessDay())}).</span>}
+          {mfPlan === 'reschedule' && <span className="mob-muted" data-testid="mob-mf-reschedule-info">Fica como troca de MF pendente para incluir numa viagem a partir de {shortDate(nextBusinessDay())}.</span>}
+        </section>}
+        {failAsk
+          ? <MobileConfirm testid="mob-fail-confirm" title="Marcar como não entregue?" text="Nada é descontado do estoque." confirmLabel="Não entreguei" onCancel={() => setFailAsk(false)} onConfirm={confirmFail} />
+          : <button type="button" className="mob-link h48" data-testid="mob-fail-button" onClick={() => setFailAsk(true)}><CircleX size={18} />Não consegui entregar</button>}
+      </>}
+
+      {step === 2 && <>
+        <section className="mob-total-hero">
+          <span className="mob-eyebrow">Total a receber</span>
+          <b data-testid="mob-launch-total">{money(total)}</b>
+          <span className="mob-muted">{qtyLabel}</span>
+        </section>
+        <b className="mob-label">Como o cliente pagou?</b>
+        <div className="mob-grid2">
+          {PAY_MODES.map(([k, label, Icon]) => <button type="button" key={k} className={`mob-tile${payMode === k ? ' on' : ''}`} data-testid={`mob-pay-${k}`} onClick={() => setPayMode(k)}><Icon size={24} /><span>{label}</span></button>)}
+        </div>
+        {payMode === 'misto' && <>
+          <div className="mob-grid2">
+            <label className="mob-field"><b className="mob-label">Pix</b><input className="mob-input big" inputMode="decimal" placeholder="0,00" value={pixStr} data-testid="mob-pix-input" onChange={e => setPixStr(e.target.value)} onFocus={e => e.target.select()} /></label>
+            <div className="mob-field"><b className="mob-label">Dinheiro (resto)</b><span className="mob-readonly" data-testid="mob-cash-rest">{money(cash)}</span></div>
+          </div>
+          <span className="mob-muted">Digite o Pix — o dinheiro completa sozinho.</span>
+        </>}
+        {payMode === 'prazo' && <div className="mob-field"><b className="mob-label">Prazo</b>
+          <div className="mob-seg">{[15, 30].map(d => <button type="button" key={d} className={compDays === d ? 'on' : ''} data-testid={`mob-comp-${d}`} onClick={() => setCompDays(d)}>{d} dias</button>)}</div>
+        </div>}
+      </>}
+
+      {step === 3 && <>
+        <section className="mob-sum-row"><span className="mob-muted">{qtyLabel} · {payShort}</span><b>{money(total)}</b></section>
+        <label className="mob-field"><b className="mob-label">Quem recebeu (opcional)</b><input className="mob-input" placeholder="Nome de quem assinou" value={signerName} data-testid="signature-name-input" onChange={e => setSignerName(e.target.value)} /></label>
+        <MobileSignatureBox canvasRef={canvasRef} onSigned={setSigned} />
+      </>}
+
+      {error && <div className="mob-error" data-testid="mob-panel-error">{error}{error.includes('carga da viagem') && <button type="button" className="mob-link" data-testid="mob-panel-error-open-viagens" onClick={onOpenViagens}>Abrir Viagens do dia para ajustar</button>}</div>}
+    </div></div>
+
+    <div className="mob-launch-foot">
+      <div className="mob-foot-total"><span className="mob-eyebrow">Total</span><b>{money(total)}</b></div>
+      <MobBtn h={68} icon={ArrowRight} disabled={!canNext} data-testid={step === 3 ? 'signature-save' : 'mob-launch-next'} onClick={primary}>{primaryLabel}</MobBtn>
+    </div>
+  </>
+}
+
+function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, setSearch, mfPending, viagensPresas, onFinalizarPresa, dayClosed, onOpenStop, onOpenViagens, onStartTrip, onFinishTrip, offRoute, onPickOffRoute, onReceipt, onEditEntry, onDeleteEntry }) {
+  const [finishAsk, setFinishAsk] = useState(false);
+  const [openDone, setOpenDone] = useState(null);
+  const [deleteAsk, setDeleteAsk] = useState(null);
+  const q = search.trim().toLowerCase();
+  const match = s => !q || s.name.toLowerCase().includes(q) || (s.address || '').toLowerCase().includes(q) || (s.customer?.code || '').toLowerCase().includes(q);
+  const pending = stops.filter(s => s.status === 'pending');
+  const finished = stops.filter(s => s.status !== 'pending');
+  const done = stops.filter(s => s.status === 'done');
+  const failed = stops.filter(s => s.status === 'failed');
+  const received = entries.filter(e => e.date === date).reduce((a, e) => a + Number(e.pix_value || 0) + Number(e.cash_value || 0), 0);
+  const tripTotal = done.reduce((a, s) => a + Number(s.entry?.total || 0), 0);
+  const nextPlanned = viagens.find(v => v.status === 'planejada');
+  const lastDone = [...viagens].reverse().find(v => v.status === 'finalizada');
+  const carga = viagemAtiva?.carga_total, atual = viagemAtiva?.quantidade_atual || 0;
+  const showNext = !!viagemAtiva && !q && pending.length > 0;
+  const next = showNext ? pending[0] : null;
+  const pendingRows = pending.filter(s => s !== next).filter(match);
+  const doneRows = finished.filter(match);
+  const orderSub = s => `${Number(s.quantity) || 0} × ${s.brand || 'produto a combinar'}${s.sale_type === 'full' ? ' completo' : ''}`;
+
+  function askFinish() {
+    if (carga && atual !== carga) return setFinishAsk(true);
+    onFinishTrip(viagemAtiva);
+  }
+  const diff = (carga || 0) - atual;
+
+  return <>
+    <MobileStuckTrips viagens={viagensPresas} onFinalizar={onFinalizarPresa} />
+    {dayClosed && <section className="mob-band" data-testid="mob-day-closed-summary"><Lock size={20} /><b>Dia fechado. Lançamentos bloqueados.</b></section>}
+
+    {!viagemAtiva && !dayClosed && <section className="mob-poster" data-testid="mob-trip-banner">
+      <span className="mob-eyebrow">{lastDone ? `Viagem ${lastDone.numero} concluída` : 'Nenhuma viagem em execução'}</span>
+      <b>{nextPlanned ? `Viagem ${nextPlanned.numero} pronta para sair.` : lastDone ? 'Quer fazer outra viagem hoje?' : 'Crie a viagem para liberar os lançamentos.'}</b>
+      {nextPlanned
+        ? <MobBtn kind="white" lead={Truck} icon={ArrowRight} data-testid="mob-start-planned-button" onClick={() => onStartTrip(nextPlanned)}>Iniciar viagem {nextPlanned.numero} · {TURNO_LABELS[nextPlanned.turno]}</MobBtn>
+        : <MobBtn kind="white" lead={Plus} icon={ArrowRight} data-testid="mob-new-delivery-button" onClick={() => onOpenViagens()}>Criar viagem</MobBtn>}
+      {nextPlanned && <button type="button" className="mob-link on-accent" data-testid="mob-poster-open-viagens" onClick={() => onOpenViagens(nextPlanned.id)}>Ver rotas e clientes<ChevronRight size={16} /></button>}
+    </section>}
+
+    {viagemAtiva && <section className="mob-tripbar" data-testid="mob-trip-banner">
+      <div className="mob-tripbar-top">
+        <div><span className="mob-eyebrow red"><i />Viagem em execução</span><b>{TURNO_LABELS[viagemAtiva.turno]} · Viagem {viagemAtiva.numero} · {viagemAtiva.codigo_viagem}</b></div>
+        <MobBtn kind="outline" h={44} icon={ChevronRight} data-testid="mob-open-viagens" onClick={() => onOpenViagens(viagemAtiva.id)}>Viagens</MobBtn>
+      </div>
+      <div className="mob-carga">
+        {carga ? <div className="mob-bar"><div className={atual > carga ? 'over' : ''} style={{ width: `${Math.min(100, Math.round(atual / carga * 100))}%` }} /></div> : null}
+        <span data-testid="mob-carga-label">Carga {carga ? `${atual}/${carga} un` : `${atual} un entregues`}</span>
+      </div>
+    </section>}
+
+    {mfPending.length > 0 && <section className="mob-alert" data-testid="mob-mf-reminder">
+      <TriangleAlert size={20} />
+      <div>
+        <b>Troca de MF pendente</b>
+        <span>{mfPending.map(m => `${m.customer} · ${m.quantity} un de ${m.brand}`).join(' · ')}</span>
+        {!dayClosed && <MobBtn kind="warn-outline" h={40} icon={ArrowRight} data-testid="mob-mf-include" onClick={() => onOpenViagens((viagemAtiva || nextPlanned)?.id)}>Incluir numa viagem</MobBtn>}
+      </div>
+    </section>}
+
+    {viagemAtiva && stops.length > 0 && pending.length === 0 && <section className="mob-card" data-testid="mob-all-done">
+      <div className="mob-card-body">
+        <span className="mob-eyebrow red"><CircleCheck size={16} />Todas as rotas concluídas</span>
+        <b className="mob-h24">{done.length} entrega{done.length === 1 ? '' : 's'} · {money(tripTotal)}</b>
+        <span className="mob-muted">{failed.length > 0 ? `${failed.length} não entregue(s). ` : ''}Conclua para limpar a tela e devolver a sobra da carga.</span>
+      </div>
+      {finishAsk
+        ? <MobileConfirm testid="mob-finish-confirm" title="Concluir mesmo assim?" text={diff > 0 ? `Faltam ${diff} unidade(s) para bater com a carga total (${atual}/${carga}).` : `Foram lançadas ${-diff} unidade(s) a mais que a carga total (${atual}/${carga}).`} confirmLabel="Concluir viagem" onCancel={() => setFinishAsk(false)} onConfirm={() => { setFinishAsk(false); onFinishTrip(viagemAtiva); }} />
+        : <MobBtn h={64} lead={Flag} icon={ArrowRight} data-testid="mob-finish-trip" onClick={askFinish}>Concluir viagem</MobBtn>}
+    </section>}
+
+    {viagemAtiva && stops.length === 0 && <section className="mob-card plain" data-testid="mob-empty-trip">
+      <div className="mob-card-body"><b className="mob-h20">Esta viagem ainda não tem clientes.</b><span className="mob-muted">Monte as rotas da viagem e adicione os clientes de cada uma.</span></div>
+      <MobBtn lead={RouteIcon} icon={ArrowRight} data-testid="mob-build-routes" onClick={() => onOpenViagens(viagemAtiva.id)}>Montar rotas</MobBtn>
+    </section>}
+
+    {stops.length > 0 && <>
+      <section className="mob-progress">
+        <div><b>{finished.length} de {stops.length} paradas</b><b data-testid="mob-received-today">{money(received)}</b></div>
+        <div className="mob-cells">{stops.map(s => <i key={s.key} className={s.status} />)}</div>
+        <span className="mob-muted">Recebido hoje · Pix + dinheiro</span>
+      </section>
+
+      {next && <section className="mob-card" data-testid="mob-next-stop">
+        <div className="mob-card-body">
+          <span className="mob-eyebrow">Próxima parada · Rota {pad2(next.rota_numero)} · Nº {pad2(next.seq)}</span>
+          {next.mf_swap_quantity > 0 && <span className="mob-tag swap big"><RefreshCw size={14} />Troca MF · {next.mf_swap_quantity} un</span>}
+          <b className="mob-h26">{next.name}</b>
+          {next.address && <span className="mob-muted">{next.address}</span>}
+        </div>
+        <div className="mob-next-grid">
+          <div><span className="mob-eyebrow">Pedido</span><b>{Number(next.quantity) || 0} × {next.brand || 'a combinar'}</b></div>
+          <div><span className="mob-eyebrow">Tipo</span><b>{next.sale_type === 'full' ? 'Completo' : 'Somente água'}</b></div>
+        </div>
+        {next.notes && <div className="mob-next-notes"><MessageSquareText size={18} /><span>{next.notes}</span></div>}
+        <MobBtn h={64} icon={ArrowRight} data-testid={`mob-order-launch-${next.id}`} onClick={() => onOpenStop(next)}>Lançar entrega</MobBtn>
+      </section>}
+    </>}
+
+    {viagemAtiva && <label className="mob-search"><Search size={20} /><input placeholder="Buscar cliente ou endereço" value={search} data-testid="mob-search-input" onChange={e => setSearch(e.target.value)} /></label>}
+
+    {stops.length > 0 && <section className="mob-list" data-testid="mob-pending-orders">
+      <div className="mob-sec-head"><b>Pendentes</b><b>{pending.length}</b></div>
+      {pendingRows.map(s => <button type="button" className="mob-row" key={s.key} data-testid={`mob-customer-row-${s.id}`} onClick={() => onOpenStop(s)}>
+        <span className="mob-num">{pad2(s.seq)}</span>
+        <span className="mob-row-main"><b>{s.name}</b><small>Rota {pad2(s.rota_numero)} · {orderSub(s)}</small></span>
+        {s.mf_swap_quantity > 0 && <span className="mob-tag swap"><RefreshCw size={12} />TROCA MF</span>}
+        {s.prazo && <span className="mob-tag warn">a prazo</span>}
+        <ChevronRight size={22} />
+      </button>)}
+      {pendingRows.length === 0 && <p className="mob-muted pad">{pending.length === 0 ? 'Nenhuma parada pendente.' : q ? 'Nenhuma parada pendente com esse nome.' : 'A próxima parada está no cartão acima.'}</p>}
+    </section>}
+
+    {q && offRoute.length > 0 && <section className="mob-list" data-testid="mob-off-route">
+      <div className="mob-sec-head"><b>Fora da rota · cadastro</b><b>{offRoute.length}</b></div>
+      {offRoute.slice(0, 8).map(c => <button type="button" className="mob-row sm" key={c.id} data-testid={`mob-picker-row-${c.id}`} onClick={() => onPickOffRoute(c)}>
+        <span className="mob-row-main"><b>{c.name}</b><small>{brandListOf(c).map(b => b.brand).join(', ') || 'sem marca cadastrada'}{c.address ? ` · ${c.address}` : ''}</small></span>
+        <Plus size={20} />
+      </button>)}
+    </section>}
+
+    {doneRows.length > 0 && <section className="mob-list" data-testid="mob-finished">
+      <div className="mob-sec-head"><b>Finalizadas</b><b>{finished.length}</b></div>
+      {doneRows.map(s => {
+        const isFailed = s.status === 'failed', open = openDone === s.key;
+        return <div key={s.key} className="mob-done">
+          <button type="button" className="mob-row sm" data-testid={`mob-done-row-${s.id}`} onClick={() => isFailed ? onOpenStop(s) : setOpenDone(open ? null : s.key)}>
+            <span className={`mob-badge${isFailed ? ' off' : ''}`}>{isFailed ? <X size={18} /> : <Check size={18} />}</span>
+            <span className="mob-row-main"><b>{s.name}</b><small>{isFailed ? 'Não entregue · toque para tentar de novo' : `${entryItemsLabel(s.entry)} · ${entryPayLabel(s.entry)}`}</small></span>
+            <b>{isFailed ? '—' : money(s.entry.total)}</b>
+          </button>
+          {open && !isFailed && (deleteAsk === s.key
+            ? <MobileConfirm testid="mob-entry-delete-confirm" title={`Excluir a entrega de ${s.name}?`} text={`${money(s.entry.total)} · o estoque e a carga são estornados.`} confirmLabel="Excluir" onCancel={() => setDeleteAsk(null)} onConfirm={() => { setDeleteAsk(null); setOpenDone(null); onDeleteEntry(s.entry); }} />
+            : <div className="mob-done-actions">
+              <MobBtn kind="outline" h={48} lead={MessageCircle} data-testid={`mob-entry-receipt-${s.entry.id}`} onClick={() => onReceipt(s.entry)}>Comprovante</MobBtn>
+              {!dayClosed && <MobBtn kind="outline" h={48} lead={Pencil} data-testid={`mob-viagem-entrega-editar-${s.entry.id}`} onClick={() => onEditEntry(s.entry)}>Revisar</MobBtn>}
+              {!dayClosed && <MobBtn kind="outline" h={48} lead={Trash2} data-testid={`mob-viagem-entrega-excluir-${s.entry.id}`} onClick={() => setDeleteAsk(s.key)}>Excluir</MobBtn>}
+            </div>)}
+        </div>
+      })}
+    </section>}
+  </>
 }
 
 function MobileEditEntregaModal({ entry, onClose, onSaved }) {
@@ -1815,866 +2096,6 @@ function MobileEditEntregaModal({ entry, onClose, onSaved }) {
   </div>
 }
 
-function MobileViagensSheet({ viagens: viagensHoje, customers, onClose, onCreate, onIniciar, onFinalizar, onDelete, onAddRota, onAddRotaCliente, onUpdateRotaCliente, onRemoveRotaCliente, onRemoveRota, onUpdateViagem, onEntriesChanged, onAddEntrega, dayClosed, mfPending, viagensPresas, onFinalizarPresa, onStarted }) {
-  const [turno, setTurno] = useState(0);
-  const [cargaTotal, setCargaTotal] = useState('');
-  const [cargaItems, setCargaItems] = useState([]);
-  const [brandsCatalog, setBrandsCatalog] = useState([]);
-  const [newCargaBrand, setNewCargaBrand] = useState('');
-  const [newCargaQty, setNewCargaQty] = useState('');
-  const [addingRotaFor, setAddingRotaFor] = useState(null);
-  const [rotaClientes, setRotaClientes] = useState([]);
-  const [rotaError, setRotaError] = useState('');
-  const [savingRota, setSavingRota] = useState(false);
-  const [error, setError] = useState('');
-  const [confirmMsg, setConfirmMsg] = useState('');
-  const [viagensDate, setViagensDate] = useState(todayISO(0));
-  const [viagensList, setViagensList] = useState(viagensHoje);
-  const isToday = viagensDate === todayISO(0);
-  const viagens = isToday ? viagensHoje : viagensList;
-
-  async function loadForDate() {
-    if (isToday) { setViagensList(viagensHoje); return; }
-    const { data } = await api.get('/viagens', { ...auth(), params: { date: viagensDate } });
-    setViagensList(data.viagens);
-  }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { loadForDate(); }, [viagensDate]);
-  useEffect(() => { if (isToday) setViagensList(viagensHoje); }, [viagensHoje, isToday]);
-
-  useEffect(() => { api.get('/brands', auth()).then(({ data }) => setBrandsCatalog(data.filter(b => b.active !== false))).catch(() => { }); }, []);
-
-  function addCargaItem() {
-    if (!newCargaBrand || !newCargaQty || Number(newCargaQty) <= 0) return;
-    setCargaItems(prev => [...prev.filter(i => i.brand !== newCargaBrand), { brand: newCargaBrand, quantity: Number(newCargaQty) }]);
-    setNewCargaBrand(''); setNewCargaQty('');
-  }
-  function removeCargaItem(brand) { setCargaItems(prev => prev.filter(i => i.brand !== brand)); }
-  const cargaItemsTotal = cargaItems.reduce((s, i) => s + i.quantity, 0);
-  const [expanded, setExpanded] = useState(null);
-  const [viagemEntries, setViagemEntries] = useState([]);
-  const [loadingEntries, setLoadingEntries] = useState(false);
-  const [entriesError, setEntriesError] = useState('');
-  const [editingEntry, setEditingEntry] = useState(null);
-  const [viewTab, setViewTab] = useState(dayClosed || viagens.length > 0 ? 'ver' : 'criar');
-  const statusLabel = { planejada: 'Planejada', execucao: 'Em execução', finalizada: 'Finalizada' };
-  const statusTag = { planejada: 'orange', execucao: 'blue', finalizada: 'green' };
-
-  async function loadViagemEntries(codigoViagem) {
-    setLoadingEntries(true); setEntriesError('');
-    try { const { data } = await api.get('/daily-entries', { ...auth(), params: { codigo_viagem: codigoViagem } }); setViagemEntries(data); }
-    catch (e) { setViagemEntries([]); setEntriesError(e.response?.data?.detail || e.message || 'Não foi possível carregar as entregas.'); }
-    finally { setLoadingEntries(false); }
-  }
-
-  async function toggleEntregas(v) {
-    if (expanded === v.id) { setExpanded(null); return; }
-    setExpanded(v.id);
-    await loadViagemEntries(v.codigo_viagem);
-  }
-
-  async function removeEntrega(entry) {
-    if (!window.confirm(`Excluir a entrega de ${entry.customer} (${money(entry.total)})?`)) return;
-    try {
-      await api.delete(`/daily-entries/${entry.id}`, auth());
-      setViagemEntries(viagemEntries.filter(x => x.id !== entry.id));
-      onEntriesChanged?.();
-    } catch (e) { setEntriesError(e.response?.data?.detail || e.message || 'Não foi possível excluir a entrega.'); }
-  }
-
-  function handleEntregaSaved(codigoViagem) {
-    setEditingEntry(null);
-    loadViagemEntries(codigoViagem);
-    onEntriesChanged?.();
-  }
-
-  function addToNewRotaDraft(c) { setRotaClientes(prev => prev.some(x => x.id === c.id) ? prev : [...prev, c]); }
-  function removeFromNewRotaDraft(id) { setRotaClientes(prev => prev.filter(x => x.id !== id)); }
-
-  function plannedQuantity(v, excludeClienteId) {
-    return (v?.rotas || []).reduce((s, r) => s + (r.clientes || []).reduce((s2, c) => s2 + (c.id === excludeClienteId ? 0 : Number(c.quantity || 0)), 0), 0);
-  }
-  function cargaLimitError(v, addedQuantity, excludeClienteId) {
-    if (!v?.carga_total) return null;
-    const total = plannedQuantity(v, excludeClienteId) + Number(addedQuantity || 0);
-    if (total <= v.carga_total) return null;
-    const restante = Math.max(0, v.carga_total - plannedQuantity(v, excludeClienteId));
-    return `Isso passa da carga da viagem (${total}/${v.carga_total} un somando todas as rotas). Restam ${restante} un disponíveis.`;
-  }
-
-  async function submitRota(v) {
-    const added = rotaClientes.reduce((s, c) => s + Number(c.quantity || 0), 0);
-    const cargaErr = cargaLimitError(v, added);
-    if (cargaErr) return setRotaError(cargaErr);
-    setRotaError(''); setSavingRota(true);
-    try {
-      await onAddRota(v.id, { clientes: rotaClientes });
-      setAddingRotaFor(null); setRotaClientes([]);
-      await loadForDate();
-    } catch (e) { setRotaError(e.response?.data?.detail || 'Não foi possível salvar a rota.'); }
-    finally { setSavingRota(false); }
-  }
-
-  const [expandedRotaId, setExpandedRotaId] = useState(null);
-  const [addingClienteToRota, setAddingClienteToRota] = useState(null);
-  const [editingCliente, setEditingCliente] = useState(null);
-  const [clienteFormError, setClienteFormError] = useState('');
-  const [savingCliente, setSavingCliente] = useState(false);
-  const [editingCargaFor, setEditingCargaFor] = useState(null);
-  const [cargaDraft, setCargaDraft] = useState('');
-  const [savingCarga, setSavingCarga] = useState(false);
-
-  function toggleRotaExpand(rotaId) { setExpandedRotaId(prev => prev === rotaId ? null : rotaId); setAddingClienteToRota(null); setEditingCliente(null); }
-
-  async function saveCarga(viagemId) {
-    setSavingCarga(true); setError('');
-    try { await onUpdateViagem(viagemId, { carga_total: cargaDraft === '' ? null : Number(cargaDraft) }); setEditingCargaFor(null); await loadForDate(); }
-    catch (e) { setError(e.response?.data?.detail || 'Não foi possível ajustar a carga.'); }
-    finally { setSavingCarga(false); }
-  }
-
-  async function saveNewClienteInRota(viagemId, rotaId, cliente) {
-    const cargaErr = cargaLimitError(viagens.find(x => x.id === viagemId), cliente.quantity);
-    if (cargaErr) return setClienteFormError(cargaErr);
-    setClienteFormError('');
-    try { await onAddRotaCliente(viagemId, rotaId, cliente); await loadForDate(); }
-    catch (e) { setClienteFormError(e.response?.data?.detail || 'Não foi possível adicionar o cliente.'); }
-  }
-  async function removeClienteFromRota(viagemId, rotaId, cliente) {
-    if (!window.confirm(`Remover ${cliente.name} desta rota?`)) return;
-    try { await onRemoveRotaCliente(viagemId, rotaId, cliente.id); await loadForDate(); }
-    catch (e) { setClienteFormError(e.response?.data?.detail || 'Não foi possível remover o cliente.'); }
-  }
-  async function removeRotaFromViagem(viagemId, rota) {
-    if (!window.confirm(`Excluir a Rota ${String(rota.numero).padStart(2, '0')}${rota.clientes?.length ? ` (${rota.clientes.length} cliente(s))` : ''}?`)) return;
-    setError('');
-    try { await onRemoveRota(viagemId, rota.id); if (expandedRotaId === rota.id) setExpandedRotaId(null); await loadForDate(); }
-    catch (e) { setError(e.response?.data?.detail || 'Não foi possível excluir a rota.'); }
-  }
-  async function saveClienteEdit() {
-    const { viagemId, rotaId, cliente } = editingCliente;
-    const cargaErr = cargaLimitError(viagens.find(x => x.id === viagemId), editingCliente.quantity, cliente.id);
-    if (cargaErr) return setClienteFormError(cargaErr);
-    setSavingCliente(true); setClienteFormError('');
-    try {
-      await onUpdateRotaCliente(viagemId, rotaId, cliente.id, { brand: editingCliente.brand, quantity: editingCliente.quantity ? Number(editingCliente.quantity) : undefined, sale_type: editingCliente.saleType, notes: editingCliente.notes || undefined });
-      await loadForDate();
-      setEditingCliente(null);
-    } catch (e) { setClienteFormError(e.response?.data?.detail || 'Não foi possível salvar.'); }
-    finally { setSavingCliente(false); }
-  }
-
-  async function handleIniciar(v) { setError(''); try { await onIniciar(v); if (isToday) onStarted?.(); else await loadForDate(); } catch (e) { setError(e.response?.data?.detail || e.message || 'Não foi possível iniciar a viagem.'); } }
-  async function handleExcluir(v) { setError(''); try { await onDelete(v); await loadForDate(); } catch (e) { setError(e.response?.data?.detail || e.message || 'Não foi possível excluir a viagem.'); } }
-
-  async function handleFinalizar(v) {
-    setError('');
-    const atual = v.quantidade_atual || 0;
-    if (v.carga_total && atual !== v.carga_total) {
-      const diff = v.carga_total - atual;
-      const msg = diff > 0
-        ? `Faltam ${diff} unidade(s) para bater com a carga total (${atual}/${v.carga_total}). Finalizar mesmo assim?`
-        : `Foram lançadas ${-diff} unidade(s) a mais que a carga total (${atual}/${v.carga_total}). Finalizar mesmo assim?`;
-      if (!window.confirm(msg)) return;
-    }
-    try { await onFinalizar(v); await loadForDate(); } catch (e) { setError(e.response?.data?.detail || e.message || 'Não foi possível finalizar a viagem.'); }
-  }
-
-  const [startingNow, setStartingNow] = useState(false);
-  async function submit(startNow) {
-    setError('');
-    if (startNow) setStartingNow(true);
-    try {
-      const created = await onCreate({ turno, carga_total: cargaItems.length ? undefined : (cargaTotal ? Number(cargaTotal) : undefined), carga_items: cargaItems.length ? cargaItems : undefined });
-      setCargaTotal(''); setCargaItems([]);
-      if (startNow && created?.id) {
-        try {
-          await onIniciar(created);
-          if (onStarted) { onStarted(); return; }
-          await loadForDate();
-          setConfirmMsg('Viagem criada e iniciada — pode sair com o caminhão!');
-        } catch (e) {
-          setConfirmMsg('Viagem criada, mas não foi possível iniciar automaticamente: ' + (e.response?.data?.detail || e.message || 'tente pelo botão "Iniciar".'));
-        }
-      } else {
-        setConfirmMsg('Viagem criada! Toque em "Iniciar" quando for sair com o caminhão carregado.');
-      }
-      setError('');
-      setViewTab('ver');
-    } catch (e) { setError(e.response?.data?.detail || 'Não foi possível criar a viagem.'); }
-    finally { setStartingNow(false); }
-  }
-
-  return <div className="mob-backdrop mob-backdrop-full" onClick={onClose}>
-    <div className="mob-sheet mob-sheet-full" onClick={e => e.stopPropagation()}>
-      <div className="mob-sheet-head">
-        <div><h3>Viagens do dia</h3><p>{viagens.length}/{VIAGENS_POR_DIA} viagens · máx. {VIAGENS_POR_TURNO} por turno</p></div>
-        <button aria-label="Fechar" type="button" className="mob-close" data-testid="mob-viagens-close" onClick={onClose}><X size={18} /></button>
-      </div>
-
-      <div className="mob-viagem-tabs">
-        {!dayClosed && <button type="button" className={viewTab === 'criar' ? 'active' : ''} data-testid="mob-viagem-tab-criar" onClick={() => setViewTab('criar')}>Criar viagem</button>}
-        <button type="button" className={viewTab === 'ver' ? 'active' : ''} data-testid="mob-viagem-tab-ver" onClick={() => setViewTab('ver')}>Minhas viagens{viagens.length > 0 ? ` (${viagens.length})` : ''}</button>
-      </div>
-      {dayClosed && <div className="mob-viagem-confirm" style={{ margin: '0 20px 14px' }} data-testid="mob-day-closed-banner">Dia fechado — as viagens ficam disponíveis somente para consulta.</div>}
-      {error && <div className="error" data-testid="mob-viagem-action-error" style={{ margin: '0 20px 14px' }}>{error}</div>}
-      {viagensPresas?.length > 0 && <div style={{ margin: '0 14px 14px' }}><MobileStuckTrips viagens={viagensPresas} onFinalizar={onFinalizarPresa} /></div>}
-
-      {!dayClosed && viewTab === 'criar' && <div className="mob-viagem-form">
-        <label>Turno<select value={turno} data-testid="mob-viagem-turno" onChange={e => setTurno(Number(e.target.value))}>
-          <option value={0}>Manhã</option>
-          <option value={1}>Tarde</option>
-        </select></label>
-        <div style={{ gridColumn: '1 / -1' }}><MobileMfReminder items={mfPending} forNewTrip /></div>
-        {cargaItems.length === 0 && <label>Carga total (opcional)<input type="number" inputMode="numeric" value={cargaTotal} data-testid="mob-viagem-carga" onChange={e => setCargaTotal(e.target.value)} /></label>}
-        <label style={{ gridColumn: '1 / -1' }}>Carga por produto (opcional){cargaItems.length > 0 ? ` · total ${cargaItemsTotal} un` : ''}
-          <p className="mob-help" style={{ margin: '2px 0 6px' }}>Se preencher aqui, o sistema desconta do estoque quando iniciar a viagem, e devolve automaticamente o que sobrar ao finalizar.</p>
-          <div className="mob-carga-add-row">
-            <select value={newCargaBrand} data-testid="mob-viagem-carga-brand" onChange={e => setNewCargaBrand(e.target.value)}>
-              <option value="">Produto</option>
-              {brandsCatalog.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
-            </select>
-            <input type="number" inputMode="numeric" placeholder="Qtd" value={newCargaQty} data-testid="mob-viagem-carga-qty" onChange={e => setNewCargaQty(e.target.value)} />
-            <button type="button" className="mob-outline-btn" data-testid="mob-viagem-carga-add" onClick={addCargaItem}><Plus size={16} /></button>
-          </div>
-          {cargaItems.length > 0 && <div className="mob-viagem-client-chips">
-            {cargaItems.map(i => <span className="mob-viagem-client-chip" key={i.brand} data-testid={`mob-viagem-carga-chip-${i.brand}`}>{i.brand} · {i.quantity}<button aria-label="Remover item da carga" type="button" onClick={() => removeCargaItem(i.brand)}><X size={12} /></button></span>)}
-          </div>}
-        </label>
-        <p className="mob-help">Depois de criar, adicione uma ou mais rotas (com os clientes de cada uma) dentro da viagem — pode fazer isso a qualquer momento, inclusive já em execução.</p>
-        {confirmMsg && <div className="mob-viagem-confirm" data-testid="mob-viagem-confirm">{confirmMsg}</div>}
-        <button type="button" className="mob-cta green" disabled={startingNow} data-testid="mob-viagem-create-start" onClick={() => submit(true)}><Truck size={18} /> {startingNow ? 'Criando e iniciando...' : 'Criar e iniciar agora'}</button>
-        <button type="button" className="mob-outline-btn wide" disabled={startingNow} data-testid="mob-viagem-create" onClick={() => submit(false)}><Plus size={18} /> Só criar (iniciar depois)</button>
-      </div>}
-
-      {viewTab === 'ver' && <>
-      <label className="mob-field-md" style={{ padding: '0 14px', marginBottom: 8 }}>DATA
-        <input type="date" max={todayISO(0)} value={viagensDate} data-testid="mob-viagens-date" onChange={e => setViagensDate(e.target.value)} />
-      </label>
-      {!isToday && <p className="mob-help" style={{ padding: '0 14px' }}>Vendo viagens de {viagensDate} — inicie/finalize daqui se alguma ficou pendente.</p>}
-      <div className="mob-viagem-carousel">
-        {viagens.length === 0 && <p className="muted" style={{ padding: 16 }}>Nenhuma viagem criada nesse dia.</p>}
-        {viagens.map(v => {
-          const numRotas = v.rotas?.length || 0;
-          const totalClientesRotas = (v.rotas || []).reduce((s, r) => s + (r.clientes?.length || 0), 0);
-          return <div className="mob-viagem-card" key={v.id}>
-          <div className="mob-viagem-row" data-testid={`mob-viagem-${v.id}`}>
-            <div><b>{TURNO_LABELS[v.turno]} · {numRotas} rota{numRotas !== 1 ? 's' : ''}</b>
-              <small>{v.codigo_viagem}{totalClientesRotas ? ` · ${totalClientesRotas} clientes` : ''}</small>
-              {editingCargaFor === v.id ? <div className="mob-row-actions" style={{ marginTop: 6 }}>
-                <input type="number" inputMode="numeric" min="0" autoFocus value={cargaDraft} placeholder="Carga total" data-testid={`mob-viagem-carga-edit-${v.id}`} style={{ width: 100, padding: 8, borderRadius: 8, border: '1px solid var(--mob-line)', background: 'var(--mob-surface)', color: 'var(--mob-ink)' }} onChange={e => setCargaDraft(e.target.value)} />
-                <button type="button" className="mob-text-btn" onClick={() => setEditingCargaFor(null)}>Cancelar</button>
-                <button type="button" className="mob-text-btn" disabled={savingCarga} data-testid={`mob-viagem-carga-save-${v.id}`} onClick={() => saveCarga(v.id)}>{savingCarga ? 'Salvando...' : 'Salvar'}</button>
-              </div> : <small className="muted">{v.carga_total ? `${v.status === 'execucao' ? `${v.quantidade_atual || 0}/` : ''}${v.carga_total} un carregadas` : 'Sem carga definida'}{v.status !== 'finalizada' && <button type="button" className="mob-text-btn" data-testid={`mob-viagem-carga-edit-open-${v.id}`} style={{ padding: '0 0 0 8px' }} onClick={() => { setEditingCargaFor(v.id); setCargaDraft(v.carga_total ?? ''); }}><Pencil size={12} /> ajustar</button>}</small>}
-            </div>
-            <span className={`tag ${statusTag[v.status]}`}>{statusLabel[v.status]}</span>
-            {v.status === 'planejada' && <div className="mob-row-actions mob-viagem-start">
-              <button type="button" className="mob-cta green" data-testid={`mob-viagem-iniciar-${v.id}`} onClick={() => handleIniciar(v)}><Truck size={18} /> Iniciar viagem</button>
-              <button type="button" className="mob-text-btn" data-testid={`mob-viagem-excluir-${v.id}`} onClick={() => handleExcluir(v)}>Excluir</button>
-            </div>}
-            {v.status === 'finalizada' && <div style={{ display: 'grid', gap: 2 }}>
-              <small className="muted">Saldo {money(v.saldo_liquido ?? v.total_bruto)} · {v.entregas || 0} entregas</small>
-              {v.carga_total != null && <small className="muted">Carga esperada {v.carga_total} un · entregue {v.quantidade_entregue ?? 0} un{v.quantidade_entregue === v.carga_total ? ' ✓' : ''}{v.carga_carregada && v.carga_devolvida_total != null ? ` · devolvida ${v.carga_devolvida_total} un` : ''}</small>}
-              {v.mf_quantity_total > 0 && <small style={{ color: 'var(--mob-orange)', fontWeight: 700 }}>{v.mf_quantity_total} un com problema (microfuro)</small>}
-            </div>}
-          </div>
-          {v.status !== 'finalizada' && <div className="mob-viagem-rotas">
-            {(v.rotas || []).map(r => {
-              const isExpanded = expandedRotaId === r.id;
-              return <div key={r.id} className={`mob-viagem-rota-block${isExpanded ? ' open' : ''}`}>
-                <button type="button" className="mob-viagem-rota-row" data-testid={`mob-viagem-rota-${r.id}`} onClick={() => toggleRotaExpand(r.id)}>
-                  <span>Rota {String(r.numero).padStart(2, '0')}</span>
-                  <small>{r.clientes?.length || 0} cliente{r.clientes?.length !== 1 ? 's' : ''}</small>
-                  <ChevronRight size={16} className={isExpanded ? 'rot90' : ''} />
-                </button>
-                {isExpanded && <div className="mob-viagem-rota-detail" data-testid={`mob-viagem-rota-detail-${r.id}`}>
-                  {(r.clientes || []).length === 0 && <p className="muted" style={{ padding: '4px 2px' }}>Nenhum cliente nesta rota ainda.</p>}
-                  {(r.clientes || []).map(c => editingCliente?.rotaId === r.id && editingCliente?.cliente.id === c.id ? (
-                    <div className="mob-add-brand" key={c.id} data-testid={`mob-viagem-rota-cliente-edit-${c.id}`}>
-                      <p className="mob-eyebrow" style={{ margin: 0 }}>{c.name}</p>
-                      <label>Produto{(() => { const opts = brandListOf(customers.find(x => x.id === c.id)); return opts.length > 0 && !editingCliente.customBrand
-                        ? <select value={editingCliente.brand || ''} data-testid="mob-viagem-cliente-edit-brand" onChange={e => setEditingCliente({ ...editingCliente, brand: e.target.value })}>{opts.map(b => <option key={b.brand} value={b.brand}>{b.brand} · {money(b.price)}</option>)}</select>
-                        : (brandsCatalog?.length > 0
-                          ? <select autoFocus={editingCliente.customBrand} value={editingCliente.brand || ''} data-testid="mob-viagem-cliente-edit-brand-catalog-select" onChange={e => setEditingCliente({ ...editingCliente, brand: e.target.value })}><option value="">Selecione um produto</option>{brandsCatalog.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}</select>
-                          : <input placeholder="ex: Minalar 20L" autoFocus={editingCliente.customBrand} value={editingCliente.brand || ''} data-testid="mob-viagem-cliente-edit-brand-input" onChange={e => setEditingCliente({ ...editingCliente, brand: e.target.value })} />); })()}
-                      </label>
-                      {brandListOf(customers.find(x => x.id === c.id)).length > 0 && <button type="button" className="mob-brand-switch" data-testid="mob-viagem-cliente-edit-brand-toggle" onClick={() => setEditingCliente({ ...editingCliente, customBrand: !editingCliente.customBrand, brand: editingCliente.customBrand ? (brandListOf(customers.find(x => x.id === c.id))[0]?.brand || '') : '' })}><RefreshCw size={13} /> {editingCliente.customBrand ? 'Usar produto do cadastro do cliente' : 'Cliente pediu outro produto (ver catálogo completo)'}</button>}
-                      <label>Quantidade<input type="number" inputMode="numeric" min="0" value={editingCliente.quantity ?? ''} data-testid="mob-viagem-cliente-edit-qty" onChange={e => setEditingCliente({ ...editingCliente, quantity: e.target.value })} /></label>
-                      <div className="mob-sale-type">
-                        <button type="button" className={editingCliente.saleType === 'exchange' ? 'active' : ''} onClick={() => setEditingCliente({ ...editingCliente, saleType: 'exchange' })}>Somente água</button>
-                        <button type="button" className={editingCliente.saleType === 'full' ? 'active' : ''} onClick={() => setEditingCliente({ ...editingCliente, saleType: 'full' })}>Venda completa</button>
-                      </div>
-                      <label>Observações (opcional)<input value={editingCliente.notes || ''} data-testid="mob-viagem-cliente-edit-notes" onChange={e => setEditingCliente({ ...editingCliente, notes: e.target.value })} /></label>
-                      {clienteFormError && <div className="error" data-testid="mob-viagem-cliente-edit-error">{clienteFormError}</div>}
-                      <div className="mob-row-actions">
-                        <button type="button" className="mob-ghost-btn" onClick={() => { setEditingCliente(null); setClienteFormError(''); }}>Cancelar</button>
-                        <button type="button" className="primary" disabled={savingCliente} data-testid={`mob-viagem-cliente-edit-save-${c.id}`} onClick={saveClienteEdit}>{savingCliente ? 'Salvando...' : 'Salvar'}</button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="mob-viagem-rota-cliente-row" key={c.id} data-testid={`mob-viagem-rota-cliente-${c.id}`}>
-                      <div><b>{c.name}</b><small>{c.brand || 'sem produto'}{c.quantity ? ` · ${c.quantity}` : ''}{c.sale_type === 'full' ? ' · venda completa' : ''}{c.status === 'nao_entregue' ? ' · não entregue' : ''}</small></div>
-                      <div className="mob-row-actions">
-                        <button type="button" aria-label="Editar cliente" className="mob-text-btn" data-testid={`mob-viagem-rota-cliente-editar-${c.id}`} onClick={() => { setClienteFormError(''); const opts = brandListOf(customers.find(x => x.id === c.id)); setEditingCliente({ viagemId: v.id, rotaId: r.id, cliente: c, brand: c.brand || '', customBrand: !opts.some(b => b.brand === c.brand), quantity: c.quantity ?? '', saleType: c.sale_type || 'exchange', notes: c.notes || '' }); }}><Pencil size={14} /></button>
-                        <button type="button" aria-label="Remover cliente" className="mob-text-btn" data-testid={`mob-viagem-rota-cliente-remover-${c.id}`} onClick={() => removeClienteFromRota(v.id, r.id, c)}><Trash2 size={14} /></button>
-                      </div>
-                    </div>
-                  ))}
-                  {v.status !== 'finalizada' && (addingClienteToRota === r.id ? <div className="mob-add-brand" data-testid={`mob-viagem-rota-add-cliente-form-${r.id}`}>
-                    <MobileViagemClientPicker customers={customers} selected={r.clientes || []} onAdd={c => saveNewClienteInRota(v.id, r.id, c)} onRemove={cid => removeClienteFromRota(v.id, r.id, { id: cid, name: '' })} brandsCatalog={brandsCatalog} />
-                    {clienteFormError && <div className="error" data-testid="mob-viagem-rota-add-cliente-error">{clienteFormError}</div>}
-                    <button type="button" className="mob-ghost-btn" onClick={() => { setAddingClienteToRota(null); setClienteFormError(''); }}>Concluído</button>
-                  </div> : <button type="button" className="mob-dashed-btn" data-testid={`mob-viagem-rota-add-cliente-${r.id}`} onClick={() => { setAddingClienteToRota(r.id); setClienteFormError(''); }}><Plus size={16} /> Adicionar cliente</button>)}
-                  {v.status !== 'finalizada' && addingClienteToRota !== r.id && <button type="button" className="mob-text-btn mob-danger-text" data-testid={`mob-viagem-rota-excluir-${r.id}`} onClick={() => removeRotaFromViagem(v.id, r)}><Trash2 size={14} /> Excluir esta rota</button>}
-                </div>}
-              </div>;
-            })}
-            {addingRotaFor === v.id ? <div className="mob-add-brand" data-testid={`mob-viagem-rota-form-${v.id}`}>
-              <p className="mob-eyebrow" style={{ margin: 0 }}>CLIENTES DA NOVA ROTA</p>
-              <MobileViagemClientPicker customers={customers} selected={rotaClientes} onAdd={addToNewRotaDraft} onRemove={removeFromNewRotaDraft} brandsCatalog={brandsCatalog} />
-              {rotaError && <div className="error" data-testid="mob-viagem-rota-error">{rotaError}</div>}
-              <div className="mob-row-actions">
-                <button type="button" className="mob-ghost-btn" onClick={() => { setAddingRotaFor(null); setRotaClientes([]); setRotaError(''); }}>Cancelar</button>
-                <button type="button" className="primary" disabled={rotaClientes.length === 0 || savingRota} data-testid={`mob-viagem-rota-save-${v.id}`} onClick={() => submitRota(v)}>{savingRota ? 'Salvando...' : 'Salvar rota'}</button>
-              </div>
-            </div> : <button type="button" className="mob-dashed-btn" data-testid={`mob-viagem-rota-add-${v.id}`} onClick={() => { setAddingRotaFor(v.id); setRotaClientes([]); setRotaError(''); }}><Plus size={16} /> Nova rota</button>}
-          </div>}
-          {v.status === 'execucao' && <div className="mob-viagem-actions">
-            {isToday && <button type="button" className="mob-viagem-action-btn primary" data-testid={`mob-viagem-add-entrega-${v.id}`} onClick={() => onAddEntrega(v)}><Plus size={18} /> Nova entrega</button>}
-            <button type="button" className={`mob-viagem-action-btn${expanded === v.id ? ' active' : ''}`} data-testid={`mob-viagem-ver-entregas-${v.id}`} onClick={() => toggleEntregas(v)}><FileText size={16} /> {expanded === v.id ? 'Ocultar' : 'Ver entregas'}</button>
-            <button type="button" className="mob-viagem-action-btn" data-testid={`mob-viagem-finalizar-${v.id}`} onClick={() => handleFinalizar(v)}><Check size={16} /> Finalizar</button>
-          </div>}
-          {v.status === 'finalizada' && <div className="mob-viagem-actions"><button type="button" className="mob-viagem-action-btn" data-testid={`mob-viagem-ver-entregas-${v.id}`} onClick={() => toggleEntregas(v)}><FileText size={16} /> {expanded === v.id ? 'Ocultar entregas' : 'Ver entregas'}</button></div>}
-          {expanded === v.id && <div className="mob-viagem-entregas">
-            {loadingEntries && <Loader2 size={16} className="spin blue-text" />}
-            {!loadingEntries && entriesError && <div className="error" data-testid="mob-viagem-entregas-error">{entriesError}</div>}
-            {!loadingEntries && !entriesError && viagemEntries.length === 0 && <p className="muted" style={{ padding: '6px 4px' }}>Nenhuma entrega lançada nesta viagem ainda.</p>}
-            {!loadingEntries && viagemEntries.map(e => <div className="mob-viagem-entrega-row" key={e.id} data-testid={`mob-viagem-entrega-${e.id}`}>
-              <div><b>{e.customer}</b><small>{(e.items?.length ? e.items : [{ brand: e.brand, quantity: e.billed_quantity ?? e.quantity }]).map(it => `${it.quantity} ${it.brand}`).join(' + ')} · {money(e.total)}</small></div>
-              <div className="mob-row-actions">
-                <button type="button" className="mob-text-btn" data-testid={`mob-viagem-entrega-editar-${e.id}`} onClick={() => setEditingEntry(e)}><Pencil size={14} /></button>
-                <button type="button" className="mob-text-btn" data-testid={`mob-viagem-entrega-excluir-${e.id}`} onClick={() => removeEntrega(e)}><Trash2 size={14} /></button>
-              </div>
-            </div>)}
-          </div>}
-        </div>;
-        })}
-      </div>
-      </>}
-    </div>
-    {editingEntry && <MobileEditEntregaModal entry={editingEntry} onClose={() => setEditingEntry(null)} onSaved={() => handleEntregaSaved(editingEntry.viagem_codigo)} />}
-  </div>
-}
-
-function MobileClientesTab({ customers, entries, orders, onStartOrder, date, onOpenPicker, onOpenCustomer, search, setSearch, viagemAtiva, viagens, onOpenViagens, dayClosed, mfPending, viagensPresas, onFinalizarPresa, viagemPlanejada, onIniciarPlanejada, onAddMf, mfInRouteNames }) {
-  const todaysEntries = entries.filter(e => e.date === date);
-  const doneNames = new Set(todaysEntries.map(e => e.customer));
-  const receivedToday = todaysEntries.reduce((s, e) => s + Number(e.pix_value || 0) + Number(e.cash_value || 0), 0);
-  const filtered = customers.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || (c.code || '').toLowerCase().includes(search.toLowerCase())).sort((a, b) => {
-    const doneA = doneNames.has(a.name), doneB = doneNames.has(b.name);
-    if (doneA !== doneB) return doneA ? 1 : -1;
-    return (a.name || '').localeCompare(b.name || '', 'pt-BR');
-  });
-  const goal = customers.length || 1;
-  const progress = Math.min(100, (doneNames.size / goal) * 100);
-  const failedNames = new Set((viagemAtiva?.rotas || []).flatMap(r => r.clientes || []).filter(c => c.status === 'nao_entregue').map(c => c.name));
-  return <div className="mob-screen">
-    <MobileStuckTrips viagens={viagensPresas} onFinalizar={onFinalizarPresa} />
-    <MobileTripBanner viagemAtiva={viagemAtiva} viagens={viagens} onOpen={onOpenViagens} />
-    {!dayClosed && !viagemAtiva && !viagensPresas?.length && (viagemPlanejada
-      ? <button type="button" className="mob-cta green" data-testid="mob-start-planned-button" onClick={() => onIniciarPlanejada(viagemPlanejada)}><Truck size={20} /> Iniciar viagem · {TURNO_LABELS[viagemPlanejada.turno]}</button>
-      : <button type="button" className="mob-cta" data-testid="mob-new-delivery-button" onClick={onOpenViagens}><Plus size={20} /> Criar viagem do dia</button>)}
-    <MobileMfReminder items={mfPending} onAdd={dayClosed ? undefined : onAddMf} inRouteNames={mfInRouteNames} />
-    {dayClosed && <div className="mob-viagem-confirm" data-testid="mob-day-closed-summary">Dia fechado com sucesso. Os lançamentos de hoje estão bloqueados para preservar o fechamento.</div>}
-    {orders?.length > 0 && <div className="mob-orders-card" data-testid="mob-pending-orders">
-      <p className="mob-eyebrow">CLIENTES DA ROTA · {orders.length} PENDENTE{orders.length > 1 ? 'S' : ''}</p>
-      {orders.map(o => <div className="mob-order-row" key={o.id} data-testid={`mob-order-${o.id}`}>
-        <div><b>{o.customer}</b><small>{o.brand || 'Produto a combinar'}{o.quantity ? ` · ${o.quantity} un` : ''}</small>{o.address && <small>{o.address}</small>}{o.notes && <small>{o.notes}</small>}</div>
-        <button type="button" className="mob-outline-btn" data-testid={`mob-order-launch-${o.id}`} onClick={() => onStartOrder(o)}>Lançar entrega</button>
-      </div>)}
-    </div>}
-    <div className="mob-summary-card">
-      <div className="mob-summary-row"><span>{doneNames.size} cliente{doneNames.size !== 1 ? 's' : ''} lançado{doneNames.size !== 1 ? 's' : ''} hoje</span><b data-testid="mob-received-today">{money(receivedToday)}</b></div>
-      <div className="mob-progress"><div style={{ width: `${progress}%` }} /></div>
-    </div>
-    <div className="mob-search"><Search size={16} /><input placeholder="Buscar por nome ou código" value={search} data-testid="mob-search-input" onChange={e => setSearch(e.target.value)} /></div>
-    <div className={`mob-customer-list${viagemAtiva ? '' : ' mob-customer-list-locked'}`}>
-      {filtered.map(c => <MobileStopRow key={c.id} c={c} done={doneNames.has(c.name)} failed={failedNames.has(c.name)} onClick={() => onOpenCustomer(c)} />)}
-      {filtered.length === 0 && <p className="muted" style={{ padding: 16 }}>Nenhum cliente encontrado.</p>}
-    </div>
-  </div>
-}
-
-function MobilePickerSheet({ customers, onClose, onPick, onNewCustomer }) {
-  const [q, setQ] = useState('');
-  const filtered = customers.filter(c => c.name.toLowerCase().includes(q.toLowerCase()) || (c.code || '').toLowerCase().includes(q.toLowerCase())).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
-  return <div className="mob-backdrop" onClick={onClose}>
-    <div className="mob-sheet" onClick={e => e.stopPropagation()}>
-      <div className="mob-sheet-handle" />
-      <div className="mob-sheet-head">
-        <div><h3>Nova entrega</h3><p>Escolha o cliente — marca e preço vêm do cadastro</p></div>
-        <button aria-label="Fechar" type="button" className="mob-close" data-testid="mob-picker-close" onClick={onClose}><X size={18} /></button>
-      </div>
-      <div className="mob-search"><Search size={16} /><input autoFocus placeholder="Digite o nome ou o código do cliente" value={q} data-testid="mob-picker-search" onChange={e => setQ(e.target.value)} /></div>
-      <div className="mob-sheet-list">
-        {filtered.map(c => <MobilePickerRow key={c.id} c={c} onClick={() => onPick(c)} />)}
-        {filtered.length === 0 && <p className="muted" style={{ padding: 16 }}>Nenhum cliente encontrado.</p>}
-      </div>
-      <button type="button" className="mob-outline-btn wide" data-testid="mob-new-customer-button" onClick={onNewCustomer}><Plus size={16} /> Cliente novo (sem cadastro)</button>
-    </div>
-  </div>
-}
-
-function MobileLaunchPanel({ customer, user, date, onClose, onComplete, prefillOrder, viagemId, rotaId, onFailed, onOpenViagens, cargaRestante, pendingOrders }) {
-  const draftKey = `hydro_draft_${customer.id || 'novo_' + (customer.name || 'cliente')}`;
-  const draft = useMemo(() => { try { return JSON.parse(localStorage.getItem(draftKey)); } catch { return null; } }, [draftKey]);
-
-  const [customerName, setCustomerName] = useState(draft?.customerName ?? (customer.name || ''));
-  const [lines, setLines] = useState(() => {
-    if (draft?.lines) return draft.lines;
-    const base = brandListOf(customer).map(b => ({ brand: b.brand, priceExchange: Number(b.price) || 0, priceFull: b.price_full != null ? Number(b.price_full) || 0 : null, qtyExchange: 0, qtyFull: 0, mf: 0 }));
-    if (prefillOrder?.brand) {
-      const wantsFull = prefillOrder.sale_type === 'full';
-      const idx = base.findIndex(l => l.brand.toLowerCase() === prefillOrder.brand.toLowerCase());
-      if (idx >= 0) base[idx] = wantsFull
-        ? { ...base[idx], qtyFull: Number(prefillOrder.quantity) || base[idx].qtyFull }
-        : { ...base[idx], qtyExchange: Number(prefillOrder.quantity) || base[idx].qtyExchange };
-      else base.push({ brand: prefillOrder.brand, priceExchange: 0, priceFull: null, saleType: wantsFull ? 'full' : 'exchange', qty: Number(prefillOrder.quantity) || 0, mf: 0, extra: true });
-    }
-    return base;
-  });
-  const [adding, setAdding] = useState(false);
-  const [newBrand, setNewBrand] = useState('');
-  const [newPrice, setNewPrice] = useState('');
-  const [newQty, setNewQty] = useState('');
-  const [newFull, setNewFull] = useState(false);
-  const [pix, setPix] = useState(draft?.pix ?? 0);
-  const [cash, setCash] = useState(draft?.cash ?? 0);
-  const [compOn, setCompOn] = useState(draft?.compOn ?? (customer.payment_type === 'prazo'));
-  const [comp, setComp] = useState(draft?.comp ?? '');
-  const [compDays, setCompDays] = useState(draft?.compDays ?? 15);
-  const [mfPlan, setMfPlan] = useState(draft?.mfPlan ?? null);
-  const [mfDate, setMfDate] = useState(draft?.mfDate ?? 'Amanhã');
-  const [signerName, setSignerName] = useState(draft?.signerName ?? '');
-  const [signing, setSigning] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    try { localStorage.setItem(draftKey, JSON.stringify({ customerName, lines, pix, cash, compOn, comp, compDays, mfPlan, mfDate, signerName })); } catch { /* ignore quota errors */ }
-  }, [draftKey, customerName, lines, pix, cash, compOn, comp, compDays, mfPlan, mfDate, signerName]);
-  function clearDraft() { try { localStorage.removeItem(draftKey); } catch { /* ignore */ } }
-
-  const fullPriceOf = l => l.priceFull != null ? l.priceFull : (Number(l.priceFullManual) || 0);
-  const linePrice = l => l.saleType === 'full' ? (l.priceFull != null ? l.priceFull : (Number(l.priceFullManual) || l.priceExchange)) : l.priceExchange;
-  const lineTotal = l => {
-    const base = l.extra ? l.qty * linePrice(l) : (l.qtyExchange * l.priceExchange) + (l.qtyFull * fullPriceOf(l));
-    // MF trocado na hora entrega um galão bom no lugar do defeituoso — o cliente paga por ele normalmente.
-    const mfBillable = mfPlan === 'swap' ? l.mf * linePrice(l) : 0;
-    return base + mfBillable;
-  };
-  const total = lines.reduce((s, l) => s + lineTotal(l), 0);
-  const compValue = compOn ? (Number(comp) || 0) : 0;
-  const remaining = Math.max(0, Math.round((total - compValue) * 100) / 100);
-  const totalMf = lines.reduce((s, l) => s + l.mf, 0);
-  const billedQtyThisEntry = lines.reduce((s, l) => s + (l.extra ? l.qty : l.qtyExchange + l.qtyFull), 0);
-  const othersPending = (pendingOrders || []).filter(o => (o.customer || '').toLowerCase() !== (customer?.name || '').toLowerCase()).reduce((sum, o) => sum + Number(o.quantity || 0), 0);
-  // A troca na hora gasta 2 unidades da carga por MF (a boa que fica e a com defeito que volta no caminhão) e a carga ainda precisa cobrir o resto da rota.
-  const swapDisabled = cargaRestante != null && (billedQtyThisEntry + 2 * totalMf + othersPending) > cargaRestante;
-  const nextBizLabel = shortDate(nextBusinessDay());
-  useEffect(() => { if (totalMf > 0 && swapDisabled && mfPlan !== 'reschedule' && mfPlan !== 'refused') { setMfPlan('reschedule'); setMfDate('Próximo dia útil'); } }, [totalMf, swapDisabled]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    setPix(prev => { const p = Math.min(prev, remaining); setCash(Math.round((remaining - p) * 100) / 100); return p; });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remaining]);
-
-  useEffect(() => { if (swapDisabled) setMfPlan(prev => prev === 'swap' ? null : prev); }, [swapDisabled]);
-
-  function incQty(i, by = 1) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qty: l.qty + by } : l)); }
-  function decQty(i) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qty: Math.max(0, l.qty - 1) } : l)); }
-  function setQty(i, raw) { const v = Math.max(0, parseInt(raw, 10) || 0); setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qty: v } : l)); }
-  function incQtyExchange(i, by = 1) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qtyExchange: l.qtyExchange + by } : l)); }
-  function decQtyExchange(i) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qtyExchange: Math.max(0, l.qtyExchange - 1) } : l)); }
-  function setQtyExchange(i, raw) { const v = Math.max(0, parseInt(raw, 10) || 0); setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qtyExchange: v } : l)); }
-  function incQtyFull(i, by = 1) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qtyFull: l.qtyFull + by } : l)); }
-  function decQtyFull(i) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qtyFull: Math.max(0, l.qtyFull - 1) } : l)); }
-  function setQtyFull(i, raw) { const v = Math.max(0, parseInt(raw, 10) || 0); setLines(prev => prev.map((l, idx) => idx === i ? { ...l, qtyFull: v } : l)); }
-  function incMf(i) { setLines(prev => prev.map((l, idx) => { if (idx !== i) return l; if (l.extra) return l.qty > 0 ? { ...l, qty: l.qty - 1, mf: l.mf + 1 } : l; return l.qtyExchange > 0 ? { ...l, qtyExchange: l.qtyExchange - 1, mf: l.mf + 1 } : l; })); }
-  function decMf(i) { setLines(prev => prev.map((l, idx) => { if (idx !== i) return l; if (l.mf === 0) return l; return l.extra ? { ...l, qty: l.qty + 1, mf: l.mf - 1 } : { ...l, qtyExchange: l.qtyExchange + 1, mf: l.mf - 1 }; })); }
-  function setFullPriceManual(i, value) { setLines(prev => prev.map((l, idx) => idx === i ? { ...l, priceFullManual: value } : l)); }
-
-  function addBrandLine() {
-    if (!newBrand.trim()) return;
-    const price = Number(newPrice) || 0;
-    setLines(prev => [...prev, { brand: newBrand.trim(), priceExchange: newFull ? 0 : price, priceFull: newFull ? price : null, saleType: newFull ? 'full' : 'exchange', qty: Math.max(0, parseInt(newQty, 10) || 0), mf: 0, extra: true }]);
-    setNewBrand(''); setNewPrice(''); setNewQty(''); setNewFull(false); setAdding(false);
-  }
-
-  function setPixVal(raw) { const v = Math.min(Math.max(0, Number(raw) || 0), remaining); setPix(v); setCash(Math.round((remaining - v) * 100) / 100); }
-  function setCashVal(raw) { const v = Math.min(Math.max(0, Number(raw) || 0), remaining); setCash(v); setPix(Math.round((remaining - v) * 100) / 100); }
-  function allPix() { setPix(remaining); setCash(0); }
-  function allCash() { setCash(remaining); setPix(0); }
-
-  async function complete(signature, signatureName) {
-    setSaving(true); setError('');
-    const items = [];
-    for (const l of lines) {
-      if (l.extra) {
-        if (l.qty > 0 || l.mf > 0) items.push({ brand: l.brand, price: linePrice(l), sale_type: l.saleType, quantity: l.qty, mf_quantity: l.mf, out_of_catalog: true });
-        continue;
-      }
-      if (l.qtyExchange > 0 || l.mf > 0) items.push({ brand: l.brand, price: l.priceExchange, sale_type: 'exchange', quantity: l.qtyExchange, mf_quantity: l.mf });
-      if (l.qtyFull > 0) items.push({ brand: l.brand, price: fullPriceOf(l), sale_type: 'full', quantity: l.qtyFull });
-    }
-    const payload = {
-      customer: customerName, driver: user.name, date, items,
-      pix_value: Math.round(pix * 100) / 100, cash_value: Math.round(cash * 100) / 100,
-      comp_value: compValue, comp_days: compOn ? compDays : undefined,
-      mf_plan: totalMf > 0 ? mfPlan : undefined, mf_date: totalMf > 0 && mfPlan === 'reschedule' ? mfDate : undefined,
-      signature, signature_name: signatureName || undefined, viagem_id: viagemId || undefined, rota_id: rotaId || undefined,
-    };
-    try {
-      const { data } = await api.post('/daily-entries', payload, auth());
-      clearDraft();
-      onComplete(data);
-    } catch (e) { setError(e.response?.data?.detail || 'Não foi possível concluir.'); setSaving(false); setSigning(false); }
-  }
-
-  if (signing) return <SignaturePad variant="mobile" customer={customerName} total={total} signerName={signerName} onSignerNameChange={setSignerName} onSave={complete} onCancel={() => setSigning(false)} />;
-
-  const canSubmit = lines.some(l => l.extra ? (l.qty > 0 || l.mf > 0) : (l.qtyExchange > 0 || l.qtyFull > 0 || l.mf > 0)) && (totalMf === 0 || !!mfPlan) && Math.abs((pix + cash + compValue) - total) < 0.01;
-
-  return <div className="mob-backdrop" onClick={onClose}>
-    <div className="mob-sheet mob-sheet-tall" onClick={e => e.stopPropagation()}>
-      <div className="mob-sheet-handle" />
-      <div className="mob-sheet-head">
-        <div>
-          {customer.id ? <h3>{customer.name}</h3> : <input className="mob-inline-name" placeholder="Nome do cliente" value={customerName} data-testid="mob-new-customer-name" onChange={e => setCustomerName(e.target.value)} />}
-          <p>{customer.address || 'Marcas e preços vêm do cadastro do cliente'}</p>
-        </div>
-        <button aria-label="Fechar" type="button" className="mob-close" data-testid="mob-panel-close" onClick={onClose}><X size={18} /></button>
-      </div>
-
-      {prefillOrder && <div className="mob-order-banner" data-testid="mob-order-banner">Vindo da ordem de serviço · {prefillOrder.sale_type === 'full' ? 'venda completa (vasilhame + água)' : 'somente água (troca de vasilhame)'}{prefillOrder.notes ? ` · ${prefillOrder.notes}` : ''}{lines.some(l => l.extra && l.brand.toLowerCase() === (prefillOrder.brand || '').toLowerCase()) ? ' · confira o preço, esse produto não está no cadastro do cliente' : ''}</div>}
-      <p className="mob-eyebrow">PRODUTOS DO CADASTRO · TOQUE + OU DIGITE A QUANTIDADE</p>
-      <div className="mob-lines">
-        {lines.map((l, i) => l.extra ? <div className={`mob-line${l.qty > 0 ? ' active' : ''}`} key={i} data-testid={`mob-line-${i}`}>
-          <div className="mob-line-top">
-            <div className="mob-line-info"><b>{l.brand}<span className="mob-tag orange" style={{ marginLeft: 6 }}>nova</span>{l.saleType === 'full' && <span className="mob-tag" style={{ marginLeft: 6 }}>venda completa</span>}</b><small>R$ {linePrice(l).toFixed(2)} por galão</small><span className="mob-line-subtotal">{money(lineTotal(l))}</span></div>
-            <div className="mob-counter">
-              <button aria-label="Diminuir quantidade" type="button" data-testid={`mob-qty-minus-${i}`} onClick={() => decQty(i)}><Minus size={18} /></button>
-              <input type="number" inputMode="numeric" min="0" value={l.qty} data-testid={`mob-qty-input-${i}`} onChange={e => setQty(i, e.target.value)} onFocus={e => e.target.select()} />
-              <button aria-label="Aumentar quantidade" type="button" className="fill" data-testid={`mob-qty-plus-${i}`} onClick={() => incQty(i)}><Plus size={20} /></button>
-              <button aria-label="Aumentar quantidade em 5" type="button" className="mob-qty-plus5" data-testid={`mob-qty-plus5-${i}`} onClick={() => incQty(i, 5)}>+5</button>
-            </div>
-          </div>
-          <div className="mob-line-mf">
-            <span>MF · microfuro</span>
-            <div className="mob-counter small">
-              <button aria-label="Diminuir motivo/falta" type="button" data-testid={`mob-mf-minus-${i}`} onClick={() => decMf(i)}><Minus size={14} /></button>
-              <span>{l.mf}</span>
-              <button aria-label="Aumentar motivo/falta" type="button" className="mf" data-testid={`mob-mf-plus-${i}`} onClick={() => incMf(i)}><Plus size={16} /></button>
-            </div>
-          </div>
-        </div> : <div className={`mob-line${(l.qtyExchange > 0 || l.qtyFull > 0) ? ' active' : ''}`} key={i} data-testid={`mob-line-${i}`}>
-          <div className="mob-line-top">
-            <div className="mob-line-info"><b>{l.brand}</b><small>Somente água R$ {l.priceExchange.toFixed(2)} · Completo R$ {fullPriceOf(l).toFixed(2)}</small><span className="mob-line-subtotal">{money(lineTotal(l))}</span></div>
-          </div>
-          <div className="mob-line-split">
-            <div className="mob-line-split-col">
-              <span className="mob-line-split-label">Somente água</span>
-              <div className="mob-counter">
-                <button aria-label="Diminuir quantidade de troca" type="button" data-testid={`mob-qty-exchange-minus-${i}`} onClick={() => decQtyExchange(i)}><Minus size={18} /></button>
-                <input type="number" inputMode="numeric" min="0" value={l.qtyExchange} data-testid={`mob-qty-exchange-input-${i}`} onChange={e => setQtyExchange(i, e.target.value)} onFocus={e => e.target.select()} />
-                <button aria-label="Aumentar quantidade de troca" type="button" className="fill" data-testid={`mob-qty-exchange-plus-${i}`} onClick={() => incQtyExchange(i)}><Plus size={20} /></button>
-                <button aria-label="Aumentar quantidade de troca em 5" type="button" className="mob-qty-plus5" data-testid={`mob-qty-exchange-plus5-${i}`} onClick={() => incQtyExchange(i, 5)}>+5</button>
-              </div>
-            </div>
-            <div className="mob-line-split-col">
-              <span className="mob-line-split-label">Completo (vasilhame + água)</span>
-              <div className="mob-counter">
-                <button aria-label="Diminuir quantidade cheia" type="button" data-testid={`mob-qty-full-minus-${i}`} onClick={() => decQtyFull(i)}><Minus size={18} /></button>
-                <input type="number" inputMode="numeric" min="0" value={l.qtyFull} data-testid={`mob-qty-full-input-${i}`} onChange={e => setQtyFull(i, e.target.value)} onFocus={e => e.target.select()} />
-                <button aria-label="Aumentar quantidade cheia" type="button" className="fill" data-testid={`mob-qty-full-plus-${i}`} onClick={() => incQtyFull(i)}><Plus size={20} /></button>
-                <button aria-label="Aumentar quantidade cheia em 5" type="button" className="mob-qty-plus5" data-testid={`mob-qty-full-plus5-${i}`} onClick={() => incQtyFull(i, 5)}>+5</button>
-              </div>
-            </div>
-          </div>
-          {l.qtyFull > 0 && l.priceFull == null && <label className="mob-line-full-price">Preço da venda completa (não cadastrado)<input type="number" inputMode="decimal" step="0.01" autoFocus placeholder={l.priceExchange.toFixed(2)} value={l.priceFullManual || ''} data-testid={`mob-sale-full-price-${i}`} onChange={e => setFullPriceManual(i, e.target.value)} onFocus={e => e.target.select()} /></label>}
-          <div className="mob-line-mf">
-            <span>MF · microfuro</span>
-            <div className="mob-counter small">
-              <button aria-label="Diminuir motivo/falta" type="button" data-testid={`mob-mf-minus-${i}`} onClick={() => decMf(i)}><Minus size={14} /></button>
-              <span>{l.mf}</span>
-              <button aria-label="Aumentar motivo/falta" type="button" className="mf" data-testid={`mob-mf-plus-${i}`} onClick={() => incMf(i)}><Plus size={16} /></button>
-            </div>
-          </div>
-        </div>)}
-        {lines.length === 0 && <p className="muted">Nenhuma marca cadastrada para este cliente ainda — adicione uma abaixo.</p>}
-      </div>
-
-      {!adding ? <button type="button" className="mob-dashed-btn" data-testid="mob-add-brand-button" onClick={() => setAdding(true)}><Plus size={16} /> Outra marca (fora do cadastro)</button> : <div className="mob-add-brand">
-        <input placeholder="Nome da marca" value={newBrand} data-testid="mob-new-brand-input" onChange={e => setNewBrand(e.target.value)} />
-        <label>Quantidade<input type="number" inputMode="numeric" min="0" value={newQty} data-testid="mob-new-brand-qty" onChange={e => setNewQty(e.target.value)} /></label>
-        <label>{newFull ? 'Preço combinado (venda completa)' : 'Preço combinado (R$ por galão)'}<input type="number" inputMode="decimal" step="0.01" value={newPrice} data-testid="mob-new-brand-price" onChange={e => setNewPrice(e.target.value)} onFocus={e => e.target.select()} /></label>
-        <div className="mob-sale-type">
-          <button type="button" className={!newFull ? 'active' : ''} data-testid="mob-new-brand-exchange" onClick={() => setNewFull(false)}>Somente água</button>
-          <button type="button" className={newFull ? 'active' : ''} data-testid="mob-new-brand-full" onClick={() => setNewFull(true)}>Venda completa (vasilhame + água)</button>
-        </div>
-        <div className="mob-row-actions">
-          <button type="button" className="mob-ghost-btn" onClick={() => { setAdding(false); setNewBrand(''); setNewPrice(''); setNewQty(''); setNewFull(false); }}>Cancelar</button>
-          <button type="button" className="primary" data-testid="mob-confirm-add-brand" onClick={addBrandLine}>Adicionar marca</button>
-        </div>
-      </div>}
-
-      <div className="mob-total-row"><span>TOTAL A RECEBER</span><b>{money(total)}</b></div>
-
-      <div className="mob-split-shortcuts">
-        <button type="button" data-testid="mob-all-pix" onClick={allPix}>Tudo Pix</button>
-        <button type="button" data-testid="mob-all-cash" onClick={allCash}>Tudo dinheiro</button>
-      </div>
-
-      <div className="mob-pix-cash">
-        <label className="mob-pix"><span>Pix</span><input type="number" step="0.01" value={pix || ''} data-testid="mob-pix-input" onChange={e => setPixVal(e.target.value)} /></label>
-        <label className="mob-cash"><span>Dinheiro</span><input type="number" step="0.01" value={cash || ''} data-testid="mob-cash-input" onChange={e => setCashVal(e.target.value)} /></label>
-      </div>
-      <p className="mob-help">Digite o que ele tem no Pix ou em dinheiro — o outro campo completa o resto sozinho{compOn ? ` · a prazo: ${money(compValue)}` : ''}</p>
-
-      <div className="mob-comp-row">
-        <div><b>A prazo (COMP)</b><small>Cliente paga em 15 ou 30 dias</small></div>
-        <button type="button" className={`mob-switch${compOn ? ' on' : ''}`} data-testid="mob-comp-switch" onClick={() => setCompOn(!compOn)}><span /></button>
-      </div>
-      {compOn && <div className="mob-comp-fields">
-        <label>Valor a prazo<input type="number" step="0.01" value={comp} data-testid="mob-comp-value" onChange={e => setComp(e.target.value)} /></label>
-        <div className="mob-days-toggle">
-          <button type="button" className={compDays === 15 ? 'active' : ''} data-testid="mob-comp-15" onClick={() => setCompDays(15)}>15 dias</button>
-          <button type="button" className={compDays === 30 ? 'active' : ''} data-testid="mob-comp-30" onClick={() => setCompDays(30)}>30 dias</button>
-        </div>
-      </div>}
-
-      {totalMf > 0 && <div className="mob-mf-decision" data-testid="mob-mf-decision">
-        <b>{totalMf} galão{totalMf > 1 ? 'ões' : ''} com microfuro</b>
-        <p>O que o cliente decidiu sobre esses galões?</p>
-        <div className="mob-mf-options">
-          <button type="button" className={mfPlan === 'reschedule' ? 'active' : ''} data-testid="mob-mf-reschedule" onClick={() => { setMfPlan('reschedule'); setMfDate('Próximo dia útil'); }}><Truck size={22} /> Entregar outro dia</button>
-          <button type="button" className={mfPlan === 'swap' ? 'active' : ''} disabled={swapDisabled} data-testid="mob-mf-swap" onClick={() => setMfPlan('swap')}><Check size={22} /> Trocar agora no caminhão</button>
-          <button type="button" className={mfPlan === 'refused' ? 'active' : ''} data-testid="mob-mf-refused" onClick={() => setMfPlan('refused')}><XCircle size={22} /> Cliente não quis</button>
-        </div>
-        {swapDisabled && <p className="mob-help" data-testid="mob-mf-no-spare" style={{ color: 'var(--mob-orange)' }}>A carga desta viagem está certa para a rota e não tem sobra para trocar o galão com microfuro agora. A troca ficou para o próximo dia útil ({nextBizLabel}) e vai aparecer como lembrete para incluir na próxima viagem.</p>}
-        {mfPlan === 'reschedule' && <p className="mob-help" data-testid="mob-mf-reschedule-info">Troca reagendada para o próximo dia útil ({nextBizLabel}). Ela aparece como lembrete para levar na carga da próxima viagem.</p>}
-      </div>}
-
-      {error && <div className="error" data-testid="mob-panel-error">{error}{error.includes('carga da viagem') && onOpenViagens && <button type="button" className="mob-text-btn" style={{ display: 'block', marginTop: 4 }} data-testid="mob-panel-error-open-viagens" onClick={() => { onClose(); onOpenViagens(); }}>Abrir Viagens do dia para ajustar</button>}</div>}
-      <button type="button" className="mob-cta" disabled={!canSubmit || saving} data-testid="mob-sign-button" onClick={() => setSigning(true)}>Assinar e concluir</button>
-      <button type="button" className="mob-danger-btn" data-testid="mob-fail-button" onClick={() => {
-        if (!window.confirm('Marcar esta entrega como não realizada? Os dados preenchidos serão descartados e nada é descontado do estoque.')) return;
-        clearDraft();
-        if (viagemId && rotaId && customer.id) api.patch(`/viagens/${viagemId}/rotas/${rotaId}/clientes/${customer.id}`, { name: customerName, status: 'nao_entregue' }, auth()).then(onFailed).catch(() => { });
-        onClose();
-      }}>Não consegui entregar</button>
-    </div>
-  </div>
-}
-
-function MobileDiarioTab({ entries, date }) {
-  const [rotaFilter, setRotaFilter] = useState('');
-  const todaysAll = entries.filter(e => e.date === date);
-  const rotaOptions = [...new Map(todaysAll.filter(e => e.rota_codigo).map(e => [e.rota_codigo, e])).values()];
-  const todays = rotaFilter ? todaysAll.filter(e => e.rota_codigo === rotaFilter) : todaysAll;
-  const totals = todays.reduce((s, e) => ({ qty: s.qty + Number(e.billed_quantity || 0), pix: s.pix + Number(e.pix_value || 0), cash: s.cash + Number(e.cash_value || 0) }), { qty: 0, pix: 0, cash: 0 });
-  const mfDetail = e => e.mf_plan === 'swap' ? 'trocado' : e.mf_plan === 'refused' ? 'cliente não quis' : (e.mf_date || '');
-  return <div className="mob-screen">
-    {rotaOptions.length > 0 && <label className="mob-field-md" style={{ marginBottom: 4 }}>FILTRAR POR ROTA
-      <select value={rotaFilter} data-testid="mob-diario-viagem-filter" onChange={e => setRotaFilter(e.target.value)}>
-        <option value="">Todas as rotas de hoje</option>
-        {rotaOptions.map(e => <option key={e.rota_codigo} value={e.rota_codigo}>{e.rota_codigo}</option>)}
-      </select>
-    </label>}
-    <div className="mob-total-cards">
-      <div className="mob-total-card"><span>GALÕES</span><b>{totals.qty}</b></div>
-      <div className="mob-total-card"><span>PIX</span><b className="blue">{money(totals.pix)}</b></div>
-      <div className="mob-total-card"><span>DINHEIRO</span><b className="green">{money(totals.cash)}</b></div>
-    </div>
-    <p className="mob-eyebrow" style={{ margin: '4px 0 0' }}>LANÇAMENTOS DE HOJE</p>
-    <div className="mob-entry-list">
-      {todays.length === 0 && <div className="mob-empty-dashed">Nada lançado ainda. Conclua uma parada na aba Clientes.</div>}
-      {todays.map(e => {
-        const lineItems = e.items?.length ? e.items : (e.brand ? [{ brand: e.brand, quantity: e.billed_quantity ?? e.quantity }] : []);
-        const itemsLabel = lineItems.map(it => `${it.quantity} ${it.brand}`).join(' + ') || `${e.billed_quantity ?? e.quantity} galões`;
-        return <div className="mob-entry-card" key={e.id} data-testid={`mob-entry-${e.id}`}>
-          <div className="mob-entry-top"><b>{e.customer}{e.entry_number ? <small style={{ fontWeight: 400, marginLeft: 6 }}>Nº {e.entry_number}</small> : null}</b><b>{money(e.total)}</b></div>
-          <div className="mob-chips">
-            <span className="mob-chip neutral">{itemsLabel}</span>
-            {e.rota_codigo && <span className="mob-chip neutral">{e.rota_codigo}</span>}
-            <span className="mob-chip blue">Pix {money(e.pix_value)}</span>
-            <span className="mob-chip green">Dinheiro {money(e.cash_value)}</span>
-            {e.mf_quantity > 0 && <span className="mob-chip orange">{e.mf_quantity} MF · {mfDetail(e)}</span>}
-            {e.comp_value > 0 && <span className="mob-chip orange">{money(e.comp_value)} · {e.comp_days}d</span>}
-          </div>
-        </div>
-      })}
-    </div>
-  </div>
-}
-
-function MobileCaixaTab({ entries, expenses, expensesTotal, viagens, date, onAddExpense, onCloseDay, dayClosed, closingDay }) {
-  const [viagemFilter, setViagemFilter] = useState('');
-  const todaysAll = entries.filter(e => e.date === date);
-  const todays = viagemFilter ? todaysAll.filter(e => e.viagem_id === viagemFilter) : todaysAll;
-  const expensesToday = (expenses || []).filter(x => manausDate(x.created_at) === date && x.status !== 'rejected');
-  const filteredExpensesTotal = viagemFilter ? expensesToday.filter(x => x.viagem_id === viagemFilter).reduce((s, x) => s + Number(x.amount || 0), 0) : Number(expensesTotal || 0);
-  const pix = todays.reduce((s, e) => s + Number(e.pix_value || 0), 0);
-  const cash = todays.reduce((s, e) => s + Number(e.cash_value || 0), 0);
-  const comp = todays.reduce((s, e) => s + Number(e.comp_value || 0), 0);
-  const netTotal = pix + cash - filteredExpensesTotal;
-
-  const viagemInfo = {};
-  for (const v of (viagens || [])) viagemInfo[v.id] = v;
-  const viagemOptions = (viagens || []).filter(v => todaysAll.some(e => e.viagem_id === v.id));
-
-  const porRota = {};
-  function bucket(codigo) { return porRota[codigo] || (porRota[codigo] = { codigo, recebido: 0 }); }
-  for (const e of todays) bucket(e.rota_codigo || 'Sem rota').recebido += Number(e.pix_value || 0) + Number(e.cash_value || 0);
-  const rotaInfo = {};
-  for (const v of (viagens || [])) for (const r of (v.rotas || [])) rotaInfo[r.codigo_rota] = { ...r, viagem: v };
-  const rotas = Object.values(porRota).sort((a, b) => (rotaInfo[a.codigo]?.numero || 0) - (rotaInfo[b.codigo]?.numero || 0));
-  const selectedViagem = viagemFilter ? viagemInfo[viagemFilter] : null;
-
-  return <div className="mob-screen">
-    {viagemOptions.length > 0 && <label className="mob-field-md" style={{ marginBottom: 4 }}>FILTRAR POR VIAGEM
-      <select value={viagemFilter} data-testid="mob-caixa-viagem-filter" onChange={e => setViagemFilter(e.target.value)}>
-        <option value="">Todas as viagens de hoje</option>
-        {viagemOptions.map(v => <option key={v.id} value={v.id}>{TURNO_LABELS[v.turno]} · Viagem {v.numero} · {v.codigo_viagem}</option>)}
-      </select>
-    </label>}
-    <div className="mob-cash-hero">
-      <span>{selectedViagem ? `SALDO · ${TURNO_LABELS[selectedViagem.turno]} · VIAGEM ${selectedViagem.numero}` : 'SALDO LÍQUIDO DO DIA · TODAS AS VIAGENS'}</span>
-      <b data-testid="mob-cash-to-deliver">{money(netTotal)}</b>
-      <small>Pix + dinheiro recebidos, já descontadas as despesas{selectedViagem ? ' desta viagem' : ' — manhã e tarde somadas'}</small>
-    </div>
-    <div className="mob-cash-rows">
-      <div className="mob-cash-row"><span className="mob-cash-icon blue"><CircleDollarSign size={16} /></span><div><b>Recebido em Pix</b><small>já na conta da empresa</small></div><b className="blue">{money(pix)}</b></div>
-      <div className="mob-cash-row"><span className="mob-cash-icon green"><Wallet size={16} /></span><div><b>Recebido em dinheiro</b><small>entregar na base</small></div><b className="green">{money(cash)}</b></div>
-      <div className="mob-cash-row"><span className="mob-cash-icon orange"><Clock3 size={16} /></span><div><b>Vendas a prazo</b><small>COMP lançado hoje</small></div><b className="orange">{money(comp)}</b></div>
-      <div className="mob-cash-row"><span className="mob-cash-icon orange"><WalletCards size={16} /></span><div><b>Despesas{selectedViagem ? ' da viagem' : ' do dia'}</b><small>descontado do saldo líquido</small></div><b className="orange">-{money(filteredExpensesTotal)}</b></div>
-    </div>
-    {rotas.length > 0 && <>
-      <p className="mob-eyebrow" style={{ margin: '14px 0 0' }}>RESUMO POR ROTA</p>
-      <div className="mob-cash-rows">
-        {rotas.map(r => {
-          const info = rotaInfo[r.codigo];
-          return <div className="mob-cash-row" key={r.codigo} data-testid={`mob-cash-rota-${r.codigo}`}>
-            <span className="mob-cash-icon blue"><Truck size={16} /></span>
-            <div><b>{info ? `${TURNO_LABELS[info.viagem.turno]} · Viagem ${info.viagem.numero} · Rota ${String(info.numero).padStart(2, '0')}` : r.codigo}</b><small>Recebido {money(r.recebido)}</small></div>
-            <b className="green">{money(r.recebido)}</b>
-          </div>
-        })}
-      </div>
-    </>}
-    {!dayClosed && <button type="button" className="mob-outline-btn" data-testid="mob-add-expense-shortcut" onClick={onAddExpense}><Plus size={16} /> Lançar despesa</button>}
-    <button type="button" className={`mob-cta${dayClosed ? ' green' : ''}`} disabled={dayClosed || closingDay} data-testid="mob-close-day-button" onClick={onCloseDay}>{dayClosed ? 'Dia fechado' : closingDay ? 'Fechando...' : 'Fechar o dia'}</button>
-  </div>
-}
-
-const MOBILE_EXPENSE_CATEGORIES = [['Combustível', Fuel], ['Alimentação', Utensils], ['Pedágio', Receipt], ['Manutenção', Wrench], ['Outros', MoreHorizontal]];
-
-function MobileDespesasTab({ user, date, viagens, viagemAtiva, onOpenViagens, dayClosed }) {
-  const [items, setItems] = useState([]);
-  const [category, setCategory] = useState('Combustível');
-  const [amount, setAmount] = useState('');
-  const [note, setNote] = useState('');
-  const [viagemId, setViagemId] = useState('');
-  const [error, setError] = useState('');
-  const [toast, setToast] = useState('');
-  const [photo, setPhoto] = useState(null);
-  const photoInputRef = useRef(null);
-  useEffect(() => {
-    setViagemId(prev => (prev && (viagens || []).some(v => v.id === prev)) ? prev : (viagemAtiva?.id || viagens?.[0]?.id || ''));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viagemAtiva, viagens]);
-
-  function pickPhoto(file) {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setPhoto(reader.result);
-    reader.readAsDataURL(file);
-  }
-
-  async function load() { const { data } = await api.get('/expenses', auth()); setItems(data.filter(x => (x.driver || '') === user.name && manausDate(x.created_at) === date)); }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { load(); }, [date]);
-  useAutoRefresh(load);
-
-  async function submit() {
-    setError('');
-    if (dayClosed) return setError('O dia já foi fechado. Peça ao administrador para reabrir antes de lançar despesas.');
-    if (!viagemId) return setError('Selecione a viagem que gerou essa despesa.');
-    if (!amount || Number(amount) <= 0) return setError('Informe um valor válido.');
-    try {
-      const { data } = await api.post('/expenses', { type: category, driver: user.name, amount: Number(amount), notes: note, status: 'approved', viagem_id: viagemId, photo }, auth());
-      setItems([data, ...items]); setAmount(''); setNote(''); setPhoto(null);
-      setToast('Despesa lançada'); setTimeout(() => setToast(''), 2200);
-    } catch (e) { setError(e.response?.data?.detail || 'Não foi possível lançar.'); }
-  }
-
-  const total = items.reduce((s, x) => s + Number(x.amount || 0), 0);
-  return <div className="mob-screen">
-    {dayClosed && <div className="mob-viagem-confirm" data-testid="mob-expense-day-closed">Dia fechado — despesas disponíveis somente para consulta.</div>}
-    {(!viagens || viagens.length === 0) && <button type="button" className="mob-trip-banner pending" data-testid="mob-expense-no-trip" onClick={onOpenViagens}>
-      <Truck size={18} /><div><b>Nenhuma viagem criada hoje</b><small>Crie uma viagem para poder atribuir despesas a ela</small></div><ChevronRight size={18} />
-    </button>}
-    {viagens && viagens.length > 0 && <label className="mob-field-md">VIAGEM DESTA DESPESA
-      <select value={viagemId} data-testid="mob-expense-viagem-select" onChange={e => setViagemId(e.target.value)}>
-        {viagens.map(v => <option key={v.id} value={v.id}>{TURNO_LABELS[v.turno]} · {v.codigo_viagem}{v.status === 'execucao' ? ' (em execução)' : v.status === 'finalizada' ? ' (finalizada)' : ''}</option>)}
-      </select>
-    </label>}
-    <div className="mob-expense-grid">
-      {MOBILE_EXPENSE_CATEGORIES.map(([label, Icon]) => <button type="button" key={label} className={category === label ? 'active' : ''} data-testid={`mob-expense-cat-${label}`} onClick={() => setCategory(label)}><Icon size={22} /><span>{label}</span></button>)}
-    </div>
-    <label className="mob-field-lg">VALOR (R$)<input type="number" step="0.01" placeholder="0,00" value={amount} data-testid="mob-expense-amount" onChange={e => setAmount(e.target.value)} /></label>
-    <label className="mob-field-md">OBSERVAÇÃO (OPCIONAL)<input placeholder="ex: posto na saída da cidade" value={note} data-testid="mob-expense-note" onChange={e => setNote(e.target.value)} /></label>
-    <input ref={photoInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} data-testid="mob-expense-photo-input" onChange={e => pickPhoto(e.target.files?.[0])} />
-    <button type="button" className="mob-photo-btn" data-testid="mob-expense-photo" onClick={() => photoInputRef.current?.click()}>
-      {photo ? <img src={photo} alt="Comprovante" className="mob-photo-thumb" /> : <Camera size={20} />}
-      {photo ? 'Trocar foto do comprovante' : 'Foto do comprovante'}
-    </button>
-    {error && <div className="error" data-testid="mob-expense-error">{error}</div>}
-    <button type="button" className="mob-cta" disabled={!viagemId || dayClosed} data-testid="mob-expense-submit" onClick={submit}>{dayClosed ? 'Dia fechado' : 'Lançar despesa'}</button>
-    <p className="mob-eyebrow" style={{ marginTop: 22 }}>MINHAS DESPESAS DE HOJE · {money(total)}</p>
-    <div className="mob-expense-list">
-      {items.length === 0 && <div className="mob-empty-dashed">Nenhuma despesa lançada.</div>}
-      {items.map(x => { const CatIcon = (MOBILE_EXPENSE_CATEGORIES.find(c => c[0] === x.type) || [])[1] || MoreHorizontal; return <div className="mob-expense-row" key={x.id} data-testid={`mob-expense-row-${x.id}`}>
-        {x.photo ? <img src={x.photo} alt="Comprovante" className="mob-expense-icon mob-photo-thumb" /> : <span className="mob-expense-icon"><CatIcon size={17} /></span>}
-        <div><b>{x.type}</b><small>{new Date(x.created_at || Date.now()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}{x.viagem_codigo ? ` · ${x.viagem_codigo}` : ' · sem viagem'}</small></div>
-        <b>{money(x.amount)}</b>
-      </div> })}
-    </div>
-    <MobileToast text={toast} />
-  </div>
-}
-
-function MobileAjustesTab({ user, theme, setTheme, textScale, setTextScale, onLogout }) {
-  return <div className="mob-screen">
-    <div className="mob-settings-card">
-      <p className="mob-eyebrow">APARÊNCIA</p>
-      <div className="mob-appearance-row">
-        <button type="button" className={theme === 'light' ? 'active' : ''} data-testid="mob-theme-light" onClick={() => setTheme('light')}><Sun size={18} /> Claro</button>
-        <button type="button" className={theme === 'dark' ? 'active' : ''} data-testid="mob-theme-dark" onClick={() => setTheme('dark')}><Moon size={18} /> Escuro</button>
-      </div>
-      <p className="mob-eyebrow" style={{ marginTop: 6 }}>TAMANHO DO TEXTO</p>
-      <div className="mob-appearance-row">
-        {[[1, 15], [1.1, 17], [1.2, 19]].map(([v, fs]) => <button type="button" key={v} className={textScale === v ? 'active' : ''} style={{ fontSize: fs, fontWeight: 700 }} data-testid={`mob-scale-${v}`} onClick={() => setTextScale(v)}>A</button>)}
-      </div>
-    </div>
-    <div className="mob-settings-card">
-      <p className="mob-eyebrow">CONTA</p>
-      <div className="mob-account-row"><span className="mob-avatar">{user.name.split(' ').map(x => x[0]).join('').slice(0, 2)}</span><div><b>{user.name}</b><small>Entregador</small></div></div>
-      <button type="button" className="mob-danger-btn full" data-testid="mob-logout-button" onClick={onLogout}>Sair da conta</button>
-    </div>
-  </div>
-}
-
 function MobileReceiptPrompt({ entry, customer, onSavePhone, onClose }) {
   const [phone, setPhone] = useState(customer?.phone || '');
   const [busy, setBusy] = useState(false);
@@ -2718,30 +2139,478 @@ function MobileReceiptPrompt({ entry, customer, onSavePhone, onClose }) {
   </div>
 }
 
+function MobileClientQty({ value, onCommit, testid }) {
+  const [draft, setDraft] = useState(String(value ?? ''));
+  useEffect(() => { setDraft(String(value ?? '')); }, [value]);
+  function commit() {
+    if (draft === '') return setDraft(String(value ?? ''));
+    if (Number(draft) !== Number(value || 0)) onCommit(Number(draft));
+  }
+  return <input className="mob-qty-input" type="number" inputMode="numeric" min="0" aria-label="Quantidade" value={draft} data-testid={testid} onChange={e => setDraft(onlyDigits(e.target.value, 3))} onFocus={e => e.target.select()} onBlur={commit} />
+}
+
+function MobileProductConfig({ customer, rotaNumero, brandsCatalog, busy, onCancel, onConfirm }) {
+  const prefs = brandListOf(customer);
+  const others = brandsCatalog.filter(b => !prefs.some(p => sameName(p.brand, b.name)));
+  const [brand, setBrand] = useState(prefs[0]?.brand || '');
+  const [showOther, setShowOther] = useState(prefs.length === 0);
+  const [qty, setQty] = useState('');
+  const [full, setFull] = useState(false);
+  const pref = prefs.find(p => sameName(p.brand, brand));
+  const cat = others.find(b => sameName(b.name, brand));
+  const sel = pref || cat;
+  const hasFull = !!sel && sel.price_full != null && Number(sel.price_full) > 0;
+  const priceLabel = b => b.price != null ? `${money(b.price)} somente água${b.price_full ? ` · ${money(b.price_full)} completo` : ''}` : 'preço informado na entrega';
+  const pick = name => { setBrand(name); const s = prefs.find(p => sameName(p.brand, name)) || others.find(b => sameName(b.name, name)); if (!(s && Number(s.price_full) > 0)) setFull(false); };
+  const n = Number(qty) || 1;
+  function confirm() {
+    if (!brand) return;
+    onConfirm({ id: customer.id, name: customer.name, brand, quantity: n, sale_type: full && hasFull ? 'full' : 'exchange', out_of_catalog: !pref, price: sel?.price ?? undefined, price_full: sel?.price_full ?? undefined });
+  }
+  return <div className="mob-config" data-testid="mob-viagem-client-config">
+    <div className="mob-config-head">
+      <span><span className="mob-eyebrow">Adicionar à Rota {pad2(rotaNumero)}</span><b>{customer.name}</b></span>
+      <button type="button" className="mob-link dark" data-testid="mob-viagem-client-cancel" onClick={onCancel}>Cancelar</button>
+    </div>
+    <div className="mob-field">
+      <b className="mob-label">Produto</b>
+      {prefs.map(p => <button type="button" key={p.brand} className={`mob-prod${sameName(brand, p.brand) ? ' on' : ''}`} data-testid={`mob-viagem-client-brand-${p.brand}`} onClick={() => pick(p.brand)}><span><b>{p.brand}</b><small>{priceLabel(p)}</small></span><span className="mob-tag warn">Preferência</span></button>)}
+      {prefs.length === 0 && <span className="mob-muted">Cliente sem produto no cadastro — escolha no catálogo.</span>}
+      {others.length > 0 && <button type="button" className="mob-link h48" data-testid="mob-viagem-client-brand-toggle" onClick={() => setShowOther(!showOther)}><RefreshCw size={16} />{showOther ? 'Ocultar outros produtos' : 'Outro produto do cadastro'}</button>}
+      {showOther && others.map(b => <button type="button" key={b.id || b.name} className={`mob-prod${sameName(brand, b.name) ? ' on' : ''}`} data-testid={`mob-viagem-client-catalog-${b.name}`} onClick={() => pick(b.name)}><span><b>{b.name}</b><small>{priceLabel(b)}</small></span><span className="mob-tag neutral">Novo p/ cliente</span></button>)}
+    </div>
+    <div className="mob-config-row">
+      <label className="mob-field"><b className="mob-label">Qtd</b><input className="mob-qty-input lg" type="number" inputMode="numeric" min="1" placeholder="1" value={qty} data-testid="mob-viagem-client-qty" onChange={e => setQty(onlyDigits(e.target.value, 3))} onFocus={e => e.target.select()} /></label>
+      <div className="mob-field"><b className="mob-label">Tipo</b>
+        <div className="mob-seg">
+          <button type="button" className={!full ? 'on' : ''} data-testid="mob-viagem-client-exchange" onClick={() => setFull(false)}>Somente água</button>
+          {hasFull && <button type="button" className={full ? 'on' : ''} data-testid="mob-viagem-client-full" onClick={() => setFull(true)}>Completo</button>}
+        </div>
+      </div>
+    </div>
+    <MobBtn h={56} icon={Check} disabled={!brand || busy} data-testid="mob-viagem-client-confirm" onClick={confirm}>{brand ? `Adicionar ${n} × ${brand}` : 'Escolha o produto'}</MobBtn>
+  </div>
+}
+
+function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed, viagemAtiva, openTripId, setOpenTripId, onBack, onCreate, onIniciar, onFinalizar, onDelete, onAddRota, onAddRotaCliente, onUpdateRotaCliente, onRemoveRotaCliente, onRemoveRota, onScheduleMf, toast }) {
+  const [turno, setTurno] = useState(new Date().getHours() < 12 ? 0 : 1);
+  const [carga, setCarga] = useState(0);
+  const [cargaItems, setCargaItems] = useState([]);
+  const [showMore, setShowMore] = useState(false);
+  const [newCargaBrand, setNewCargaBrand] = useState('');
+  const [newCargaQty, setNewCargaQty] = useState('');
+  const [brandsCatalog, setBrandsCatalog] = useState([]);
+  const [picker, setPicker] = useState(null);
+  const [pickQ, setPickQ] = useState('');
+  const [config, setConfig] = useState(null);
+  const [asking, setAsking] = useState(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api.get('/brands', auth()).then(({ data }) => setBrandsCatalog(data.filter(b => b.active !== false))).catch(() => { }); }, []);
+
+  async function run(fn, fallback) {
+    setBusy(true);
+    try { return await fn(); }
+    catch (e) { toast(apiError(e, fallback), 6000); return undefined; }
+    finally { setBusy(false); }
+  }
+
+  const turnoFull = viagens.filter(v => v.turno === turno).length >= VIAGENS_POR_TURNO;
+  const cargaItemsTotal = cargaItems.reduce((s, i) => s + i.quantity, 0);
+  function addCargaItem() {
+    if (!newCargaBrand || !(Number(newCargaQty) > 0)) return;
+    setCargaItems(prev => [...prev.filter(i => i.brand !== newCargaBrand), { brand: newCargaBrand, quantity: Number(newCargaQty) }]);
+    setNewCargaBrand(''); setNewCargaQty('');
+  }
+  function openPicker(viagemId, rotaId) { setPicker({ viagemId, rotaId }); setPickQ(''); setConfig(null); }
+
+  async function create() {
+    if (turnoFull) return toast('Limite de 6 viagens neste turno.');
+    await run(async () => {
+      let v = await onCreate({ turno, create_first_rota: true, carga_total: cargaItems.length ? undefined : (Number(carga) || undefined), carga_items: cargaItems.length ? cargaItems : undefined });
+      if (!v.rotas?.length) v = await onAddRota(v.id, { clientes: [] });
+      setCargaItems([]); setShowMore(false);
+      setOpenTripId(v.id); openPicker(v.id, v.rotas[v.rotas.length - 1].id);
+      toast('Viagem criada. Adicione os clientes da Rota 01 e toque em Iniciar.', 4000);
+    }, 'Não foi possível criar a viagem.');
+  }
+  async function addRota(v) {
+    await run(async () => { const updated = await onAddRota(v.id, { clientes: [] }); openPicker(v.id, updated.rotas[updated.rotas.length - 1].id); }, 'Não foi possível criar a rota.');
+  }
+  async function addCliente(v, rota, cliente) {
+    await run(async () => { await onAddRotaCliente(v.id, rota.id, cliente); setConfig(null); setPickQ(''); toast(`${cliente.name} adicionado à Rota ${pad2(rota.numero)}.`); }, 'Não foi possível adicionar o cliente.');
+  }
+  async function scheduleMf(v, m, hit) {
+    await run(async () => {
+      let rota = hit?.rota || (v.rotas || [])[(v.rotas || []).length - 1];
+      if (!rota) { const updated = await onAddRota(v.id, { clientes: [] }); rota = updated.rotas[updated.rotas.length - 1]; }
+      await onScheduleMf(v.id, rota.id, m.id);
+      toast(`Troca de MF de ${m.customer} adicionada à viagem.`);
+    }, 'Não foi possível incluir a troca de MF.');
+  }
+
+  const statusOf = (v, c) => entries.some(e => e.viagem_id === v.id && sameName(e.customer, c.name)) ? 'done' : c.status === 'nao_entregue' ? 'failed' : 'pending';
+  const pq = pickQ.trim().toLowerCase();
+
+  return <>
+    <button type="button" className="mob-link dark h44" data-testid="mob-viagens-close" onClick={onBack}><ArrowLeft size={18} />Voltar para a rota</button>
+
+    {dayClosed
+      ? <section className="mob-band" data-testid="mob-day-closed-banner"><Lock size={20} /><b>Dia fechado — viagens somente para consulta.</b></section>
+      : <section className="mob-card" data-testid="mob-viagem-form">
+        <div className="mob-card-head"><b>Criar viagem</b></div>
+        <div className="mob-card-body gap14">
+          <div className="mob-field"><b className="mob-label">Turno</b>
+            <div className="mob-seg" data-testid="mob-viagem-turno">{[0, 1].map(t => <button type="button" key={t} className={turno === t ? 'on' : ''} data-testid={`mob-viagem-turno-${t}`} onClick={() => setTurno(t)}>{TURNO_LABELS[t]}</button>)}</div>
+          </div>
+          {cargaItems.length === 0 && <div className="mob-qrow wrap">
+            <span><b>Carga por viagem</b><small>Galões no caminhão · digite ou use − +</small></span>
+            <MobileStepper label="carga" testid="mob-viagem-carga" value={carga} onType={v => { const d = onlyDigits(v); setCarga(d === '' ? '' : Number(d)); }} onDec={() => setCarga(Math.max(0, (Number(carga) || 0) - 5))} onInc={() => setCarga((Number(carga) || 0) + 5)} />
+          </div>}
+          <button type="button" className="mob-link h44" data-testid="mob-viagem-more" onClick={() => setShowMore(!showMore)}>{showMore ? <ChevronUp size={18} /> : <ChevronDown size={18} />}Carga por produto (opcional){cargaItems.length > 0 ? ` · total ${cargaItemsTotal} un` : ''}</button>
+          {showMore && <div className="mob-field">
+            <span className="mob-muted">Se preencher, o sistema desconta do estoque ao iniciar e devolve a sobra ao concluir a viagem.</span>
+            <div className="mob-carga-add">
+              <select className="mob-input" value={newCargaBrand} data-testid="mob-viagem-carga-brand" onChange={e => setNewCargaBrand(e.target.value)}>
+                <option value="">Produto</option>
+                {brandsCatalog.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
+              </select>
+              <input className="mob-input" type="number" inputMode="numeric" placeholder="Qtd" value={newCargaQty} data-testid="mob-viagem-carga-qty" onChange={e => setNewCargaQty(onlyDigits(e.target.value))} />
+              <button type="button" className="mob-sq ink" aria-label="Adicionar produto à carga" data-testid="mob-viagem-carga-add" onClick={addCargaItem}><Plus size={20} /></button>
+            </div>
+            {cargaItems.length > 0 && <div className="mob-chips">{cargaItems.map(i => <span className="mob-chip" key={i.brand} data-testid={`mob-viagem-carga-chip-${i.brand}`}>{i.brand} · {i.quantity}<button type="button" aria-label="Remover item da carga" onClick={() => setCargaItems(prev => prev.filter(x => x.brand !== i.brand))}><X size={14} /></button></span>)}</div>}
+          </div>}
+        </div>
+        <MobBtn h={64} lead={RouteIcon} icon={ArrowRight} disabled={turnoFull || busy} data-testid="mob-viagem-create" onClick={create}>{turnoFull ? 'Limite de 6 viagens no turno' : 'Criar viagem e montar rotas'}</MobBtn>
+      </section>}
+
+    <section className="mob-list">
+      <div className="mob-sec-head"><b>Viagens de hoje</b><b>{viagens.length}/{VIAGENS_POR_DIA}</b></div>
+      {viagens.length === 0 && <p className="mob-muted pad">Nenhuma viagem criada hoje.</p>}
+      {viagens.map(v => {
+        const rotas = v.rotas || [];
+        const allClients = rotas.flatMap(r => (r.clientes || []).map(c => ({ ...c, rota: r, st: statusOf(v, c) })));
+        const editable = v.status !== 'finalizada' && !dayClosed;
+        const isOpen = openTripId === v.id;
+        const inTrip = new Set(allClients.map(c => c.id));
+        const pendingCount = allClients.filter(c => c.st === 'pending').length;
+        const atual = v.quantidade_atual || 0;
+        return <div className="mob-trip" key={v.id} data-testid={`mob-viagem-${v.id}`}>
+          <div className="mob-trip-head">
+            <span className={`mob-badge lg ${v.status}`}>{pad2(v.numero)}</span>
+            <span className="mob-row-main"><b>{TURNO_LABELS[v.turno]} · Viagem {v.numero}</b><small>{v.codigo_viagem} · {v.status === 'finalizada' ? `${v.entregas || 0} entrega${v.entregas === 1 ? '' : 's'} · ${money(v.saldo_liquido ?? v.total_bruto)}` : v.carga_total ? `carga ${v.carga_total} un` : 'sem carga definida'}</small></span>
+            <span className={`mob-tag ${v.status === 'execucao' ? 'warn' : 'neutral'}`}>{{ planejada: 'Planejada', execucao: 'Em execução', finalizada: 'Concluída' }[v.status]}</span>
+          </div>
+
+          {v.status === 'planejada' && !dayClosed && (asking === `del:${v.id}`
+            ? <MobileConfirm testid="mob-viagem-excluir-confirm" title={`Excluir a viagem ${v.codigo_viagem}?`} text={allClients.length ? `${allClients.length} cliente(s) saem das rotas.` : undefined} confirmLabel="Excluir" busy={busy} onCancel={() => setAsking(null)} onConfirm={() => run(async () => { await onDelete(v); setAsking(null); }, 'Não foi possível excluir a viagem.')} />
+            : <div className="mob-grid21">
+              <MobBtn h={52} icon={Play} kind={viagemAtiva ? 'disabled' : 'primary'} data-testid={`mob-viagem-iniciar-${v.id}`} onClick={() => viagemAtiva ? toast('Conclua a viagem em execução primeiro.') : run(() => onIniciar(v), 'Não foi possível iniciar a viagem.')}>{viagemAtiva ? 'Aguardando' : 'Iniciar'}</MobBtn>
+              <MobBtn h={52} kind="outline" data-testid={`mob-viagem-excluir-${v.id}`} onClick={() => setAsking(`del:${v.id}`)}>Excluir</MobBtn>
+            </div>)}
+
+          {v.status === 'execucao' && (asking === `fin:${v.id}`
+            ? <MobileConfirm testid="mob-viagem-finalizar-confirm" title="Concluir a viagem agora?" text={`${pendingCount > 0 ? `${pendingCount} parada(s) ainda pendente(s). ` : ''}${v.carga_total && atual !== v.carga_total ? `Carga ${atual}/${v.carga_total} un. ` : ''}A sobra da carga volta para o estoque.`} confirmLabel="Concluir viagem" busy={busy} onCancel={() => setAsking(null)} onConfirm={() => run(async () => { await onFinalizar(v); setAsking(null); }, 'Não foi possível concluir a viagem.')} />
+            : <div className="mob-grid2">
+              <MobBtn h={52} kind="outline" icon={ArrowRight} data-testid={`mob-viagem-abrir-rota-${v.id}`} onClick={onBack}>Abrir rota</MobBtn>
+              <MobBtn h={52} kind="outline" icon={Flag} data-testid={`mob-viagem-finalizar-${v.id}`} onClick={() => setAsking(`fin:${v.id}`)}>Concluir</MobBtn>
+            </div>)}
+
+          <button type="button" className="mob-link h44" data-testid={`mob-viagem-toggle-${v.id}`} onClick={() => { setOpenTripId(isOpen ? null : v.id); setPicker(null); setConfig(null); }}>{isOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}{isOpen ? 'Ocultar' : 'Ver'} rotas e clientes ({rotas.length} rota{rotas.length === 1 ? '' : 's'} · {allClients.length} cliente{allClients.length === 1 ? '' : 's'})</button>
+
+          {isOpen && <div className="mob-editor" data-testid={`mob-viagem-editor-${v.id}`}>
+            {editable && mfPending.length > 0 && <div className="mob-mfblock" data-testid="mob-viagem-mf-pendentes">
+              <div className="mob-mfblock-head"><TriangleAlert size={18} /><b>Trocas de MF pendentes</b></div>
+              {mfPending.map(m => {
+                const hit = allClients.find(c => sameName(c.name, m.customer) && c.st === 'pending');
+                const last = rotas[rotas.length - 1];
+                return <div className="mob-mfitem" key={m.id}>
+                  <span><b>{m.customer}</b><small>{m.quantity} × {m.brand}{m.entry_number ? ` · da entrega Nº ${m.entry_number}` : ''}{m.due_date ? ` · prevista ${shortDate(m.due_date)}` : ''}</small></span>
+                  <MobBtn kind="warn" h={48} lead={Plus} disabled={busy} data-testid={`mob-mf-add-${m.id}`} onClick={() => scheduleMf(v, m, hit)}>{hit ? `Somar ao pedido (Rota ${pad2(hit.rota.numero)})` : `Adicionar à Rota ${pad2(last?.numero || 1)}`}</MobBtn>
+                </div>
+              })}
+            </div>}
+
+            {rotas.map(r => {
+              const cl = allClients.filter(c => c.rota.id === r.id);
+              const picking = picker?.viagemId === v.id && picker?.rotaId === r.id;
+              const cfg = config?.viagemId === v.id && config?.rotaId === r.id ? config : null;
+              const canRemove = editable && cl.every(c => c.st === 'pending');
+              const pickRows = picking && !cfg ? customers.filter(c => !inTrip.has(c.id) && (!pq || c.name.toLowerCase().includes(pq) || (c.code || '').toLowerCase().includes(pq) || (c.address || '').toLowerCase().includes(pq))).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR')).slice(0, 20) : [];
+              return <div className="mob-rota" key={r.id} data-testid={`mob-viagem-rota-${r.id}`}>
+                <div className="mob-rota-head">
+                  <span className="mob-row-main"><b>Rota {pad2(r.numero)}</b><small>{cl.length} cliente{cl.length === 1 ? '' : 's'} · {cl.reduce((a, c) => a + clienteLoad(c), 0)} un</small></span>
+                  {canRemove && <button type="button" className="mob-sq" aria-label="Excluir rota" data-testid={`mob-viagem-rota-excluir-${r.id}`} onClick={() => cl.length ? setAsking(`rota:${r.id}`) : run(() => onRemoveRota(v.id, r.id), 'Não foi possível excluir a rota.')}><Trash2 size={18} /></button>}
+                </div>
+                {asking === `rota:${r.id}` && <MobileConfirm testid="mob-viagem-rota-excluir-confirm" title={`Excluir a Rota ${pad2(r.numero)}?`} text={`${cl.length} cliente(s) saem da viagem.`} confirmLabel="Excluir rota" busy={busy} onCancel={() => setAsking(null)} onConfirm={() => run(async () => { await onRemoveRota(v.id, r.id); setAsking(null); }, 'Não foi possível excluir a rota.')} />}
+                {cl.map(c => <div className="mob-client" key={c.id} data-testid={`mob-viagem-rota-cliente-${c.id}`}>
+                  <span className="mob-row-main">
+                    {c.mf_swap_quantity > 0 && <span className="mob-tag swap sm"><RefreshCw size={11} />Troca MF · {c.mf_swap_quantity} un</span>}
+                    <b>{c.name}</b>
+                    <small>{c.brand || 'sem produto'}{c.sale_type === 'full' ? ' · completo' : ' · somente água'}{c.out_of_catalog ? ' · produto novo p/ cliente' : ''}{c.st === 'done' ? ' · entregue' : c.st === 'failed' ? ' · não entregue' : ''}</small>
+                  </span>
+                  {editable && c.st === 'pending'
+                    ? <>
+                      <MobileClientQty value={c.quantity} testid={`mob-viagem-cliente-edit-qty-${c.id}`} onCommit={q => run(() => onUpdateRotaCliente(v.id, r.id, c.id, { quantity: q }), 'Não foi possível salvar a quantidade.')} />
+                      <button type="button" className="mob-x" aria-label="Remover cliente" data-testid={`mob-viagem-rota-cliente-remover-${c.id}`} onClick={() => run(() => onRemoveRotaCliente(v.id, r.id, c.id), 'Não foi possível remover o cliente.')}><X size={20} /></button>
+                    </>
+                    : <b className="mob-locked">{Number(c.quantity) || 0} un</b>}
+                </div>)}
+                {picking && !cfg && <div className="mob-picker" data-testid={`mob-viagem-rota-add-cliente-form-${r.id}`}>
+                  <div className="mob-picker-search">
+                    <Search size={18} />
+                    <input autoFocus placeholder="Buscar cliente cadastrado" value={pickQ} data-testid="mob-viagem-client-search" onChange={e => setPickQ(e.target.value)} />
+                    <button type="button" className="mob-link dark" data-testid="mob-viagem-client-done" onClick={() => setPicker(null)}>Pronto</button>
+                  </div>
+                  {pickRows.map(c => <button type="button" className="mob-row sm pad" key={c.id} data-testid={`mob-viagem-client-${c.id}`} onClick={() => setConfig({ viagemId: v.id, rotaId: r.id, customer: c })}>
+                    <span className="mob-row-main"><b>{c.name}</b><small>{brandListOf(c).map(b => b.brand).join(', ') || 'sem marca cadastrada'}{c.address ? ` · ${c.address}` : ''}</small></span>
+                    <Plus size={20} />
+                  </button>)}
+                  {pickRows.length === 0 && <p className="mob-muted pad">Nenhum cliente encontrado.</p>}
+                </div>}
+                {cfg && <MobileProductConfig key={cfg.customer.id} customer={cfg.customer} rotaNumero={r.numero} brandsCatalog={brandsCatalog} busy={busy} onCancel={() => setConfig(null)} onConfirm={cliente => addCliente(v, r, cliente)} />}
+                {editable && !picking && !cfg && <button type="button" className="mob-link dark h52 pad" data-testid={`mob-viagem-rota-add-cliente-${r.id}`} onClick={() => openPicker(v.id, r.id)}><UserPlus size={18} />Adicionar cliente</button>}
+              </div>
+            })}
+            {rotas.length === 0 && !editable && <p className="mob-muted pad">Viagem sem rotas.</p>}
+            {editable && <button type="button" className="mob-dashed" disabled={busy} data-testid={`mob-viagem-rota-add-${v.id}`} onClick={() => addRota(v)}><Plus size={18} />Nova rota</button>}
+          </div>}
+        </div>
+      })}
+    </section>
+  </>
+}
+
+function MobileDiarioTab({ entries, date }) {
+  const [rotaFilter, setRotaFilter] = useState('');
+  const todaysAll = entries.filter(e => e.date === date);
+  const rotaOptions = [...new Map(todaysAll.filter(e => e.rota_codigo).map(e => [e.rota_codigo, e])).values()];
+  const todays = rotaFilter ? todaysAll.filter(e => e.rota_codigo === rotaFilter) : todaysAll;
+  const totals = todays.reduce((s, e) => ({ qty: s.qty + Number(e.billed_quantity || 0), pix: s.pix + Number(e.pix_value || 0), cash: s.cash + Number(e.cash_value || 0) }), { qty: 0, pix: 0, cash: 0 });
+  const mfDetail = e => e.mf_plan === 'swap' ? 'trocado' : e.mf_plan === 'refused' ? 'cliente não quis' : (e.mf_date || '');
+  return <>
+    {rotaOptions.length > 0 && <label className="mob-field"><b className="mob-label">Filtrar por rota</b>
+      <select className="mob-input" value={rotaFilter} data-testid="mob-diario-viagem-filter" onChange={e => setRotaFilter(e.target.value)}>
+        <option value="">Todas as rotas de hoje</option>
+        {rotaOptions.map(e => <option key={e.rota_codigo} value={e.rota_codigo}>{e.rota_codigo}</option>)}
+      </select>
+    </label>}
+    <section className="mob-stats3">
+      <div><span className="mob-eyebrow">Galões</span><b className="big">{totals.qty}</b></div>
+      <div><span className="mob-eyebrow">Pix</span><b>{money(totals.pix)}</b></div>
+      <div><span className="mob-eyebrow">Dinheiro</span><b>{money(totals.cash)}</b></div>
+    </section>
+    <section className="mob-list">
+      <div className="mob-sec-head"><b>Lançamentos de hoje</b><b>{todays.length}</b></div>
+      {todays.length === 0 && <p className="mob-muted pad">Nada lançado ainda. Conclua uma parada na aba Rota.</p>}
+      {todays.map(e => <div className="mob-entry" key={e.id} data-testid={`mob-entry-${e.id}`}>
+        <div><b>{e.customer}{e.entry_number ? <small> Nº {e.entry_number}</small> : null}</b><b>{money(e.total)}</b></div>
+        <div className="mob-chips">
+          <span className="mob-chip">{entryItemsLabel(e)}</span>
+          <span className="mob-chip">{entryPayLabel(e)}</span>
+          {e.rota_codigo && <span className="mob-chip">{e.rota_codigo}</span>}
+          {e.mf_quantity > 0 && <span className="mob-chip warn">{e.mf_quantity} MF · {mfDetail(e)}</span>}
+        </div>
+      </div>)}
+    </section>
+  </>
+}
+
+function MobileCaixaTab({ entries, expenses, expensesTotal, viagens, date, pendingStops, onCloseDay, dayClosed, closingDay }) {
+  const [viagemFilter, setViagemFilter] = useState('');
+  const [confirming, setConfirming] = useState(false);
+  const todaysAll = entries.filter(e => e.date === date);
+  const todays = viagemFilter ? todaysAll.filter(e => e.viagem_id === viagemFilter) : todaysAll;
+  const expensesToday = (expenses || []).filter(x => manausDate(x.created_at) === date && x.status !== 'rejected');
+  const filteredExpensesTotal = viagemFilter ? expensesToday.filter(x => x.viagem_id === viagemFilter).reduce((s, x) => s + Number(x.amount || 0), 0) : Number(expensesTotal || 0);
+  const pix = todays.reduce((s, e) => s + Number(e.pix_value || 0), 0);
+  const cash = todays.reduce((s, e) => s + Number(e.cash_value || 0), 0);
+  const comp = todays.reduce((s, e) => s + Number(e.comp_value || 0), 0);
+  const netTotal = pix + cash - filteredExpensesTotal;
+
+  const viagemInfo = {};
+  for (const v of (viagens || [])) viagemInfo[v.id] = v;
+  const viagemOptions = (viagens || []).filter(v => todaysAll.some(e => e.viagem_id === v.id));
+  const porRota = {};
+  for (const e of todays) { const k = e.rota_codigo || 'Sem rota'; porRota[k] = (porRota[k] || 0) + Number(e.pix_value || 0) + Number(e.cash_value || 0); }
+  const rotaInfo = {};
+  for (const v of (viagens || [])) for (const r of (v.rotas || [])) rotaInfo[r.codigo_rota] = { ...r, viagem: v };
+  const rotas = Object.keys(porRota).sort((a, b) => (rotaInfo[a]?.numero || 0) - (rotaInfo[b]?.numero || 0));
+  const selectedViagem = viagemFilter ? viagemInfo[viagemFilter] : null;
+  const rows = [
+    [QrCode, 'Recebido em Pix', 'já na conta da empresa', money(pix)],
+    [Banknote, 'Recebido em dinheiro', 'entregar na base', money(cash)],
+    [Clock3, 'Vendas a prazo', 'lançadas hoje', money(comp)],
+    [WalletCards, `Despesas${selectedViagem ? ' da viagem' : ' do dia'}`, 'descontado do saldo líquido', `−${money(filteredExpensesTotal)}`],
+  ];
+
+  return <>
+    {viagemOptions.length > 0 && <label className="mob-field"><b className="mob-label">Filtrar por viagem</b>
+      <select className="mob-input" value={viagemFilter} data-testid="mob-caixa-viagem-filter" onChange={e => setViagemFilter(e.target.value)}>
+        <option value="">Todas as viagens de hoje</option>
+        {viagemOptions.map(v => <option key={v.id} value={v.id}>{TURNO_LABELS[v.turno]} · Viagem {v.numero} · {v.codigo_viagem}</option>)}
+      </select>
+    </label>}
+    <section className="mob-hero">
+      <span className="mob-eyebrow">{selectedViagem ? `Saldo · ${TURNO_LABELS[selectedViagem.turno]} · Viagem ${selectedViagem.numero}` : 'Saldo líquido do dia'}</span>
+      <b data-testid="mob-cash-to-deliver">{money(netTotal)}</b>
+      <span className="mob-muted">Pix + dinheiro recebidos, já descontadas as despesas</span>
+    </section>
+    <section className="mob-list">
+      {rows.map(([Icon, label, sub, value]) => <div className="mob-cash-row" key={label}><Icon size={22} /><span className="mob-row-main"><b>{label}</b><small>{sub}</small></span><b>{value}</b></div>)}
+    </section>
+    <section className="mob-card pad14">
+      <span className="mob-eyebrow">Entregar na base</span>
+      <b className="mob-h28" data-testid="mob-cash-in-hand">{money(cash)}</b>
+      <span className="mob-muted">Dinheiro em mãos · o Pix já está na conta</span>
+    </section>
+    {rotas.length > 0 && <section className="mob-list">
+      <div className="mob-sec-head"><b>Resumo por rota</b><b>{rotas.length}</b></div>
+      {rotas.map(codigo => { const info = rotaInfo[codigo]; return <div className="mob-cash-row" key={codigo} data-testid={`mob-cash-rota-${codigo}`}>
+        <Truck size={22} />
+        <span className="mob-row-main"><b>{info ? `${TURNO_LABELS[info.viagem.turno]} · Viagem ${info.viagem.numero} · Rota ${pad2(info.numero)}` : codigo}</b><small>Pix + dinheiro</small></span>
+        <b>{money(porRota[codigo])}</b>
+      </div> })}
+    </section>}
+    {dayClosed
+      ? <section className="mob-band" data-testid="mob-day-closed"><Lock size={20} /><b>Dia fechado. Lançamentos bloqueados.</b></section>
+      : confirming
+        ? <MobileConfirm testid="mob-close-day-confirm" title="Fechar o dia agora?" text={pendingStops > 0 ? `Ainda há ${pendingStops} parada(s) pendente(s) na rota. Depois de fechar, só o administrador reabre.` : 'Depois de fechar, só o administrador reabre os lançamentos.'} confirmLabel={closingDay ? 'Fechando...' : 'Sim, fechar'} busy={closingDay} onCancel={() => setConfirming(false)} onConfirm={async () => { await onCloseDay(); setConfirming(false); }} />
+        : <MobBtn h={64} icon={Lock} data-testid="mob-close-day-button" onClick={() => setConfirming(true)}>Fechar o dia</MobBtn>}
+  </>
+}
+
+const MOBILE_EXPENSE_CATEGORIES = [['Combustível', Fuel], ['Alimentação', Utensils], ['Pedágio', Receipt], ['Manutenção', Wrench], ['Outros', Ellipsis]];
+
+function MobileDespesasTab({ user, date, viagens, viagemAtiva, onOpenViagens, dayClosed, toast }) {
+  const [items, setItems] = useState([]);
+  const [category, setCategory] = useState('Combustível');
+  const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
+  const [viagemId, setViagemId] = useState('');
+  const [error, setError] = useState('');
+  const [photo, setPhoto] = useState(null);
+  const photoInputRef = useRef(null);
+  useEffect(() => {
+    setViagemId(prev => (prev && (viagens || []).some(v => v.id === prev)) ? prev : (viagemAtiva?.id || viagens?.[0]?.id || ''));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viagemAtiva, viagens]);
+
+  function pickPhoto(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setPhoto(reader.result);
+    reader.readAsDataURL(file);
+  }
+
+  async function load() { const { data } = await api.get('/expenses', auth()); setItems(data.filter(x => (x.driver || '') === user.name && manausDate(x.created_at) === date)); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [date]);
+  useAutoRefresh(load);
+
+  const value = parseMoney(amount);
+  async function submit() {
+    setError('');
+    if (!viagemId) return setError('Selecione a viagem que gerou essa despesa.');
+    if (!(value > 0)) return setError('Informe um valor válido.');
+    try {
+      const { data } = await api.post('/expenses', { type: category, driver: user.name, amount: value, notes: note, status: 'approved', viagem_id: viagemId, photo }, auth());
+      setItems([data, ...items]); setAmount(''); setNote(''); setPhoto(null);
+      toast('Despesa lançada.');
+    } catch (e) { setError(apiError(e, 'Não foi possível lançar.')); }
+  }
+
+  const total = items.reduce((s, x) => s + Number(x.amount || 0), 0);
+  const hasTrips = viagens && viagens.length > 0;
+  return <>
+    {dayClosed && <section className="mob-band" data-testid="mob-expense-day-closed"><Lock size={20} /><b>Dia fechado — despesas somente para consulta.</b></section>}
+    {!dayClosed && !hasTrips && <section className="mob-card plain" data-testid="mob-expense-no-trip">
+      <div className="mob-card-body"><b className="mob-h20">Nenhuma viagem criada hoje.</b><span className="mob-muted">Crie uma viagem para poder atribuir despesas a ela.</span></div>
+      <MobBtn lead={Plus} icon={ArrowRight} onClick={() => onOpenViagens()}>Criar viagem</MobBtn>
+    </section>}
+    {!dayClosed && hasTrips && <>
+      <label className="mob-field"><b className="mob-label">Viagem desta despesa</b>
+        <select className="mob-input" value={viagemId} data-testid="mob-expense-viagem-select" onChange={e => setViagemId(e.target.value)}>
+          {viagens.map(v => <option key={v.id} value={v.id}>{TURNO_LABELS[v.turno]} · Viagem {v.numero} · {v.codigo_viagem}{v.status === 'execucao' ? ' (em execução)' : v.status === 'finalizada' ? ' (concluída)' : ''}</option>)}
+        </select>
+      </label>
+      <section className="mob-field">
+        <b className="mob-label">Categoria</b>
+        <div className="mob-cat-grid">{MOBILE_EXPENSE_CATEGORIES.map(([label, Icon]) => <button type="button" key={label} className={`mob-pick${category === label ? ' on' : ''}`} data-testid={`mob-expense-cat-${label}`} onClick={() => setCategory(label)}><Icon size={22} /><span>{label}</span></button>)}</div>
+      </section>
+      <label className="mob-field"><b className="mob-label">Valor</b>
+        <span className="mob-money"><span>R$</span><input inputMode="decimal" placeholder="0,00" value={amount} data-testid="mob-expense-amount" onChange={e => setAmount(e.target.value)} /></span>
+      </label>
+      <label className="mob-field"><b className="mob-label">Observação (opcional)</b><input className="mob-input" placeholder="ex: posto na saída da cidade" value={note} data-testid="mob-expense-note" onChange={e => setNote(e.target.value)} /></label>
+      <input ref={photoInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} data-testid="mob-expense-photo-input" onChange={e => pickPhoto(e.target.files?.[0])} />
+      <MobBtn kind="outline" h={56} data-testid="mob-expense-photo" lead={photo ? undefined : Camera} onClick={() => photoInputRef.current?.click()}>{photo && <img src={photo} alt="Comprovante" className="mob-thumb" />}{photo ? ' Trocar foto do comprovante' : 'Foto do comprovante'}</MobBtn>
+      {error && <div className="mob-error" data-testid="mob-expense-error">{error}</div>}
+      <MobBtn h={64} icon={Plus} disabled={!(value > 0) || !viagemId} data-testid="mob-expense-submit" onClick={submit}>Lançar despesa</MobBtn>
+    </>}
+    <section className="mob-list">
+      <div className="mob-sec-head"><b>Despesas de hoje</b><b>{money(total)}</b></div>
+      {items.length === 0 && <p className="mob-muted pad">Nenhuma despesa lançada.</p>}
+      {items.map(x => { const CatIcon = (MOBILE_EXPENSE_CATEGORIES.find(c => c[0] === x.type) || [])[1] || Ellipsis; return <div className="mob-cash-row sm" key={x.id} data-testid={`mob-expense-row-${x.id}`}>
+        {x.photo ? <img src={x.photo} alt="Comprovante" className="mob-thumb" /> : <CatIcon size={20} />}
+        <span className="mob-row-main"><b>{x.type}</b><small>{x.status === 'pending' ? 'Aguardando aprovação' : x.status === 'rejected' ? 'Reprovada' : new Date(x.created_at || Date.now()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}{x.viagem_codigo ? ` · ${x.viagem_codigo}` : ''}</small></span>
+        <b>{money(x.amount)}</b>
+      </div> })}
+    </section>
+  </>
+}
+
+function MobileAjustesTab({ user, theme, setTheme, scale, setTextScale, onLogout }) {
+  return <>
+    <section className="mob-field">
+      <b className="mob-label">Tamanho do texto</b>
+      <div className="mob-seg">{MOBILE_SCALES.map(([v, label]) => <button type="button" key={v} className={scale === v ? 'on' : ''} style={{ fontSize: `${16 * v}px` }} data-testid={`mob-scale-${v}`} onClick={() => setTextScale(v)}>{label}</button>)}</div>
+    </section>
+    <section className="mob-field">
+      <b className="mob-label">Tema</b>
+      <div className="mob-seg">
+        <button type="button" className={theme !== 'dark' ? 'on' : ''} data-testid="mob-theme-light" onClick={() => setTheme('light')}><Sun size={18} /> Claro</button>
+        <button type="button" className={theme === 'dark' ? 'on' : ''} data-testid="mob-theme-dark" onClick={() => setTheme('dark')}><Moon size={18} /> Escuro</button>
+      </div>
+    </section>
+    <section className="mob-field">
+      <b className="mob-label">Conta</b>
+      <div className="mob-cash-row sm"><span className="mob-avatar">{user.name.split(' ').map(x => x[0]).join('').slice(0, 2)}</span><span className="mob-row-main"><b>{user.name}</b><small>Entregador</small></span></div>
+    </section>
+    <MobBtn kind="outline" lead={LogOut} data-testid="mob-logout-button" onClick={onLogout}>Sair da conta</MobBtn>
+  </>
+}
+
 function DriverMobileApp({ user, customers, onLogout }) {
   const [theme, setTheme] = useDraft('hydro_theme', 'light');
   const [textScale, setTextScale] = useDraft('hydro_text_scale', 1);
-  const [tab, setTab] = useState('clientes');
-  const [picker, setPicker] = useState(false);
-  const [sheetCustomer, setSheetCustomer] = useState(null);
-  const [sheetOrder, setSheetOrder] = useState(null);
+  const scale = MOBILE_SCALES.map(x => x[0]).reduce((best, v) => Math.abs(v - textScale) < Math.abs(best - textScale) ? v : best, 1);
+  const [tab, setTab] = useState('rota');
   const [search, setSearch] = useState('');
   const [entries, setEntries] = useState([]);
   const [todaysExpenses, setTodaysExpenses] = useState([]);
-  const [postDelivery, setPostDelivery] = useState(null);
-  const [toast, setToast] = useState('');
-  const [toastTone, setToastTone] = useState('green');
   const [viagens, setViagens] = useState([]);
-  const [showViagens, setShowViagens] = useState(false);
+  const [viagensPresas, setViagensPresas] = useState([]);
+  const [mfPending, setMfPending] = useState([]);
   const [dayClosure, setDayClosure] = useState(null);
   const [closingDay, setClosingDay] = useState(false);
-  const [mfPending, setMfPending] = useState([]);
-  const [viagensPresas, setViagensPresas] = useState([]);
+  const [launchKey, setLaunchKey] = useState(null);
+  const [openTripId, setOpenTripId] = useState(null);
+  const [receiptEntry, setReceiptEntry] = useState(null);
+  const [editingEntry, setEditingEntry] = useState(null);
+  const [toast, setToast] = useState('');
+  const [wide, setWide] = useState(false);
+  const rootRef = useRef(null);
+  const toastTimer = useRef(null);
   const date = todayISO(0);
-  async function savePhoneForCustomerName(name, phone) {
-    const c = customers.find(x => x.name === name);
-    if (c) await api.patch(`/customers/${c.id}`, { phone }, auth());
-  }
+
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || !window.ResizeObserver) return undefined;
+    const ro = new ResizeObserver(([e]) => setWide(e.contentRect.width >= 720));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  useEffect(() => () => clearTimeout(toastTimer.current), []);
+  function showToast(text, ms = 2600) { clearTimeout(toastTimer.current); setToast(text); toastTimer.current = setTimeout(() => setToast(''), ms); }
 
   async function loadEntries() { const { data } = await api.get('/daily-entries', { ...auth(), params: { driver: user.name } }); setEntries(data); }
   async function loadViagens() {
@@ -2750,11 +2619,13 @@ function DriverMobileApp({ user, customers, onLogout }) {
     try { const { data: abertas } = await api.get('/viagens', { ...auth(), params: { status: 'execucao' } }); setViagensPresas(abertas.viagens.filter(v => v.date !== date && v.status === 'execucao')); } catch { /* ignore */ }
   }
   async function loadExpenses() { const { data } = await api.get('/expenses', auth()); setTodaysExpenses(data.filter(x => (x.driver || '') === user.name && manausDate(x.created_at) === date && x.status !== 'rejected')); }
-  async function loadMfPending() { try { const { data } = await api.get('/mf-pendentes', auth()); setMfPending(data); } catch { /* ignore */ } }
+  async function loadMfPending() { try { const { data } = await api.get('/mf-pendentes', auth()); setMfPending(data.filter(m => !m.scheduled_viagem_id)); } catch { /* ignore */ } }
   async function loadDayClosure() { const { data } = await api.get('/daily-closing/status', { ...auth(), params: { date } }); setDayClosure(data); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadEntries(); loadViagens(); loadExpenses(); loadDayClosure(); loadMfPending(); }, []);
   useAutoRefresh(() => Promise.all([loadEntries(), loadViagens(), loadExpenses(), loadDayClosure(), loadMfPending()]));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { loadExpenses(); }, [tab]);
 
   const entregasPorViagem = entries.reduce((acc, e) => {
     if (!e.viagem_id) return acc;
@@ -2765,110 +2636,92 @@ function DriverMobileApp({ user, customers, onLogout }) {
   const viagensComProgresso = viagens.map(v => ({ ...v, quantidade_atual: entregasPorViagem[v.id] || 0 }));
   const viagemAtiva = viagensComProgresso.find(v => v.status === 'execucao');
   const cargaRestante = viagemAtiva?.carga_total != null ? Math.max(0, viagemAtiva.carga_total - (viagemAtiva.quantidade_atual || 0)) : null;
-  const rotasAtivas = viagemAtiva?.rotas || [];
-  const clientesDasRotas = rotasAtivas.flatMap(r => (r.clientes || []).map(c => ({ ...c, rota_id: r.id, rota_numero: r.numero })));
-  const viagemClienteIds = new Set(clientesDasRotas.map(c => c.id));
-  const pickableCustomers = viagemClienteIds.size > 0 ? customers.filter(c => viagemClienteIds.has(c.id)) : customers;
-  const entregasNaViagem = new Set(entries.filter(e => e.viagem_id === viagemAtiva?.id).map(e => e.customer));
-  const orders = clientesDasRotas.filter(c => !entregasNaViagem.has(c.name) && c.status !== 'nao_entregue').map(c => ({ id: c.id, customer: c.name, brand: c.brand, quantity: c.quantity, notes: c.notes, sale_type: c.sale_type, rota_id: c.rota_id }));
+  const dayClosed = !!dayClosure?.closed;
+
+  const entriesDaViagem = entries.filter(e => e.viagem_id === viagemAtiva?.id);
+  const stops = (viagemAtiva?.rotas || []).flatMap(r => (r.clientes || []).map((c, i) => {
+    const entry = entriesDaViagem.find(e => sameName(e.customer, c.name));
+    const customer = customers.find(x => x.id === c.id) || customers.find(x => sameName(x.name, c.name));
+    return { ...c, key: `${r.id}:${c.id}`, rota_id: r.id, rota_numero: r.numero, seq: i + 1, customer, entry, address: customer?.address || '', prazo: customer?.payment_type === 'prazo', status: entry ? 'done' : c.status === 'nao_entregue' ? 'failed' : 'pending' };
+  }));
+  const pendingStops = stops.filter(s => s.status === 'pending');
+  const launchStop = launchKey ? stops.find(s => s.key === launchKey && s.status !== 'done') : null;
+  const q = search.trim().toLowerCase();
+  const inTripIds = new Set(stops.map(s => s.id));
+  const offRoute = viagemAtiva && q ? customers.filter(c => !inTripIds.has(c.id) && (c.name.toLowerCase().includes(q) || (c.code || '').toLowerCase().includes(q) || (c.address || '').toLowerCase().includes(q))) : [];
+
   async function createViagem(payload) { const { data } = await api.post('/viagens', payload, auth()); await loadViagens(); return data; }
-  async function iniciarViagem(v) { await api.post(`/viagens/${v.id}/iniciar`, {}, auth()); await loadViagens(); }
-  async function finalizarViagem(v) { await api.post(`/viagens/${v.id}/finalizar`, {}, auth()); await loadViagens(); }
-  async function deleteViagem(v) { if (!window.confirm(`Excluir a viagem ${v.codigo_viagem}?`)) return; await api.delete(`/viagens/${v.id}`, auth()); await loadViagens(); }
+  async function iniciarViagem(v) { await api.post(`/viagens/${v.id}/iniciar`, {}, auth()); await loadViagens(); setTab('rota'); showToast('Viagem iniciada — boa rota!'); }
+  async function finalizarViagem(v) { await api.post(`/viagens/${v.id}/finalizar`, {}, auth()); setLaunchKey(null); setSearch(''); await Promise.all([loadViagens(), loadMfPending()]); showToast(`Viagem ${v.numero || ''} concluída.`); }
+  async function deleteViagem(v) { await api.delete(`/viagens/${v.id}`, auth()); await Promise.all([loadViagens(), loadMfPending()]); }
   async function addRota(viagemId, payload) { const { data } = await api.post(`/viagens/${viagemId}/rotas`, payload, auth()); await loadViagens(); return data; }
   async function addRotaCliente(viagemId, rotaId, cliente) { const { data } = await api.post(`/viagens/${viagemId}/rotas/${rotaId}/clientes`, cliente, auth()); await loadViagens(); return data; }
   async function updateRotaCliente(viagemId, rotaId, clienteId, changes) { const { data } = await api.patch(`/viagens/${viagemId}/rotas/${rotaId}/clientes/${clienteId}`, changes, auth()); await loadViagens(); return data; }
-  async function removeRotaCliente(viagemId, rotaId, clienteId) { const { data } = await api.delete(`/viagens/${viagemId}/rotas/${rotaId}/clientes/${clienteId}`, auth()); await loadViagens(); return data; }
-  async function removeRota(viagemId, rotaId) { const { data } = await api.delete(`/viagens/${viagemId}/rotas/${rotaId}`, auth()); await loadViagens(); return data; }
-  async function updateViagem(viagemId, changes) { const { data } = await api.patch(`/viagens/${viagemId}`, changes, auth()); await loadViagens(); return data; }
+  async function removeRotaCliente(viagemId, rotaId, clienteId) { const { data } = await api.delete(`/viagens/${viagemId}/rotas/${rotaId}/clientes/${clienteId}`, auth()); await Promise.all([loadViagens(), loadMfPending()]); return data; }
+  async function removeRota(viagemId, rotaId) { const { data } = await api.delete(`/viagens/${viagemId}/rotas/${rotaId}`, auth()); await Promise.all([loadViagens(), loadMfPending()]); return data; }
+  async function scheduleMf(viagemId, rotaId, movementId) { const { data } = await api.post(`/viagens/${viagemId}/rotas/${rotaId}/mf-troca`, { movement_id: movementId }, auth()); await Promise.all([loadViagens(), loadMfPending()]); return data; }
 
-  const dayClosed = !!dayClosure?.closed;
-  function showToast(text, tone = 'green', ms = 2600) { setToast(text); setToastTone(tone); setTimeout(() => setToast(''), ms); }
-  function requireViagem(action) { if (dayClosed) { showToast('O dia está fechado. Peça ao administrador para reabrir.', 'orange'); return; } if (!viagemAtiva) { setShowViagens(true); return; } action(); }
+  const guard = (fn, fallback) => async (...args) => { try { await fn(...args); } catch (e) { showToast(apiError(e, fallback), 6000); } };
+  const startTrip = guard(iniciarViagem, 'Não foi possível iniciar a viagem.');
+  const finishTrip = guard(finalizarViagem, 'Não foi possível concluir a viagem.');
+  const deleteEntry = guard(async entry => { await api.delete(`/daily-entries/${entry.id}`, auth()); await Promise.all([loadEntries(), loadViagens(), loadMfPending()]); showToast('Entrega excluída.'); }, 'Não foi possível excluir a entrega.');
 
-  const viagemPlanejada = viagensComProgresso.find(v => v.status === 'planejada');
-  const viagemAlvoMf = viagemAtiva || viagemPlanejada;
-  const mfInRouteNames = new Set((viagemAlvoMf?.rotas || []).flatMap(r => r.clientes || []).map(c => c.name));
-
-  async function finalizarPresa(v) {
-    if (!window.confirm(`Finalizar a viagem ${v.codigo_viagem} de ${shortDate(v.date)}? O que sobrou da carga volta para o estoque.`)) return;
-    try { await finalizarViagem(v); showToast('Viagem finalizada — já pode iniciar a de hoje.'); }
-    catch (e) { showToast(e.response?.data?.detail || 'Não foi possível finalizar a viagem.', 'orange', 6000); }
+  function openViagens(tripId) { setTab('viagens'); if (tripId) setOpenTripId(tripId); if (!wide) setLaunchKey(null); }
+  function openStop(stop) {
+    if (dayClosed) return showToast('O dia está fechado. Peça ao administrador para reabrir.');
+    if (!viagemAtiva) return showToast('Inicie a viagem antes de lançar.');
+    setLaunchKey(stop.key);
   }
-  async function iniciarPlanejada(v) {
-    try { await iniciarViagem(v); showToast('Viagem iniciada — pode lançar as entregas!'); }
-    catch (e) { showToast(e.response?.data?.detail || 'Não foi possível iniciar a viagem.', 'orange', 6000); }
-  }
-  async function addMfToRota(m) {
-    if (!viagemAlvoMf) { showToast('Crie a viagem do dia para incluir a troca na rota.', 'orange'); setShowViagens(true); return; }
-    const existing = customers.find(c => c.name.toLowerCase() === (m.customer || '').toLowerCase());
-    const cliente = { id: existing?.id || `mf-${m.id}`, name: existing?.name || m.customer, brand: m.brand, quantity: m.quantity, sale_type: 'exchange', notes: 'Troca de MF pendente' };
-    const rotaAlvo = (viagemAlvoMf.rotas || [])[(viagemAlvoMf.rotas || []).length - 1];
-    try {
-      if (rotaAlvo) await addRotaCliente(viagemAlvoMf.id, rotaAlvo.id, cliente);
-      else await addRota(viagemAlvoMf.id, { clientes: [cliente] });
-      showToast(`${cliente.name} entrou na rota com ${m.quantity} un de ${m.brand}.`);
-    } catch (e) { showToast(e.response?.data?.detail || 'Não foi possível incluir na rota.', 'orange', 7000); }
-  }
-
-  function startOrder(o) { requireViagem(() => {
-    const existing = customers.find(c => c.name.toLowerCase() === (o.customer || '').toLowerCase());
-    setSheetCustomer(existing || { id: null, name: o.customer, address: o.address || '', brands: [] });
-    setSheetOrder(o);
-  }); }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { loadExpenses(); }, [date, tab, user.name]);
-  const expensesTotal = todaysExpenses.reduce((s, x) => s + Number(x.amount || 0), 0);
-
-  async function pickCustomer(c) {
-    setPicker(false); setSheetOrder(null); setSheetCustomer(c);
-    if (viagemAtiva && c.id && !viagemClienteIds.has(c.id)) {
-      const rotaAlvo = rotasAtivas[rotasAtivas.length - 1];
-      if (rotaAlvo) await api.post(`/viagens/${viagemAtiva.id}/rotas/${rotaAlvo.id}/clientes`, { id: c.id, name: c.name }, auth());
-      else await api.post(`/viagens/${viagemAtiva.id}/rotas`, { clientes: [{ id: c.id, name: c.name }] }, auth());
-      await loadViagens();
-    }
-  }
-  function newCustomer() { setPicker(false); setSheetOrder(null); setSheetCustomer({ id: null, name: '', address: '', brands: [] }); }
+  const pickOffRoute = guard(async c => {
+    if (dayClosed) return showToast('O dia está fechado. Peça ao administrador para reabrir.');
+    const cliente = { id: c.id, name: c.name, brand: brandListOf(c)[0]?.brand, sale_type: 'exchange' };
+    const rotaAlvo = viagemAtiva.rotas?.[viagemAtiva.rotas.length - 1];
+    const updated = rotaAlvo ? await addRotaCliente(viagemAtiva.id, rotaAlvo.id, cliente) : await addRota(viagemAtiva.id, { clientes: [cliente] });
+    const rota = updated.rotas.find(r => (r.clientes || []).some(x => x.id === c.id));
+    setSearch(''); if (rota) setLaunchKey(`${rota.id}:${c.id}`);
+  }, 'Não foi possível incluir o cliente na rota.');
 
   function onEntryComplete(entry) {
     setEntries([entry, ...entries]);
-    setSheetOrder(null);
-    setSheetCustomer(null);
-    setPostDelivery(entry);
-    loadMfPending();
-    if (entry.warnings?.length) showToast(`Entrega registrada. Atenção: ${entry.warnings.join(' ')}`, 'orange', 9000);
-    else showToast('Entrega registrada!');
+    setLaunchKey(null); setTab('rota'); setSearch('');
+    loadMfPending(); loadViagens();
+    const base = `Entrega Nº ${entry.entry_number} registrada · ${entry.customer}. Escolha a próxima na lista.`;
+    if (entry.warnings?.length) showToast(`${base} Atenção: ${entry.warnings.join(' ')}`, 9000);
+    else showToast(base, 4000);
   }
-
+  async function savePhoneForCustomerName(name, phone) {
+    const c = customers.find(x => x.name === name);
+    if (c) await api.patch(`/customers/${c.id}`, { phone }, auth());
+  }
   async function closeDay() {
     setClosingDay(true);
-    try {
-      await api.post('/daily-closing/close', { date }, auth());
-      await loadDayClosure();
-      showToast('Dia fechado e registrado!');
-    } catch (e) { showToast(e.response?.data?.detail || 'Não foi possível fechar o dia.', 'orange'); }
+    try { await api.post('/daily-closing/close', { date }, auth()); await loadDayClosure(); showToast('Dia fechado e registrado.'); }
+    catch (e) { showToast(apiError(e, 'Não foi possível fechar o dia.'), 6000); }
     finally { setClosingDay(false); }
   }
+  const expensesTotal = todaysExpenses.reduce((s, x) => s + Number(x.amount || 0), 0);
 
-  const titles = { clientes: ['Clientes de hoje', 'Selecione o cliente e lance a quantidade'], diario: ['Controle Diário', viagemAtiva ? `Hoje · ${viagemAtiva.codigo_viagem}` : 'Hoje · sem viagem em execução'], caixa: ['Caixa do dia', 'Fechamento do entregador'], despesas: ['Despesas', 'Registre os gastos do dia'], ajustes: ['Ajustes', 'Tema, texto e conta'] };
-  const [title, subtitle] = titles[tab];
-
-  return <div className={`mobile-app${theme === 'dark' ? ' dark' : ''}`} style={{ '--scale': textScale }} data-testid="mobile-driver-app">
-    <MobileHeader user={user} title={title} subtitle={subtitle} theme={theme} onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />
-    <main className="mob-main">
-      {tab === 'clientes' && <MobileClientesTab customers={pickableCustomers} entries={entries} orders={orders} onStartOrder={startOrder} date={date} onOpenPicker={() => requireViagem(() => setPicker(true))} onOpenCustomer={c => requireViagem(() => { setSheetOrder(null); setSheetCustomer(c); })} search={search} setSearch={setSearch} viagemAtiva={viagemAtiva} viagens={viagensComProgresso} onOpenViagens={() => setShowViagens(true)} dayClosed={dayClosed} mfPending={mfPending} viagensPresas={viagensPresas} onFinalizarPresa={finalizarPresa} viagemPlanejada={viagemPlanejada} onIniciarPlanejada={iniciarPlanejada} onAddMf={addMfToRota} mfInRouteNames={mfInRouteNames} />}
-      {tab === 'diario' && <MobileDiarioTab entries={entries} date={date} />}
-      {tab === 'caixa' && <MobileCaixaTab entries={entries} expenses={todaysExpenses} expensesTotal={expensesTotal} viagens={viagensComProgresso} date={date} onAddExpense={() => setTab('despesas')} onCloseDay={closeDay} dayClosed={dayClosed} closingDay={closingDay} />}
-      {tab === 'despesas' && <MobileDespesasTab user={user} date={date} viagens={viagensComProgresso} viagemAtiva={viagemAtiva} onOpenViagens={() => setShowViagens(true)} dayClosed={dayClosed} />}
-      {tab === 'ajustes' && <MobileAjustesTab user={user} theme={theme} setTheme={setTheme} textScale={textScale} setTextScale={setTextScale} onLogout={onLogout} />}
-    </main>
-    <MobileBottomNav tab={tab} setTab={setTab} />
-    {picker && <MobilePickerSheet customers={customers} onClose={() => setPicker(false)} onPick={pickCustomer} onNewCustomer={newCustomer} />}
-    {showViagens && <MobileViagensSheet viagens={viagensComProgresso} customers={customers} onClose={() => setShowViagens(false)} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} onAddRota={addRota} onAddRotaCliente={addRotaCliente} onUpdateRotaCliente={updateRotaCliente} onRemoveRotaCliente={removeRotaCliente} onRemoveRota={removeRota} onUpdateViagem={updateViagem} onEntriesChanged={() => { loadEntries(); loadViagens(); }} onAddEntrega={() => { setShowViagens(false); setPicker(true); }} dayClosed={dayClosed} mfPending={mfPending} viagensPresas={viagensPresas} onFinalizarPresa={finalizarPresa} onStarted={() => { setShowViagens(false); showToast('Viagem iniciada — pode lançar as entregas!'); }} />}
-    {sheetCustomer && <MobileLaunchPanel customer={sheetCustomer} prefillOrder={sheetOrder} user={user} date={date} viagemId={viagemAtiva?.id} rotaId={sheetOrder?.rota_id || clientesDasRotas.find(c => c.id === sheetCustomer?.id)?.rota_id || rotasAtivas[rotasAtivas.length - 1]?.id} onClose={() => { setSheetCustomer(null); setSheetOrder(null); }} onComplete={onEntryComplete} onFailed={loadViagens} onOpenViagens={() => setShowViagens(true)} cargaRestante={cargaRestante} pendingOrders={orders} />}
-    {postDelivery && <MobileReceiptPrompt entry={postDelivery} customer={customers.find(c => c.name === postDelivery.customer)} onSavePhone={p => savePhoneForCustomerName(postDelivery.customer, p)} onClose={() => setPostDelivery(null)} />}
-    <MobileToast text={toast} tone={toastTone} />
+  return <div ref={rootRef} className={`mobile-app${theme === 'dark' ? ' dark' : ''}`} style={{ '--s': scale }} data-testid="mobile-driver-app">
+    <MobileHeader user={user} title={MOBILE_TITLES[tab]} />
+    <div className="mob-body">
+      <main className="mob-main"><div className="mob-col">
+        {tab === 'rota' && <MobileRotaTab viagemAtiva={viagemAtiva} viagens={viagensComProgresso} stops={stops} entries={entries} date={date} search={search} setSearch={setSearch} mfPending={mfPending} viagensPresas={viagensPresas} onFinalizarPresa={finishTrip} dayClosed={dayClosed} onOpenStop={openStop} onOpenViagens={openViagens} onStartTrip={startTrip} onFinishTrip={finishTrip} offRoute={offRoute} onPickOffRoute={pickOffRoute} onReceipt={setReceiptEntry} onEditEntry={setEditingEntry} onDeleteEntry={deleteEntry} />}
+        {tab === 'viagens' && <MobileViagensScreen viagens={viagensComProgresso} customers={customers} entries={entries} mfPending={mfPending} dayClosed={dayClosed} viagemAtiva={viagemAtiva} openTripId={openTripId} setOpenTripId={setOpenTripId} onBack={() => setTab('rota')} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} onAddRota={addRota} onAddRotaCliente={addRotaCliente} onUpdateRotaCliente={updateRotaCliente} onRemoveRotaCliente={removeRotaCliente} onRemoveRota={removeRota} onScheduleMf={scheduleMf} toast={showToast} />}
+        {tab === 'diario' && <MobileDiarioTab entries={entries} date={date} />}
+        {tab === 'caixa' && <MobileCaixaTab entries={entries} expenses={todaysExpenses} expensesTotal={expensesTotal} viagens={viagensComProgresso} date={date} pendingStops={pendingStops.length} onCloseDay={closeDay} dayClosed={dayClosed} closingDay={closingDay} />}
+        {tab === 'despesas' && <MobileDespesasTab user={user} date={date} viagens={viagensComProgresso} viagemAtiva={viagemAtiva} onOpenViagens={openViagens} dayClosed={dayClosed} toast={showToast} />}
+        {tab === 'mais' && <MobileAjustesTab user={user} theme={theme} setTheme={setTheme} scale={scale} setTextScale={setTextScale} onLogout={onLogout} />}
+      </div></main>
+      {(wide || launchStop) && <aside className={`mob-panel ${wide ? 'side' : 'cover'}${launchStop ? '' : ' empty'}`} data-testid="mob-launch-panel">
+        {launchStop
+          ? <MobileLaunchPanel key={launchStop.key} stop={launchStop} user={user} date={date} viagemId={viagemAtiva?.id} cargaRestante={cargaRestante} othersPending={pendingStops.filter(s => s.key !== launchStop.key).reduce((a, s) => a + clienteLoad(s), 0)} onClose={() => setLaunchKey(null)} onComplete={onEntryComplete} onFailed={() => { setLaunchKey(null); loadViagens(); loadMfPending(); showToast('Marcado como não entregue.'); }} onOpenViagens={() => openViagens(viagemAtiva?.id)} />
+          : <div className="mob-panel-empty"><Hand size={32} /><b>Toque numa parada para lançar a entrega.</b><span className="mob-muted">O lançamento abre aqui, sem esconder a rota.</span></div>}
+      </aside>}
+    </div>
+    <MobileBottomNav tab={tab} setTab={t => { setTab(t); if (!wide) setLaunchKey(null); }} />
+    {editingEntry && <MobileEditEntregaModal entry={editingEntry} onClose={() => setEditingEntry(null)} onSaved={() => { setEditingEntry(null); loadEntries(); loadViagens(); loadMfPending(); showToast('Revisão salva.'); }} />}
+    {receiptEntry && <MobileReceiptPrompt entry={receiptEntry} customer={customers.find(c => c.name === receiptEntry.customer)} onSavePhone={p => savePhoneForCustomerName(receiptEntry.customer, p)} onClose={() => setReceiptEntry(null)} />}
+    <MobileToast text={toast} />
   </div>
 }
 
