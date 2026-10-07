@@ -926,11 +926,12 @@ async def create_viagem(data: ViagemInput, user=Depends(current_user)):
     return doc
 
 @api.get("/viagens")
-async def list_viagens(date: Optional[str] = None, driver: Optional[str] = None, user=Depends(current_user)):
+async def list_viagens(date: Optional[str] = None, driver: Optional[str] = None, status: Optional[str] = None, user=Depends(current_user)):
     query = {}
     if user.get("role") != "admin": query["driver"] = user["name"]
     elif driver: query["driver"] = driver
     if date: query["date"] = date
+    if status: query["status"] = status
     viagens = await db.viagens.find(query, {"_id": 0}).sort("numero", 1).to_list(500)
     return {"total": len(viagens), "limite": VIAGENS_POR_DIA, "viagens": viagens}
 
