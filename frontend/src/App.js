@@ -100,18 +100,6 @@ function useDraft(key, initial) {
   return [value, setValue, clear];
 }
 
-function useMediaQuery(query) {
-  const [matches, setMatches] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches);
-  useEffect(() => {
-    const mql = window.matchMedia(query);
-    const handler = () => setMatches(mql.matches);
-    handler();
-    mql.addEventListener('change', handler);
-    return () => mql.removeEventListener('change', handler);
-  }, [query]);
-  return matches;
-}
-
 function useAutoRefresh(refresh, intervalMs = 15000) {
   const refreshRef = useRef(refresh);
   useEffect(() => { refreshRef.current = refresh; }, [refresh]);
@@ -1698,6 +1686,9 @@ function MobileLaunchPanel({ stop, user, date, viagemId, cargaRestante, othersPe
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const canvasRef = useRef(null);
+  const scrollRef = useRef(null);
+  // Cada passo começa do topo: a rolagem do passo anterior não pode esconder a assinatura.
+  useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = 0; }, [step]);
 
   useEffect(() => {
     try { localStorage.setItem(draftKey, JSON.stringify({ v: 2, lines, mfPlan, payMode, pixStr, compDays, signerName })); } catch { /* ignore quota errors */ }
@@ -1771,7 +1762,7 @@ function MobileLaunchPanel({ stop, user, date, viagemId, cargaRestante, othersPe
     </div>
     <div className="mob-steps">{LAUNCH_STEPS.map((label, i) => <div key={label} className={i + 1 === step ? 'now' : i + 1 < step ? 'past' : ''} data-testid={`mob-step-${i + 1}`}>{i + 1} {label}</div>)}</div>
 
-    <div className="mob-launch-scroll"><div className="mob-launch-col">
+    <div className="mob-launch-scroll" ref={scrollRef}><div className="mob-launch-col">
       {step === 1 && <>
         {swapQty > 0 && <div className="mob-swap-band" data-testid="mob-swap-band"><RefreshCw size={20} /><b>Troca de MF · levar {swapQty} galão(ões) bom(ns) e recolher o com defeito</b></div>}
         {stop.brand && <div className="mob-order-box" data-testid="mob-order-banner">
@@ -1929,7 +1920,7 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
         <span className="mob-muted">Recebido hoje · Pix + dinheiro</span>
       </section>
 
-      {next && <section className="mob-card" data-testid="mob-next-stop">
+      {next && <section className="mob-card mob-next" data-testid="mob-next-stop">
         <div className="mob-card-body">
           <span className="mob-eyebrow">Próxima parada · Rota {pad2(next.rota_numero)} · Nº {pad2(next.seq)}</span>
           {next.mf_swap_quantity > 0 && <span className="mob-tag swap big"><RefreshCw size={14} />Troca MF · {next.mf_swap_quantity} un</span>}
@@ -2618,7 +2609,8 @@ function DriverMobileApp({ user, customers, onLogout }) {
   useEffect(() => {
     const el = rootRef.current;
     if (!el || !window.ResizeObserver) return undefined;
-    const ro = new ResizeObserver(([e]) => setWide(e.contentRect.width >= 720));
+    // Lado a lado só com largura e altura sobrando; no celular deitado o lançamento cobre a tela.
+    const ro = new ResizeObserver(([e]) => setWide(e.contentRect.width >= 720 && e.contentRect.height >= 560));
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -2773,11 +2765,11 @@ function App() {
     window.hydroRefreshNotifications = fetchNotif;
     return () => clearInterval(id);
   }, [user, data]);
-  const isMobile = useMediaQuery('(max-width:1024px)');
   if (checking) return <div className="loading">Carregando operação...</div>;
   if (!user) return <Login onLogin={setUser} />;
   const logout = () => { localStorage.removeItem('hydro_token'); setUser(null) };
-  if (user.role === 'driver' && isMobile) return <DriverMobileApp user={user} customers={customers} onLogout={logout} />;
+  // O entregador usa o mesmo app em qualquer tela; o painel de escritório é só do admin.
+  if (user.role === 'driver') return <DriverMobileApp user={user} customers={customers} onLogout={logout} />;
   async function save(kind, form) { const endpoints = { product: '/products', expense: '/expenses', customer: '/customers' }; const payload = { ...form };['quantity', 'minimum', 'value', 'amount'].forEach(k => { if (payload[k] !== undefined) payload[k] = Number(payload[k]) }); if (kind === 'expense') { payload.status = 'approved'; if (!payload.driver) payload.driver = user.name; } const { data: x } = await api.post(endpoints[kind], payload, auth()); if (kind === 'customer') setCustomers([...customers, x]); else { const key = kind === 'product' ? 'products' : 'expenses_list'; setData({ ...data, [key]: [...(data?.[key] || []), x] }) } setModal(null) }
   async function updateCustomer(id, form) { const { data: x } = await api.patch(`/customers/${id}`, form, auth()); setCustomers(customers.map(c => c.id === id ? x : c)); setEditCustomer(null); }
   const modalFields = fields[modal];

@@ -165,6 +165,7 @@ async def signup(data: SignupInput):
     email = data.email.lower().strip()
     if not email or len(data.password) < 6: raise HTTPException(400, "Informe e-mail válido e senha com ao menos 6 caracteres")
     if await db.users.find_one({"email": email}): raise HTTPException(409, "Este e-mail já está cadastrado")
+    await ensure_unique_name("users", data.name, "um usuário")
     user = {"id": str(uuid.uuid4()), "email": email, "name": data.name.strip(), "role": "driver", "status": "pending", "active": False, "password_hash": hash_password(data.password), "created_at": now()}
     await db.users.insert_one(user)
     await log_activity("signup", {"id": user["id"], "name": user["name"]}, user, {"role": "driver"})
@@ -210,7 +211,7 @@ async def dashboard(user=Depends(current_user)):
     entries_today = await db.daily_entries.find({"date": today, **own}, {"_id": 0}).sort("created_at", -1).to_list(200)
     entries_month = await db.daily_entries.find({"date": {"$gte": month_start}, **own}, {"_id": 0}).to_list(None)
     products = await db.products.find({}, {"_id": 0}).to_list(100)
-    expenses = await db.expenses.find(own, {"_id": 0}).to_list(200)
+    expenses = (await db.expenses.find(own, {"_id": 0}).sort("created_at", -1).to_list(200))[::-1]
     revenue = sum(entry_total(e) for e in entries_month)
     month_start_utc = local_day_start_utc(month_start)
     month_expenses = await db.expenses.find({"created_at": {"$gte": month_start_utc}, "status": {"$ne": "rejected"}, **own}, {"_id": 0, "amount": 1}).to_list(None)
@@ -246,7 +247,32 @@ async def dashboard_monthly(months: int = 6, user=Depends(admin_user)):
         if e.get("status") != "rejected": buckets[key]["expenses"] += float(e.get("amount", 0))
     return [buckets[f"{y:04d}-{m:02d}"] for (y, m) in keys]
 
-async def list_resource(collection): return await db[collection].find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
+async def list_resource(collection, query=None, limit=None): return await db[collection].find(query or {}, {"_id": 0}).sort("created_at", -1).to_list(limit)
+
+async def ensure_unique_name(collection, name, label, exclude_id=None):
+    """Lançamentos, viagens e despesas guardam o nome do cliente/entregador: dois cadastros com o mesmo nome se misturariam."""
+    key = (name or "").strip().lower()
+    if not key: raise HTTPException(400, "Informe o nome")
+    for d in await db[collection].find({}, {"_id": 0, "id": 1, "name": 1}).to_list(None):
+        if d.get("id") != exclude_id and (d.get("name") or "").strip().lower() == key:
+            raise HTTPException(409, f"Já existe {label} com o nome \"{d.get('name')}\". Use um nome diferente.")
+
+DRIVER_NAME_COLLECTIONS = ("daily_entries", "viagens", "expenses", "daily_closings", "stock_movements")
+
+async def rename_driver(old, new):
+    """Ao renomear um usuário, o histórico gravado com o nome antigo acompanha — senão ele deixaria de ver os próprios registros."""
+    for collection in DRIVER_NAME_COLLECTIONS:
+        await db[collection].update_many({"driver": old}, {"$set": {"driver": new}})
+
+async def rename_customer(old, new):
+    """Mesmo cuidado para o cliente: lançamentos, pendências de MF e paradas de rota seguem o nome novo."""
+    await db.daily_entries.update_many({"customer": old}, {"$set": {"customer": new}})
+    await db.stock_movements.update_many({"customer": old}, {"$set": {"customer": new}})
+    for v in await db.viagens.find({"rotas.clientes.name": old}, {"_id": 0, "id": 1, "rotas": 1}).to_list(None):
+        for r in v.get("rotas") or []:
+            for c in r.get("clientes") or []:
+                if c.get("name") == old: c["name"] = new
+        await db.viagens.update_one({"id": v["id"]}, {"$set": {"rotas": v["rotas"]}})
 
 def match_product(products_cache, brand):
     b = (brand or "").strip().lower()
@@ -450,7 +476,12 @@ async def apply_entry_stock_movements(doc, reason, sign, user):
                 await db.products.update_one({"id": m["product_id"]}, {"$inc": {"empty_quantity": -float(m.get("quantity") or 0)}})
 
 @api.get("/stock-movements")
-async def stock_movements(user=Depends(admin_user)): return await db.stock_movements.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+async def stock_movements(user=Depends(admin_user)):
+    recent = await db.stock_movements.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    # As pendências (MF, vasilhame vazio, venda sem produto) continuam na tela mesmo depois de saírem das 500 mais recentes.
+    seen = {m["id"] for m in recent}
+    pending = await db.stock_movements.find({"$or": [{"resolved": False}, {"reason": "sem_correspondencia"}]}, {"_id": 0}).sort("created_at", -1).to_list(None)
+    return recent + [m for m in pending if m["id"] not in seen]
 
 @api.get("/mf-pendentes")
 async def mf_pendentes(include_scheduled: bool = False, user=Depends(current_user)):
@@ -579,7 +610,7 @@ async def delete_lot(lot_id: str, user=Depends(admin_user)):
     return {"message": "Excluído"}
 
 @api.get("/expenses")
-async def expenses(user=Depends(current_user)): return await list_resource("expenses")
+async def expenses(user=Depends(current_user)): return await list_resource("expenses", None if user.get("role") == "admin" else {"driver": user["name"]}, 500)
 def trip_totals(entregas, despesas):
     total_bruto = sum(entry_total(e) for e in entregas)
     despesas_total = sum(float(d.get("amount") or 0) for d in despesas)
@@ -646,10 +677,20 @@ async def delete_expense(item_id: str, user=Depends(current_user)):
 @api.get("/customers")
 async def customers(user=Depends(current_user)): return await list_resource("customers")
 @api.post("/customers")
-async def add_customer(data: ResourceInput, user=Depends(admin_user)): return await create_resource("customers", data, user)
+async def add_customer(data: ResourceInput, user=Depends(admin_user)):
+    await ensure_unique_name("customers", data.name, "um cliente")
+    data.name = data.name.strip()
+    return await create_resource("customers", data, user)
 @api.patch("/customers/{item_id}")
 async def update_customer(item_id: str, data: ResourceInput, user=Depends(admin_user)):
-    values = data.model_dump(exclude_unset=True); await db.customers.update_one({"id": item_id}, {"$set": values})
+    before = await db.customers.find_one({"id": item_id}, {"_id": 0})
+    values = data.model_dump(exclude_unset=True)
+    renamed = before and "name" in values and (values["name"] or "").strip() != before.get("name")
+    if renamed:
+        await ensure_unique_name("customers", values["name"], "um cliente", exclude_id=item_id)
+        values["name"] = values["name"].strip()
+    await db.customers.update_one({"id": item_id}, {"$set": values})
+    if renamed and before.get("name"): await rename_customer(before["name"], values["name"])
     doc = await db.customers.find_one({"id": item_id}, {"_id": 0}); return doc
 
 @api.get("/brands")
@@ -1525,6 +1566,7 @@ async def create_user(data: UserInput, user=Depends(admin_user)):
     if not data.email or not data.password or not data.name: raise HTTPException(400, "Nome, e-mail e senha são obrigatórios")
     email = data.email.lower().strip()
     if await db.users.find_one({"email": email}): raise HTTPException(409, "Este e-mail já está cadastrado")
+    await ensure_unique_name("users", data.name, "um usuário")
     doc = {"id": str(uuid.uuid4()), "email": email, "name": data.name.strip(), "phone": data.phone, "role": data.role or "driver", "status": "approved", "active": True, "password_hash": hash_password(data.password), "created_at": now()}
     await db.users.insert_one(doc)
     await log_activity("user_created", user, doc, {"role": doc["role"]})
@@ -1535,6 +1577,8 @@ async def update_user(user_id: str, data: UserInput, user=Depends(admin_user)):
     target = await db.users.find_one({"id": user_id}, {"_id": 0})
     if not target: raise HTTPException(404, "Usuário não encontrado")
     updates = {}
+    renamed = data.name is not None and data.name.strip() != target.get("name")
+    if renamed: await ensure_unique_name("users", data.name, "um usuário", exclude_id=user_id)
     if data.name is not None: updates["name"] = data.name.strip()
     if data.email is not None:
         email = data.email.lower().strip()
@@ -1546,6 +1590,7 @@ async def update_user(user_id: str, data: UserInput, user=Depends(admin_user)):
     if data.status is not None and data.status in ("pending", "approved", "rejected"): updates["status"] = data.status
     if updates:
         await db.users.update_one({"id": user_id}, {"$set": updates})
+        if renamed and target.get("name"): await rename_driver(target["name"], updates["name"])
         await log_activity("user_updated", user, target, updates)
     doc = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
     return doc
@@ -1758,9 +1803,31 @@ async def export_stock_csv(user=Depends(admin_user)):
         w.writerow([l.get("code"), l.get("purchase_date"), l.get("product_name"), l.get("quantity_initial"), l.get("quantity_remaining"), l.get("cost_unit"), l.get("cost_unit_full") if l.get("cost_unit_full") is not None else "", f"{float(l.get('quantity_remaining') or 0) * float(l.get('cost_unit') or 0):.2f}", l.get("notes") or ""])
     return Response(content="﻿" + buf.getvalue(), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": 'attachment; filename="distribuidora-diane-estoque.csv"'})
 
+INDEXES = {
+    "users": ["id"],
+    "daily_entries": [[("date", 1), ("driver", 1)], "viagem_id", "customer"],
+    "viagens": [[("date", 1), ("driver", 1)]],
+    "expenses": ["viagem_id", "created_at"],
+    "stock_movements": ["entry_id", "created_at", [("reason", 1), ("resolved", 1)]],
+    "lots": [[("product_id", 1), ("purchase_date", 1)]],
+    "daily_closings": [[("date", 1), ("driver", 1)]],
+}
+UNIQUE_INDEXES = [(c, "id") for c in ("daily_entries", "viagens", "expenses", "stock_movements", "lots", "customers", "products", "brands")] + [("viagens", "codigo_viagem")]
+
+async def ensure_indexes():
+    """Índices para as consultas do dia a dia e travas contra registro duplicado. Uma falha aqui não derruba o app."""
+    for collection, keys_list in INDEXES.items():
+        for keys in keys_list:
+            try: await db[collection].create_index(keys)
+            except Exception as e: logging.warning("Índice %s em %s não criado: %s", keys, collection, e)
+    for collection, field in UNIQUE_INDEXES:
+        try: await db[collection].create_index(field, unique=True)
+        except Exception as e: logging.warning("Índice único %s em %s não criado: %s", field, collection, e)
+
 @app.on_event("startup")
 async def seed():
     await db.users.create_index("email", unique=True)
+    await ensure_indexes()
     if not await db.users.find_one({"email": os.environ["ADMIN_EMAIL"]}):
         await db.users.insert_one({"id":"admin-1","email":os.environ["ADMIN_EMAIL"],"name":"Marina Costa","role":"admin","status":"approved","active":True,"password_hash":hash_password(os.environ["ADMIN_PASSWORD"]),"created_at":now()})
     else:
