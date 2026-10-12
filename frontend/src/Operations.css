@@ -522,7 +522,37 @@
 .mob-qrow.wrap .mob-stepper input{flex:1;width:auto;min-width:0}
 .mob-qrow.wrap .mob-stepper button{width:64px}
 
-@media(min-width:1025px){.mobile-app{display:none}}
+/* ---- Adaptação a telas pequenas: celular estreito, baixo ou deitado ---- */
+.mob-next .mob-h26,.mob-next .mob-card-body>.mob-muted{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+@media(max-width:360px){
+  .mob-col{gap:12px;padding:12px 12px 24px}
+  .mob-header .mob-eyebrow{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mob-next .mob-h26{font-size:calc(22px * var(--s))}
+}
+/* Pouca altura: a próxima parada sobe para o topo, para "Lançar entrega" aparecer sem rolar. */
+@media(max-height:600px){
+  .mob-col>.mob-next{order:-1}
+}
+/* A assinatura vem antes do nome e ocupa a altura que sobra, sem precisar rolar para assinar. */
+@media(max-height:700px){
+  .mob-launch-col>.mob-field:has(.mob-sign-box){order:-1}
+  .mob-sign-box canvas{height:clamp(130px,calc(100dvh - 400px),220px)}
+}
+@media(max-height:520px){
+  .mob-header{padding:6px 16px}
+  .mob-header .mob-eyebrow{display:none}
+  .mob-bottom-nav button{min-height:46px;flex-direction:row;gap:8px}
+  .mob-col{gap:12px;padding-top:12px}
+  .mob-launch-head{padding:6px 16px}
+  .mob-steps{padding-top:6px}
+  .mob-launch-col{gap:12px;padding:12px 16px}
+  .mob-launch-foot{padding-top:6px;padding-bottom:calc(6px + env(safe-area-inset-bottom))}
+  .mob-launch-foot .mob-btn{min-height:52px!important}
+  .mob-sign-box canvas{height:clamp(110px,calc(100dvh - 232px),220px)}
+}
+
+/* Tela larga (tablet deitado, computador): a coluna fica centralizada no espaço ao lado do lançamento. */
+@media(min-width:1025px){.mob-col{margin:0 auto}}
 
 /* ===================== Tema escuro do painel admin ===================== */
 .theme-toggle{width:36px;height:36px;border-radius:9px;background:#eef4fa;color:#5e748a;display:grid;place-items:center}
