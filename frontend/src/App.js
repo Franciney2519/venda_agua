@@ -1554,6 +1554,12 @@ const apiError = (e, fallback) => { const d = e?.response?.data?.detail; return 
 const mergedSwapQty = c => (c.mf_swaps || []).filter(s => s.merged).reduce((a, s) => a + Number(s.quantity || 0), 0);
 const clienteLoad = c => Number(c.quantity || 0) + mergedSwapQty(c);
 const entryItemsLabel = e => entryItemsList(e).map(it => `${it.quantity} ${it.brand}`).join(' + ') || galoes(Number(e.billed_quantity ?? e.quantity ?? 0));
+// A quantidade da entrega não inclui o galão com microfuro; este rótulo diz o que aconteceu com ele.
+function entryMfLabel(e) {
+  const n = Number(e.mf_quantity || 0);
+  if (!n) return '';
+  return ` + ${n} MF ${e.mf_plan === 'swap' ? 'trocado' : e.mf_plan === 'refused' ? 'recusado' : 'para outro dia'}`;
+}
 function entryPayLabel(e) {
   const parts = [];
   if (Number(e.pix_value) > 0) parts.push(`Pix ${money(e.pix_value)}`);
@@ -1561,6 +1567,8 @@ function entryPayLabel(e) {
   if (Number(e.comp_value) > 0) parts.push(`A prazo ${e.comp_days || 15}d ${money(e.comp_value)}`);
   return parts.join(' + ') || money(0);
 }
+// <option> só aceita texto: o rótulo vai pronto, numa string só.
+const viagemOptionLabel = v => `${TURNO_LABELS[v.turno]} · Viagem ${v.numero} · ${v.codigo_viagem}`;
 const MOBILE_TITLES = { rota: 'Rota de hoje', viagens: 'Viagens do dia', diario: 'Controle diário', caixa: 'Caixa do dia', despesas: 'Despesas', mais: 'Ajustes' };
 const MOBILE_SCALES = [[1, 'Normal'], [1.15, 'Grande'], [1.3, 'Maior']];
 
@@ -1849,7 +1857,9 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
   const failed = stops.filter(s => s.status === 'failed');
   const received = entries.filter(e => e.date === date).reduce((a, e) => a + Number(e.pix_value || 0) + Number(e.cash_value || 0), 0);
   const tripTotal = done.reduce((a, s) => a + Number(s.entry?.total || 0), 0);
+  const swapMf = done.reduce((a, s) => a + (s.entry?.mf_plan === 'swap' ? Number(s.entry.mf_quantity || 0) : 0), 0);
   const nextPlanned = viagens.find(v => v.status === 'planejada');
+  const plannedEmpty = !!nextPlanned && !(nextPlanned.rotas || []).some(r => (r.clientes || []).length > 0);
   const lastDone = [...viagens].reverse().find(v => v.status === 'finalizada');
   const mfTarget = viagemAtiva || nextPlanned;
   const carga = viagemAtiva?.carga_total, atual = viagemAtiva?.quantidade_atual || 0;
@@ -1871,11 +1881,15 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
 
     {!viagemAtiva && !dayClosed && <section className="mob-poster" data-testid="mob-trip-banner">
       <span className="mob-eyebrow">{lastDone ? `Viagem ${lastDone.numero} concluída` : 'Nenhuma viagem em execução'}</span>
-      <b>{nextPlanned ? `Viagem ${nextPlanned.numero} pronta para sair.` : lastDone ? 'Quer fazer outra viagem hoje?' : 'Crie a viagem para liberar os lançamentos.'}</b>
-      {nextPlanned
-        ? <MobBtn kind="white" lead={Truck} icon={ArrowRight} data-testid="mob-start-planned-button" onClick={() => onStartTrip(nextPlanned)}>Iniciar viagem {nextPlanned.numero} · {TURNO_LABELS[nextPlanned.turno]}</MobBtn>
-        : <MobBtn kind="white" lead={Plus} icon={ArrowRight} data-testid="mob-new-delivery-button" onClick={() => onOpenViagens()}>Criar viagem</MobBtn>}
-      {nextPlanned && <button type="button" className="mob-link on-accent" data-testid="mob-poster-open-viagens" onClick={() => onOpenViagens(nextPlanned.id)}>Ver rotas e clientes<ChevronRight size={16} /></button>}
+      <b>{plannedEmpty ? `Viagem ${nextPlanned.numero} ainda sem clientes.` : nextPlanned ? `Viagem ${nextPlanned.numero} pronta para sair.` : lastDone ? 'Quer fazer outra viagem hoje?' : 'Crie a viagem para liberar os lançamentos.'}</b>
+      {plannedEmpty
+        ? <MobBtn kind="white" lead={RouteIcon} icon={ArrowRight} data-testid="mob-build-planned-button" onClick={() => onOpenViagens(nextPlanned.id)}>Montar rota da viagem {nextPlanned.numero}</MobBtn>
+        : nextPlanned
+          ? <MobBtn kind="white" lead={Truck} icon={ArrowRight} data-testid="mob-start-planned-button" onClick={() => onStartTrip(nextPlanned)}>Iniciar viagem {nextPlanned.numero} · {TURNO_LABELS[nextPlanned.turno]}</MobBtn>
+          : <MobBtn kind="white" lead={Plus} icon={ArrowRight} data-testid="mob-new-delivery-button" onClick={() => onOpenViagens()}>Criar viagem</MobBtn>}
+      {/* Sair sem rota montada continua possível: dá para incluir clientes pela busca durante a viagem. */}
+      {plannedEmpty && <button type="button" className="mob-link on-accent" data-testid="mob-start-planned-button" onClick={() => onStartTrip(nextPlanned)}>Iniciar sem clientes<ChevronRight size={16} /></button>}
+      {nextPlanned && !plannedEmpty && <button type="button" className="mob-link on-accent" data-testid="mob-poster-open-viagens" onClick={() => onOpenViagens(nextPlanned.id)}>Ver rotas e clientes<ChevronRight size={16} /></button>}
     </section>}
 
     {viagemAtiva && <section className="mob-tripbar" data-testid="mob-trip-banner">
@@ -1887,6 +1901,7 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
         {carga ? <div className="mob-bar"><div className={atual > carga ? 'over' : ''} style={{ width: `${Math.min(100, Math.round(atual / carga * 100))}%` }} /></div> : null}
         <span data-testid="mob-carga-label">Carga {carga ? `${atual}/${carga} un` : `${atual} un entregues`}</span>
       </div>
+      {swapMf > 0 && <span className="mob-muted" data-testid="mob-carga-mf-note">Inclui {2 * swapMf} un de troca de MF: o galão bom entregue e o com defeito que voltou.</span>}
     </section>}
 
     {mfPending.length > 0 && <section className="mob-alert col" data-testid="mob-mf-reminder">
@@ -1965,7 +1980,7 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
         return <div key={s.key} className="mob-done">
           <button type="button" className="mob-row sm" data-testid={`mob-done-row-${s.id}`} onClick={() => isFailed ? onOpenStop(s) : setOpenDone(open ? null : s.key)}>
             <span className={`mob-badge${isFailed ? ' off' : ''}`}>{isFailed ? <X size={18} /> : <Check size={18} />}</span>
-            <span className="mob-row-main"><b>{s.name}</b><small>{isFailed ? 'Não entregue · toque para tentar de novo' : `${entryItemsLabel(s.entry)} · ${entryPayLabel(s.entry)}`}</small></span>
+            <span className="mob-row-main"><b>{s.name}</b><small>{isFailed ? 'Não entregue · toque para tentar de novo' : `${entryItemsLabel(s.entry)}${entryMfLabel(s.entry)} · ${entryPayLabel(s.entry)}`}</small></span>
             <b>{isFailed ? '—' : money(s.entry.total)}</b>
           </button>
           {open && !isFailed && (deleteAsk === s.key
@@ -2389,7 +2404,7 @@ function MobileDiarioTab({ entries, date }) {
   const todaysAll = entries.filter(e => e.date === date);
   const rotaOptions = [...new Map(todaysAll.filter(e => e.rota_codigo).map(e => [e.rota_codigo, e])).values()];
   const todays = rotaFilter ? todaysAll.filter(e => e.rota_codigo === rotaFilter) : todaysAll;
-  const totals = todays.reduce((s, e) => ({ qty: s.qty + Number(e.billed_quantity || 0), pix: s.pix + Number(e.pix_value || 0), cash: s.cash + Number(e.cash_value || 0) }), { qty: 0, pix: 0, cash: 0 });
+  const totals = todays.reduce((s, e) => ({ qty: s.qty + Number(e.billed_quantity || 0), pix: s.pix + Number(e.pix_value || 0), cash: s.cash + Number(e.cash_value || 0), mf: s.mf + Number(e.mf_quantity || 0) }), { qty: 0, pix: 0, cash: 0, mf: 0 });
   const mfDetail = e => e.mf_plan === 'swap' ? 'trocado' : e.mf_plan === 'refused' ? 'cliente não quis' : (e.mf_date || '');
   return <>
     {rotaOptions.length > 0 && <label className="mob-field"><b className="mob-label">Filtrar por rota</b>
@@ -2403,6 +2418,7 @@ function MobileDiarioTab({ entries, date }) {
       <div><span className="mob-eyebrow">Pix</span><b>{money(totals.pix)}</b></div>
       <div><span className="mob-eyebrow">Dinheiro</span><b>{money(totals.cash)}</b></div>
     </section>
+    {totals.mf > 0 && <span className="mob-muted" data-testid="mob-diario-mf-note">O total de galões não conta {totals.mf} com microfuro (MF). Veja o detalhe em cada lançamento.</span>}
     <section className="mob-list">
       <div className="mob-sec-head"><b>Lançamentos de hoje</b><b>{todays.length}</b></div>
       {todays.length === 0 && <p className="mob-muted pad">Nada lançado ainda. Conclua uma parada na aba Rota.</p>}
@@ -2419,9 +2435,11 @@ function MobileDiarioTab({ entries, date }) {
   </>
 }
 
-function MobileCaixaTab({ entries, expenses, expensesTotal, viagens, date, pendingStops, onCloseDay, dayClosed, closingDay }) {
+function MobileCaixaTab({ entries, expenses, expensesTotal, viagens, date, pendingStops, onCloseDay, onOpenViagens, dayClosed, closingDay }) {
   const [viagemFilter, setViagemFilter] = useState('');
   const [confirming, setConfirming] = useState(false);
+  // O servidor recusa fechar o dia com viagem aberta; a tela avisa antes de o entregador tentar.
+  const abertas = (viagens || []).filter(v => v.status !== 'finalizada');
   const todaysAll = entries.filter(e => e.date === date);
   const todays = viagemFilter ? todaysAll.filter(e => e.viagem_id === viagemFilter) : todaysAll;
   const expensesToday = (expenses || []).filter(x => manausDate(x.created_at) === date && x.status !== 'rejected');
@@ -2430,6 +2448,8 @@ function MobileCaixaTab({ entries, expenses, expensesTotal, viagens, date, pendi
   const cash = todays.reduce((s, e) => s + Number(e.cash_value || 0), 0);
   const comp = todays.reduce((s, e) => s + Number(e.comp_value || 0), 0);
   const netTotal = pix + cash - filteredExpensesTotal;
+  // As despesas saem do dinheiro em mãos; se passarem do que entrou em dinheiro, a base é que deve ao entregador.
+  const cashInHand = cash - filteredExpensesTotal;
 
   const viagemInfo = {};
   for (const v of (viagens || [])) viagemInfo[v.id] = v;
@@ -2442,16 +2462,16 @@ function MobileCaixaTab({ entries, expenses, expensesTotal, viagens, date, pendi
   const selectedViagem = viagemFilter ? viagemInfo[viagemFilter] : null;
   const rows = [
     [QrCode, 'Recebido em Pix', 'já na conta da empresa', money(pix)],
-    [Banknote, 'Recebido em dinheiro', 'entregar na base', money(cash)],
+    [Banknote, 'Recebido em dinheiro', 'antes das despesas', money(cash)],
     [Clock3, 'Vendas a prazo', 'lançadas hoje', money(comp)],
-    [WalletCards, `Despesas${selectedViagem ? ' da viagem' : ' do dia'}`, 'descontado do saldo líquido', `−${money(filteredExpensesTotal)}`],
+    [WalletCards, `Despesas${selectedViagem ? ' da viagem' : ' do dia'}`, 'pagas com o dinheiro em mãos', `−${money(filteredExpensesTotal)}`],
   ];
 
   return <>
     {viagemOptions.length > 0 && <label className="mob-field"><b className="mob-label">Filtrar por viagem</b>
       <select className="mob-input" value={viagemFilter} data-testid="mob-caixa-viagem-filter" onChange={e => setViagemFilter(e.target.value)}>
         <option value="">Todas as viagens de hoje</option>
-        {viagemOptions.map(v => <option key={v.id} value={v.id}>{TURNO_LABELS[v.turno]} · Viagem {v.numero} · {v.codigo_viagem}</option>)}
+        {viagemOptions.map(v => <option key={v.id} value={v.id}>{viagemOptionLabel(v)}</option>)}
       </select>
     </label>}
     <section className="mob-hero">
@@ -2463,9 +2483,9 @@ function MobileCaixaTab({ entries, expenses, expensesTotal, viagens, date, pendi
       {rows.map(([Icon, label, sub, value]) => <div className="mob-cash-row" key={label}><Icon size={22} /><span className="mob-row-main"><b>{label}</b><small>{sub}</small></span><b>{value}</b></div>)}
     </section>
     <section className="mob-card pad14">
-      <span className="mob-eyebrow">Entregar na base</span>
-      <b className="mob-h28" data-testid="mob-cash-in-hand">{money(cash)}</b>
-      <span className="mob-muted">Dinheiro em mãos · o Pix já está na conta</span>
+      <span className="mob-eyebrow">{cashInHand < 0 ? 'A receber da base' : 'Entregar na base'}</span>
+      <b className="mob-h28" data-testid="mob-cash-in-hand">{money(Math.abs(cashInHand))}</b>
+      <span className="mob-muted">{cashInHand < 0 ? 'As despesas passaram do dinheiro recebido' : 'Dinheiro recebido menos as despesas'} · o Pix já está na conta</span>
     </section>
     {rotas.length > 0 && <section className="mob-list">
       <div className="mob-sec-head"><b>Resumo por rota</b><b>{rotas.length}</b></div>
@@ -2477,7 +2497,14 @@ function MobileCaixaTab({ entries, expenses, expensesTotal, viagens, date, pendi
     </section>}
     {dayClosed
       ? <section className="mob-band" data-testid="mob-day-closed"><Lock size={20} /><b>Dia fechado. Lançamentos bloqueados.</b></section>
-      : confirming
+      : abertas.length > 0
+        ? <section className="mob-card pad14" data-testid="mob-close-day-blocked">
+          <span className="mob-eyebrow"><Lock size={14} />Ainda não dá para fechar o dia</span>
+          <b className="mob-h20">{abertas.length === 1 ? `A viagem ${abertas[0].numero} está ${abertas[0].status === 'execucao' ? 'em execução' : 'planejada'}.` : `${abertas.length} viagens ainda estão abertas.`}</b>
+          <span className="mob-muted">Conclua ou exclua {abertas.length === 1 ? 'a viagem' : 'as viagens'} para liberar o fechamento.</span>
+          <MobBtn kind="outline" h={52} icon={ChevronRight} data-testid="mob-close-day-open-viagens" onClick={() => onOpenViagens(abertas[0].id)}>Abrir viagem {abertas[0].numero}</MobBtn>
+        </section>
+        : confirming
         ? <MobileConfirm testid="mob-close-day-confirm" title="Fechar o dia agora?" text={pendingStops > 0 ? `Ainda há ${pendingStops} parada(s) pendente(s) na rota. Depois de fechar, só o administrador reabre.` : 'Depois de fechar, só o administrador reabre os lançamentos.'} confirmLabel={closingDay ? 'Fechando...' : 'Sim, fechar'} busy={closingDay} onCancel={() => setConfirming(false)} onConfirm={async () => { await onCloseDay(); setConfirming(false); }} />
         : <MobBtn h={64} icon={Lock} data-testid="mob-close-day-button" onClick={() => setConfirming(true)}>Fechar o dia</MobBtn>}
   </>
@@ -2534,7 +2561,7 @@ function MobileDespesasTab({ user, date, viagens, viagemAtiva, onOpenViagens, da
     {!dayClosed && hasTrips && <>
       <label className="mob-field"><b className="mob-label">Viagem desta despesa</b>
         <select className="mob-input" value={viagemId} data-testid="mob-expense-viagem-select" onChange={e => setViagemId(e.target.value)}>
-          {viagens.map(v => <option key={v.id} value={v.id}>{TURNO_LABELS[v.turno]} · Viagem {v.numero} · {v.codigo_viagem}{v.status === 'execucao' ? ' (em execução)' : v.status === 'finalizada' ? ' (concluída)' : ''}</option>)}
+          {viagens.map(v => <option key={v.id} value={v.id}>{`${viagemOptionLabel(v)}${v.status === 'execucao' ? ' (em execução)' : v.status === 'finalizada' ? ' (concluída)' : ''}`}</option>)}
         </select>
       </label>
       <section className="mob-field">
@@ -2705,7 +2732,8 @@ function DriverMobileApp({ user, customers, onLogout }) {
     setEntries([entry, ...entries]);
     setLaunchKey(null); setTab('rota'); setSearch('');
     loadMfPending(); loadViagens();
-    const base = `Entrega Nº ${entry.entry_number} registrada · ${entry.customer}. Escolha a próxima na lista.`;
+    const restam = pendingStops.some(s => !sameName(s.name, entry.customer));
+    const base = `Entrega Nº ${entry.entry_number} registrada · ${entry.customer}. ${restam ? 'Escolha a próxima na lista.' : 'Era a última parada: conclua a viagem.'}`;
     if (entry.warnings?.length) showToast(`${base} Atenção: ${entry.warnings.join(' ')}`, 9000);
     else showToast(base, 4000);
   }
@@ -2728,7 +2756,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
         {tab === 'rota' && <MobileRotaTab viagemAtiva={viagemAtiva} viagens={viagensComProgresso} stops={stops} entries={entries} date={date} search={search} setSearch={setSearch} mfPending={mfPending} viagensPresas={viagensPresas} onFinalizarPresa={finishTrip} dayClosed={dayClosed} onOpenStop={openStop} onOpenViagens={openViagens} onStartTrip={startTrip} onFinishTrip={finishTrip} offRoute={offRoute} onPickOffRoute={pickOffRoute} onReceipt={setReceiptEntry} onEditEntry={setEditingEntry} onDeleteEntry={deleteEntry} onIncludeMf={includeMf} />}
         {tab === 'viagens' && <MobileViagensScreen viagens={viagensComProgresso} customers={customers} entries={entries} mfPending={mfPending} dayClosed={dayClosed} viagemAtiva={viagemAtiva} openTripId={openTripId} setOpenTripId={setOpenTripId} onBack={() => setTab('rota')} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} onAddRota={addRota} onAddRotaCliente={addRotaCliente} onUpdateRotaCliente={updateRotaCliente} onRemoveRotaCliente={removeRotaCliente} onRemoveRota={removeRota} onScheduleMf={scheduleMf} toast={showToast} />}
         {tab === 'diario' && <MobileDiarioTab entries={entries} date={date} />}
-        {tab === 'caixa' && <MobileCaixaTab entries={entries} expenses={todaysExpenses} expensesTotal={expensesTotal} viagens={viagensComProgresso} date={date} pendingStops={pendingStops.length} onCloseDay={closeDay} dayClosed={dayClosed} closingDay={closingDay} />}
+        {tab === 'caixa' && <MobileCaixaTab entries={entries} expenses={todaysExpenses} expensesTotal={expensesTotal} viagens={viagensComProgresso} date={date} pendingStops={pendingStops.length} onCloseDay={closeDay} onOpenViagens={openViagens} dayClosed={dayClosed} closingDay={closingDay} />}
         {tab === 'despesas' && <MobileDespesasTab user={user} date={date} viagens={viagensComProgresso} viagemAtiva={viagemAtiva} onOpenViagens={openViagens} dayClosed={dayClosed} toast={showToast} />}
         {tab === 'mais' && <MobileAjustesTab user={user} theme={theme} setTheme={setTheme} scale={scale} setTextScale={setTextScale} onLogout={onLogout} />}
       </div></main>
