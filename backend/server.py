@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 from pathlib import Path
-import os, uuid, logging, bcrypt, jwt, re
+import os, uuid, logging, bcrypt, jwt, re, asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends, Response
@@ -1827,7 +1827,8 @@ async def ensure_indexes():
 @app.on_event("startup")
 async def seed():
     await db.users.create_index("email", unique=True)
-    await ensure_indexes()
+    # Em segundo plano: são ~20 idas ao banco e o app não precisa esperar por elas para começar a atender.
+    app.state.index_task = asyncio.create_task(ensure_indexes())
     if not await db.users.find_one({"email": os.environ["ADMIN_EMAIL"]}):
         await db.users.insert_one({"id":"admin-1","email":os.environ["ADMIN_EMAIL"],"name":"Marina Costa","role":"admin","status":"approved","active":True,"password_hash":hash_password(os.environ["ADMIN_PASSWORD"]),"created_at":now()})
     else:
