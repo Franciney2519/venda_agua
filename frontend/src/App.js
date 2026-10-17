@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from "react";
+import { Fragment, useEffect, useState, useMemo, useRef } from "react";
 import axios from "axios";
 import { BrowserRouter, Routes, Route, NavLink, Navigate, Link } from "react-router-dom";
 import { LayoutDashboard, Truck, Package, WalletCards, Users, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, Clock3, CircleDollarSign, BarChart3, Save, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle, CalendarCheck, Wallet, Eye, EyeOff, Minus, Sun, Moon, Camera, Search, Fuel, Utensils, Wrench, Receipt, ChevronRight, RefreshCw, Eraser, Percent, Route as RouteIcon, Ellipsis, ArrowRight, ArrowLeft, ChevronUp, ChevronDown, CircleCheck, CircleX, TriangleAlert, Flag, Lock, QrCode, Banknote, Split, CalendarClock, MessageCircle, MessageSquareText, Hand, Play } from "lucide-react";
@@ -126,7 +126,7 @@ const nav = [
   ['/usuarios', 'Cadastro de Usuário', ShieldCheck],
   ['/clientes', 'Clientes', Users],
   ['/estoque', 'Estoque', Package],
-  ['/viagens', 'Viagens', Truck],
+  ['/viagens', 'Rotas', Truck],
   ['/comprovantes', 'Comprovantes', FileText],
   ['/financeiro', 'Financeiro', WalletCards],
   ['/margem', 'Margem', Percent],
@@ -135,7 +135,7 @@ const nav = [
   ['/atividade', 'Atividade', Activity],
   ['/relatorios', 'Relatórios', BarChart3],
 ];
-const driverNav = [['/', 'Visão geral', LayoutDashboard], ['/viagens', 'Viagens', Truck], ['/financeiro', 'Financeiro', WalletCards]];
+const driverNav = [['/', 'Visão geral', LayoutDashboard], ['/viagens', 'Rotas', Truck], ['/financeiro', 'Financeiro', WalletCards]];
 
 function Shell({ user, onLogout, notifications, children }) {
   const [open, setOpen] = useState(false);
@@ -678,7 +678,7 @@ function Finance({ data, setData, create, user }) {
       </div>
     </section>}
     <section className="panel table-panel"><div className="panel-head"><div><h3>Despesas</h3><p className="muted">{isAdmin ? 'Aprove ou reprove os lançamentos feitos fora do Controle Diário' : 'Seus lançamentos'}</p></div></div>
-      <div className="table-wrap"><table><thead><tr><th>TIPO</th><th>ENTREGADOR</th><th>VIAGEM</th><th>VALOR</th><th>STATUS</th>{isAdmin && <th>AÇÕES</th>}</tr></thead><tbody>
+      <div className="table-wrap"><table><thead><tr><th>TIPO</th><th>ENTREGADOR</th><th>ROTA</th><th>VALOR</th><th>STATUS</th>{isAdmin && <th>AÇÕES</th>}</tr></thead><tbody>
         {(data?.expenses_list || []).map(e => {
           const st = e.status || 'pending';
           const tag = st === 'approved' ? 'green' : st === 'rejected' ? 'red' : 'orange';
@@ -704,8 +704,26 @@ function Finance({ data, setData, create, user }) {
 const MARGIN_STATUS_LABEL = { saudavel: 'Saudável', atencao: 'Em atenção', baixa: 'Margem baixa', prejuizo: 'Em prejuízo', sem_custo: 'Sem custo' };
 const MARGIN_STATUS_TAG = { saudavel: 'green', atencao: 'orange', baixa: 'orange', prejuizo: 'red', sem_custo: 'gray' };
 const pct = v => v == null ? '—' : `${(v * 100).toFixed(1)}%`;
+// Três jeitos de medir o lucro; o usuário escolhe qual a tela mostra.
+const MARGIN_MODES = {
+  margem: { label: 'Margem de lucro', short: 'Margem', formula: '(venda − custo) ÷ venda', hint: 'De cada R$ 1 vendido, quanto sobra de lucro.' },
+  markup: { label: 'Markup', short: 'Markup', formula: '(venda − custo) ÷ custo', hint: 'Quanto o preço está acima do custo — útil para definir preço.' },
+  liquida: { label: 'Margem líquida', short: 'Margem líquida', formula: '(venda − custo − despesas) ÷ venda', hint: 'Lucro depois das despesas (combustível, pedágio etc.), rateadas pela receita.' },
+};
+const MARGIN_MODE_KEY = 'hydro_margin_mode';
+// profit = venda − custo; expenses só entra na margem líquida.
+function marginOf(mode, { revenue, cost, profit, expenses = 0 }) {
+  if (profit == null) return null;
+  if (mode === 'markup') return cost > 0 ? profit / cost : null;
+  if (mode === 'liquida') return revenue > 0 ? (profit - expenses) / revenue : null;
+  return revenue > 0 ? profit / revenue : null;
+}
+// A meta é cadastrada como margem de lucro; no markup ela vira o equivalente (30% de margem = 42,9% de markup).
+const targetFor = (mode, t) => mode === 'markup' ? (t < 1 ? t / (1 - t) : null) : t;
 
 function MarginReport() {
+  const [mode, setModeState] = useState(() => { try { return MARGIN_MODES[localStorage.getItem(MARGIN_MODE_KEY)] ? localStorage.getItem(MARGIN_MODE_KEY) : 'margem'; } catch { return 'margem'; } });
+  function setMode(m) { setModeState(m); try { localStorage.setItem(MARGIN_MODE_KEY, m); } catch { /* ignore */ } }
   const [report, setReport] = useState(null);
   const [simBrand, setSimBrand] = useState('');
   const [simPrice, setSimPrice] = useState('');
@@ -719,20 +737,40 @@ function MarginReport() {
   const rows = report?.rows || [];
   const semCusto = rows.filter(r => r.status === 'sem_custo');
   const abaixoMeta = rows.filter(r => r.status === 'baixa' || r.status === 'prejuizo');
+  const M = MARGIN_MODES[mode];
+  const revenueTotal = report?.revenue_total || 0;
+  const expensesTotal = report?.expenses_total || 0;
+  // Despesas não são de uma marca ou cliente: na margem líquida cada linha leva a parte proporcional à sua receita.
+  const shareOf = revenue => revenueTotal > 0 ? expensesTotal * (revenue / revenueTotal) : 0;
+  const rowPct = x => marginOf(mode, { revenue: x.revenue, cost: x.cost_total, profit: x.margin_value, expenses: shareOf(x.revenue) });
+  const rowValue = x => x.margin_value == null ? null : mode === 'liquida' ? x.margin_value - shareOf(x.revenue) : x.margin_value;
+  const defaultTarget = targetFor(mode, report?.default_target_margin ?? 0.3);
+  const media = report ? marginOf(mode, { revenue: revenueTotal, cost: report.cost_total, profit: report.margin_total ?? null, expenses: expensesTotal }) : null;
+  const catPct = c => marginOf(mode, { revenue: c.has_cost_revenue ?? c.revenue, cost: c.cost_total, profit: c.has_cost_revenue === 0 ? null : c.margin_value, expenses: shareOf(c.revenue) });
+  const weekPct = w => w.revenue == null ? w.margin_pct : (w.revenue > 0 ? marginOf(mode, { revenue: w.revenue, cost: w.cost_total, profit: w.margin_value, expenses: w.expenses }) : null);
+  const tagFor = (v, target) => v == null ? 'gray' : v < 0 ? 'red' : target != null && v < target ? 'orange' : 'green';
+
   const simRow = rows.find(r => r.brand === simBrand);
   const simCost = simRow?.cost_price;
   const simPriceNum = Number(simPrice) || 0;
-  const simMargin = simCost != null && simPriceNum > 0 ? (simPriceNum - simCost) / simPriceNum : null;
+  // Na margem líquida o simulador desconta a despesa média por unidade vendida no período.
+  const unitsSold = rows.reduce((a, x) => a + Number(x.quantity || 0), 0);
+  const simUnitExpense = mode === 'liquida' && unitsSold > 0 ? expensesTotal / unitsSold : 0;
+  const simMargin = simCost != null && simPriceNum > 0 ? marginOf(mode, { revenue: simPriceNum, cost: simCost, profit: simPriceNum - simCost, expenses: simUnitExpense }) : null;
   const simSafe = simMargin != null && simMargin >= 0;
 
   return <><Head eyebrow="LUCRATIVIDADE" title="Margem" subtitle="Quanto cada marca, categoria e cliente realmente deixa de lucro, considerando o custo de compra cadastrado." />
     <div className="report-toolbar">
       <div className="report-filters">
+        <label>Calcular por<select value={mode} data-testid="margin-mode-select" onChange={e => setMode(e.target.value)}>
+          {Object.entries(MARGIN_MODES).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
+        </select></label>
         <label>De<input type="date" value={start} max={end || undefined} data-testid="margin-start-date" onChange={e => setStart(e.target.value)} /></label>
         <label>Até<input type="date" value={end} min={start || undefined} data-testid="margin-end-date" onChange={e => setEnd(e.target.value)} /></label>
         {(start || end) && <button className="ghost-btn" data-testid="margin-clear-dates" onClick={() => { setStart(''); setEnd(''); }}>Limpar período (mês atual)</button>}
       </div>
     </div>
+    <p className="muted" style={{ margin: '-6px 0 16px' }} data-testid="margin-mode-hint"><b>{M.label}</b> = {M.formula}. {M.hint}</p>
     <div className="stats">
       <Stat label="Total de produtos" value={report?.total_produtos ?? '—'} detail="Marcas com venda no período" Icon={Package} />
       <Stat label="Saudáveis" value={report?.counts?.saudavel ?? '—'} detail="Margem dentro do alvo" Icon={CircleDollarSign} tone="green" />
@@ -740,7 +778,7 @@ function MarginReport() {
       <Stat label="Em prejuízo" value={report?.counts?.prejuizo ?? '—'} detail="Vendendo no vermelho" Icon={AlertTriangle} tone={report?.counts?.prejuizo > 0 ? 'red' : 'green'} />
     </div>
     <div className="stats" style={{ marginTop: -6 }}>
-      <Stat label="Margem média" value={pct(report?.margin_media)} detail={`Considerando produtos com custo cadastrado · alvo padrão ${pct(report?.default_target_margin)}`} Icon={Percent} />
+      <Stat label={`${M.short} média`} value={pct(media)} detail={`Considerando produtos com custo cadastrado · alvo padrão ${pct(defaultTarget)}`} Icon={Percent} />
       <Stat label="Receita no período" value={money(report?.revenue_total)} detail={report ? `${report.start} a ${report.end}` : ''} Icon={ArrowUpRight} />
       <Stat label="Despesas no período" value={money(report?.expenses_total)} detail="Combustível, pedágio etc. lançados pelos entregadores" Icon={WalletCards} tone="orange" />
       <Stat label="Lucro líquido" value={money(report?.lucro_liquido)} detail="Margem bruta − despesas do período" Icon={CircleDollarSign} tone={report?.lucro_liquido < 0 ? 'red' : 'green'} />
@@ -752,18 +790,19 @@ function MarginReport() {
     </div>}
     {abaixoMeta.length > 0 && <div className="stock-alert" data-testid="margin-below-target-alert">
       <AlertTriangle size={19} /><div><b>{abaixoMeta.length} marca{abaixoMeta.length > 1 ? 's' : ''} abaixo da margem desejada</b>
-        <span>{abaixoMeta.map(r => `${r.brand} (${pct(r.margin_pct)})`).join(' · ')}</span>
+        <span>{abaixoMeta.map(r => `${r.brand} (${pct(rowPct(r))})`).join(' · ')}</span>
       </div>
     </div>}
 
     <section className="panel" style={{ marginBottom: 22, padding: 23 }}>
-      <div className="panel-head"><div><h3>Evolução da margem média</h3><p className="muted">Últimas 8 semanas · margem sobre os produtos com custo cadastrado</p></div></div>
+      <div className="panel-head"><div><h3>Evolução · {M.label.toLowerCase()}</h3><p className="muted">Últimas 8 semanas · sobre os produtos com custo cadastrado{mode === 'liquida' ? ' · despesas de cada semana' : ''}</p></div></div>
       <div className="chart" style={{ height: 190 }}><div className="bars">
         {(report?.evolution || []).map(w => {
-          const target = report?.default_target_margin || 0.3;
-          const color = w.margin_pct == null ? '#c9d4de' : w.margin_pct < 0 ? 'var(--red)' : w.margin_pct < target ? '#f8c45d' : 'var(--green)';
-          const heightPct = w.margin_pct == null ? 2 : Math.max(4, Math.min(100, (w.margin_pct / Math.max(target * 1.5, 0.01)) * 100));
-          return <div className="bar-group" key={w.end} data-testid={`margin-evo-bar-${w.end}`} title={w.margin_pct != null ? `${w.label}: ${pct(w.margin_pct)}` : `${w.label}: sem vendas`}>
+          const target = defaultTarget || 0.3;
+          const v = weekPct(w);
+          const color = v == null ? '#c9d4de' : v < 0 ? 'var(--red)' : v < target ? '#f8c45d' : 'var(--green)';
+          const heightPct = v == null ? 2 : Math.max(4, Math.min(100, (v / Math.max(target * 1.5, 0.01)) * 100));
+          return <div className="bar-group" key={w.end} data-testid={`margin-evo-bar-${w.end}`} title={v != null ? `${w.label}: ${pct(v)}` : `${w.label}: sem vendas`}>
             <div className="bar" style={{ width: 20, height: `${heightPct}%`, background: color }} />
             <span>{w.label}</span>
           </div>;
@@ -773,11 +812,11 @@ function MarginReport() {
     </section>
 
     <section className="panel table-panel" style={{ marginBottom: 22 }}>
-      <div className="panel-head" style={{ padding: '18px 23px' }}><div><h3>Margem por categoria</h3><p className="muted">Como cada categoria de produto está performando</p></div></div>
-      <div className="table-wrap"><table><thead><tr><th>CATEGORIA</th><th>PRODUTOS</th><th>RECEITA</th><th>MARGEM MÉDIA</th><th>EM RISCO</th></tr></thead><tbody>
+      <div className="panel-head" style={{ padding: '18px 23px' }}><div><h3>{M.short} por categoria</h3><p className="muted">Como cada categoria de produto está performando</p></div></div>
+      <div className="table-wrap"><table><thead><tr><th>CATEGORIA</th><th>PRODUTOS</th><th>RECEITA</th><th>{M.short.toUpperCase()} MÉDIA</th><th>EM RISCO</th></tr></thead><tbody>
         {(report?.categories || []).map(c => <tr key={c.category} data-testid={`margin-category-${c.category}`}>
           <td><b>{c.category}</b></td><td>{c.produtos}</td><td>{money(c.revenue)}</td>
-          <td><span className={`tag ${c.margin_pct == null ? 'gray' : c.margin_pct < 0 ? 'red' : c.margin_pct < (report?.default_target_margin || 0.3) ? 'orange' : 'green'}`}>{pct(c.margin_pct)}</span></td>
+          <td><span className={`tag ${tagFor(catPct(c), defaultTarget)}`}>{pct(catPct(c))}</span></td>
           <td>{c.em_risco > 0 ? <span className="tag orange">{c.em_risco}</span> : <small className="muted">0</small>}</td>
         </tr>)}
         {(report?.categories || []).length === 0 && <tr><td colSpan={5} className="muted" style={{ padding: 16 }}>Nenhuma venda no período.</td></tr>}
@@ -785,12 +824,12 @@ function MarginReport() {
     </section>
 
     <section className="panel table-panel" style={{ marginBottom: 22 }}>
-      <div className="panel-head" style={{ padding: '18px 23px' }}><div><h3>Margem por marca (fornecedor)</h3><p className="muted">Compare o que cada marca deixa de lucro real</p></div></div>
-      <div className="table-wrap"><table><thead><tr><th>MARCA</th><th>CATEGORIA</th><th>VENDIDO</th><th>RECEITA</th><th>CUSTO</th><th>MARGEM</th><th>SITUAÇÃO</th></tr></thead><tbody>
+      <div className="panel-head" style={{ padding: '18px 23px' }}><div><h3>{M.short} por marca (fornecedor)</h3><p className="muted">Compare o que cada marca deixa de lucro real{mode === 'liquida' ? ' · despesas rateadas pela receita' : ''} · a situação compara com a margem alvo da marca</p></div></div>
+      <div className="table-wrap"><table><thead><tr><th>MARCA</th><th>CATEGORIA</th><th>VENDIDO</th><th>RECEITA</th><th>CUSTO</th><th>{mode === 'liquida' ? 'LUCRO LÍQUIDO' : 'LUCRO'} ({M.short.toUpperCase()})</th><th>SITUAÇÃO</th></tr></thead><tbody>
         {rows.map(r => <tr key={r.brand} data-testid={`margin-row-${r.brand}`}>
           <td><b>{r.brand}</b></td><td>{r.category}</td><td>{r.quantity}</td><td>{money(r.revenue)}</td>
           <td>{r.cost_total != null ? money(r.cost_total) : <small className="muted">sem custo</small>}</td>
-          <td>{r.margin_value != null ? <><b>{money(r.margin_value)}</b> <small className="muted">({pct(r.margin_pct)})</small></> : <small className="muted">—</small>}</td>
+          <td>{r.margin_value != null ? <><b className={rowValue(r) < 0 ? 'orange-text' : ''}>{money(rowValue(r))}</b> <small className="muted">({pct(rowPct(r))})</small></> : <small className="muted">—</small>}</td>
           <td><span className={`tag ${MARGIN_STATUS_TAG[r.status]}`}>{MARGIN_STATUS_LABEL[r.status]}</span></td>
         </tr>)}
         {rows.length === 0 && <tr><td colSpan={7} className="muted" style={{ padding: 16 }}>Nenhuma venda no período.</td></tr>}
@@ -798,12 +837,12 @@ function MarginReport() {
     </section>
 
     <section className="panel table-panel" style={{ marginBottom: 22 }}>
-      <div className="panel-head" style={{ padding: '18px 23px' }}><div><h3>Margem por cliente</h3><p className="muted">Quanto cada cliente realmente deixa de lucro</p></div></div>
-      <div className="table-wrap"><table><thead><tr><th>CLIENTE</th><th>ENTREGAS</th><th>VENDIDO</th><th>RECEITA</th><th>CUSTO</th><th>MARGEM</th></tr></thead><tbody>
+      <div className="panel-head" style={{ padding: '18px 23px' }}><div><h3>{M.short} por cliente</h3><p className="muted">Quanto cada cliente realmente deixa de lucro{mode === 'liquida' ? ' · despesas rateadas pela receita' : ''}</p></div></div>
+      <div className="table-wrap"><table><thead><tr><th>CLIENTE</th><th>ENTREGAS</th><th>VENDIDO</th><th>RECEITA</th><th>CUSTO</th><th>{mode === 'liquida' ? 'LUCRO LÍQUIDO' : 'LUCRO'} ({M.short.toUpperCase()})</th></tr></thead><tbody>
         {(report?.customers || []).map(c => <tr key={c.customer} data-testid={`margin-customer-${c.customer}`}>
           <td><b>{c.customer}</b></td><td>{c.entregas}</td><td>{c.quantity}</td><td>{money(c.revenue)}</td>
           <td>{c.cost_total != null ? money(c.cost_total) : <small className="muted">sem custo</small>}</td>
-          <td>{c.margin_value != null ? <><b className={c.margin_value < 0 ? 'orange-text' : ''}>{money(c.margin_value)}</b> <small className="muted">({pct(c.margin_pct)})</small></> : <small className="muted">—</small>}</td>
+          <td>{c.margin_value != null ? <><b className={rowValue(c) < 0 ? 'orange-text' : ''}>{money(rowValue(c))}</b> <small className="muted">({pct(rowPct(c))})</small></> : <small className="muted">—</small>}</td>
         </tr>)}
         {(report?.customers || []).length === 0 && <tr><td colSpan={6} className="muted" style={{ padding: 16 }}>Nenhuma venda no período.</td></tr>}
       </tbody></table></div>
@@ -819,11 +858,11 @@ function MarginReport() {
         <label className="os-field-narrow">Preço de venda simulado (R$)<input type="number" step="0.01" value={simPrice} data-testid="margin-sim-price" onChange={e => setSimPrice(e.target.value)} /></label>
       </div>
       {simRow && <div style={{ padding: '0 23px 20px' }}>
-        <p className="muted">Custo de compra: <b>{money(simCost)}</b> {simPriceNum > 0 && <>· Preço mínimo pra não ter prejuízo: <b>{money(simCost)}</b></>}</p>
+        <p className="muted">Custo de compra: <b>{money(simCost)}</b>{simUnitExpense > 0 && <> · despesa média por unidade: <b>{money(simUnitExpense)}</b></>} {simPriceNum > 0 && <>· Preço mínimo pra não ter prejuízo: <b>{money(simCost + simUnitExpense)}</b></>}</p>
         {simPriceNum > 0 && <div className={`stock-alert`} style={{ background: simSafe ? undefined : '#fff0f0', borderColor: simSafe ? undefined : '#f4c8c8' }} data-testid="margin-sim-result">
           {simSafe ? <CircleDollarSign size={19} /> : <AlertTriangle size={19} />}
-          <div><b>{simSafe ? `Margem de ${pct(simMargin)} — seguro` : 'Vendendo no prejuízo com esse preço'}</b>
-            <span>Lucro por unidade: {money(simPriceNum - simCost)}{simSafe && ` · desconto máximo a partir do preço atual sem prejuízo: até ${money(simPriceNum - simCost)} por unidade`}</span>
+          <div><b>{simSafe ? `${M.label} de ${pct(simMargin)} — seguro` : 'Vendendo no prejuízo com esse preço'}</b>
+            <span>Lucro por unidade: {money(simPriceNum - simCost - simUnitExpense)}{simSafe && ` · desconto máximo a partir do preço atual sem prejuízo: até ${money(simPriceNum - simCost - simUnitExpense)} por unidade`}</span>
           </div>
         </div>}
       </div>}
@@ -1250,6 +1289,107 @@ function CustomerCombobox({ customers, value, onPick, testId }) {
 const VIAGEM_STATUS_LABEL = { planejada: 'Planejada', execucao: 'Em execução', finalizada: 'Finalizada' };
 const VIAGEM_STATUS_TAG = { planejada: 'orange', execucao: 'blue', finalizada: 'green' };
 
+// Pedido do cliente na parada, montado pelo administrador: um ou mais produtos.
+function AdminPedidoForm({ customer, brandsCatalog, initialItems, busy, confirmLabel, onCancel, onConfirm }) {
+  const prefs = brandListOf(customer);
+  const options = [
+    ...prefs.map(p => ({ brand: p.brand, price: p.price, price_full: p.price_full, own: true })),
+    ...brandsCatalog.filter(b => !prefs.some(p => sameName(p.brand, b.name))).map(b => ({ brand: b.name, price: b.price, price_full: b.price_full, own: false })),
+  ];
+  const [items, setItems] = useState(initialItems || []);
+  const [brand, setBrand] = useState(prefs[0]?.brand || options[0]?.brand || '');
+  const [qty, setQty] = useState('1');
+  const [saleType, setSaleType] = useState('exchange');
+  const opt = options.find(o => sameName(o.brand, brand));
+  const hasFull = !!opt && Number(opt.price_full) > 0;
+  function add() {
+    const q = Number(qty) || 0;
+    if (!opt || q <= 0) return;
+    setItems(prev => mergeItem(prev, { brand: opt.brand, quantity: q, sale_type: saleType === 'full' && hasFull ? 'full' : 'exchange', out_of_catalog: !opt.own, price: opt.price ?? undefined, price_full: opt.price_full ?? undefined }));
+    setQty('1');
+  }
+  const total = items.reduce((a, i) => a + Number(i.quantity), 0);
+  return <div style={{ display: 'grid', gap: 10, padding: '12px 0' }} data-testid="admin-pedido-form">
+    <div className="os-form" style={{ padding: 0 }}>
+      <label>Produto<select value={brand} data-testid="admin-pedido-brand" onChange={e => { setBrand(e.target.value); setSaleType('exchange'); }}>{options.map(o => <option key={o.brand} value={o.brand}>{o.brand}{o.own ? '' : ' (novo p/ cliente)'}</option>)}</select></label>
+      <label className="os-field-narrow">Qtd<input type="number" min="1" value={qty} data-testid="admin-pedido-qty" onChange={e => setQty(onlyDigits(e.target.value, 3))} /></label>
+      <label>Tipo<select value={saleType} data-testid="admin-pedido-type" onChange={e => setSaleType(e.target.value)}><option value="exchange">Somente água</option>{hasFull && <option value="full">Completo</option>}</select></label>
+    </div>
+    <div className="row-actions"><button type="button" className="ghost-btn" disabled={!opt} data-testid="admin-pedido-add" onClick={add}><Plus size={14} /> Incluir produto</button></div>
+    {items.length > 0 && <div className="row-actions" style={{ flexWrap: 'wrap' }}>{items.map(i => <span className="tag gray" key={`${i.brand}-${i.sale_type}`}>{i.quantity} × {i.brand}{i.sale_type === 'full' ? ' completo' : ''}{i.out_of_catalog ? ' · novo' : ''} <button type="button" aria-label="Tirar produto" style={{ marginLeft: 4 }} onClick={() => setItems(prev => prev.filter(x => x !== i))}><X size={12} /></button></span>)}</div>}
+    <div className="row-actions">
+      <button type="button" className="primary" disabled={!items.length || busy} data-testid="admin-pedido-confirm" onClick={() => onConfirm(items)}><Check size={14} /> {confirmLabel}{items.length ? ` · ${total} un` : ''}</button>
+      <button type="button" className="ghost-btn" onClick={onCancel}>Cancelar</button>
+    </div>
+  </div>
+}
+
+function AdminTripEditor({ v, customers, drivers, brandsCatalog, onSaved }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [adding, setAdding] = useState(null);
+  const [pickName, setPickName] = useState('');
+  const [editing, setEditing] = useState(null);
+  const [carga, setCarga] = useState(v.carga_total ?? '');
+  useEffect(() => { setCarga(v.carga_total ?? ''); }, [v.carga_total]);
+  async function run(fn, fallback) {
+    setBusy(true); setError('');
+    try { await fn(); await onSaved(); return true; }
+    catch (e) { setError(apiError(e, fallback)); return false; }
+    finally { setBusy(false); }
+  }
+  const base = `/viagens/${v.id}`;
+  const rotas = v.rotas || [];
+  const inTrip = new Set(rotas.flatMap(r => (r.clientes || []).map(c => c.id)));
+  const picked = customers.find(c => c.name === pickName && !inTrip.has(c.id));
+  const customerOf = c => customers.find(x => x.id === c.id) || { id: c.id, name: c.name, brands: [] };
+  const toPayload = (c, items) => ({ id: c.id, name: c.name, ...items[0], quantity: items.reduce((a, i) => a + Number(i.quantity), 0), items });
+  return <div style={{ padding: '16px 23px', display: 'grid', gap: 14 }} data-testid={`admin-trip-editor-${v.id}`}>
+    {v.status === 'finalizada' && <div className="stock-alert" style={{ margin: 0 }}><Lock size={17} /><div><b>Rota concluída pelo entregador</b><span>Como administrador você ainda pode corrigir paradas, clientes e produtos. As entregas já lançadas não mudam.</span></div></div>}
+    <div className="os-form" style={{ padding: 0 }}>
+      <label>Entregador<select value={v.driver} disabled={v.status !== 'planejada' || busy} data-testid="admin-trip-driver" title={v.status !== 'planejada' ? 'Só dá para trocar o entregador antes de a rota começar' : undefined} onChange={e => run(() => api.patch(base, { driver: e.target.value }, auth()), 'Não foi possível trocar o entregador.')}>
+        {!drivers.some(d => d.name === v.driver) && <option value={v.driver}>{v.driver}</option>}
+        {drivers.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+      </select></label>
+      <label className="os-field-narrow">Carga total<input type="number" value={carga} data-testid="admin-trip-carga" onChange={e => setCarga(e.target.value)} onBlur={() => { if (String(carga) !== String(v.carga_total ?? '')) run(() => api.patch(base, { carga_total: carga === '' ? null : Number(carga) }, auth()), 'Não foi possível salvar a carga.'); }} /></label>
+    </div>
+    {error && <div className="error" data-testid="admin-trip-error">{error}</div>}
+    {rotas.map(r => {
+      const cl = r.clientes || [];
+      return <div key={r.id} style={{ border: '1px solid var(--line, #dfe5ec)', borderRadius: 10, padding: '12px 14px' }} data-testid={`admin-parada-${r.id}`}>
+        <div className="row-actions" style={{ justifyContent: 'space-between' }}>
+          <span><b>Parada {pad2(r.numero)}</b> <small className="muted">{cl.length} cliente{cl.length === 1 ? '' : 's'} · {cl.reduce((a, c) => a + clienteLoad(c), 0)} un</small></span>
+          <button type="button" className="action-btn reject" aria-label="Excluir parada" disabled={busy} data-testid={`admin-parada-excluir-${r.id}`} onClick={() => { if (window.confirm(`Excluir a Parada ${pad2(r.numero)}${cl.length ? ` e seus ${cl.length} cliente(s)` : ''}?`)) run(() => api.delete(`${base}/rotas/${r.id}`, auth()), 'Não foi possível excluir a parada.'); }}><Trash2 size={13} /></button>
+        </div>
+        {cl.map(c => {
+          const key = `${r.id}:${c.id}`;
+          return <div key={c.id} style={{ borderTop: '1px solid var(--line, #dfe5ec)', marginTop: 8, paddingTop: 8 }} data-testid={`admin-parada-cliente-${c.id}`}>
+            <div className="row-actions" style={{ justifyContent: 'space-between' }}>
+              <span><b>{c.name}</b> <small className="muted">{pedidoLabel(c)}{c.mf_swap_quantity > 0 ? ` · troca MF ${c.mf_swap_quantity} un` : ''}</small>{c.status === 'nao_entregue' && <span className="tag red" style={{ marginLeft: 6 }}>Não entregue</span>}</span>
+              {editing !== key && <span className="row-actions">
+                <button type="button" className="action-btn ghost" disabled={busy} data-testid={`admin-cliente-editar-${c.id}`} onClick={() => { setEditing(key); setAdding(null); }}><Pencil size={13} /> Produtos</button>
+                <button type="button" className="action-btn reject" aria-label="Remover cliente" disabled={busy} data-testid={`admin-cliente-remover-${c.id}`} onClick={() => { if (window.confirm(`Tirar ${c.name} da Parada ${pad2(r.numero)}?`)) run(() => api.delete(`${base}/rotas/${r.id}/clientes/${c.id}`, auth()), 'Não foi possível remover o cliente.'); }}><Trash2 size={13} /></button>
+              </span>}
+            </div>
+            {editing === key && <AdminPedidoForm customer={customerOf(c)} brandsCatalog={brandsCatalog} initialItems={pedidoItems(c)} busy={busy} confirmLabel="Salvar produtos" onCancel={() => setEditing(null)} onConfirm={items => run(() => api.patch(`${base}/rotas/${r.id}/clientes/${c.id}`, { items }, auth()), 'Não foi possível salvar os produtos.').then(ok => ok && setEditing(null))} />}
+          </div>
+        })}
+        {adding === r.id
+          ? <div style={{ marginTop: 10 }}>
+            <label className="muted" style={{ display: 'block', marginBottom: 6 }}>Cliente</label>
+            <CustomerCombobox customers={customers.filter(c => !inTrip.has(c.id))} value={pickName} onPick={setPickName} testId={`admin-parada-cliente-busca-${r.id}`} />
+            {picked
+              ? <AdminPedidoForm key={picked.id} customer={picked} brandsCatalog={brandsCatalog} busy={busy} confirmLabel="Adicionar cliente" onCancel={() => setAdding(null)} onConfirm={items => run(() => api.post(`${base}/rotas/${r.id}/clientes`, toPayload(picked, items), auth()), 'Não foi possível adicionar o cliente.').then(ok => ok && setPickName(''))} />
+              : <div className="row-actions" style={{ marginTop: 8 }}><button type="button" className="ghost-btn" onClick={() => setAdding(null)}>Fechar</button></div>}
+          </div>
+          : <button type="button" className="ghost-btn" style={{ marginTop: 10 }} disabled={busy} data-testid={`admin-parada-add-cliente-${r.id}`} onClick={() => { setAdding(r.id); setPickName(''); setEditing(null); }}><UserPlus size={14} /> Adicionar cliente</button>}
+      </div>
+    })}
+    {rotas.length === 0 && <p className="muted">Nenhuma parada ainda.</p>}
+    <div className="row-actions"><button type="button" className="ghost-btn" disabled={busy} data-testid={`admin-parada-add-${v.id}`} onClick={() => run(() => api.post(`${base}/rotas`, { clientes: [] }, auth()), 'Não foi possível criar a parada.')}><Plus size={14} /> Nova parada</button></div>
+  </div>
+}
+
 function Viagens({ customers, user }) {
   const isAdmin = user?.role === 'admin';
   const [viagens, setViagens] = useState([]);
@@ -1258,6 +1398,8 @@ function Viagens({ customers, user }) {
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ driver: '', turno: 0, carga_total: '' });
   const [error, setError] = useState('');
+  const [openId, setOpenId] = useState(null);
+  const [brandsCatalog, setBrandsCatalog] = useState([]);
 
   async function load() {
     setLoading(true);
@@ -1268,22 +1410,24 @@ function Viagens({ customers, user }) {
   useEffect(() => { load(); }, [date]);
   useAutoRefresh(load);
   useEffect(() => { if (isAdmin) api.get('/users', auth()).then(({ data }) => setDrivers(data.filter(u => u.role === 'driver' && u.active !== false))); }, [isAdmin]);
+  useEffect(() => { if (isAdmin) api.get('/brands', auth()).then(({ data }) => setBrandsCatalog(data.filter(b => b.active !== false))).catch(() => { }); }, [isAdmin]);
 
   async function submit(e) {
     e.preventDefault(); setError('');
     if (isAdmin && !form.driver) return setError('Selecione o entregador.');
     try {
       const payload = { turno: Number(form.turno), carga_total: form.carga_total ? Number(form.carga_total) : undefined, date };
-      if (isAdmin) payload.driver = form.driver;
-      await api.post('/viagens', payload, auth());
+      if (isAdmin) { payload.driver = form.driver; payload.create_first_rota = true; }
+      const { data } = await api.post('/viagens', payload, auth());
       setForm({ driver: form.driver, turno: 0, carga_total: '' });
       await load();
-    } catch (e) { setError(e.response?.data?.detail || 'Não foi possível criar a viagem.'); }
+      if (isAdmin) setOpenId(data.id);
+    } catch (e) { setError(e.response?.data?.detail || 'Não foi possível criar a rota.'); }
   }
 
   async function iniciar(v) { try { await api.post(`/viagens/${v.id}/iniciar`, {}, auth()); await load(); } catch (e) { setError(e.response?.data?.detail || 'Não foi possível iniciar.'); } }
   async function finalizar(v) { try { await api.post(`/viagens/${v.id}/finalizar`, {}, auth()); await load(); } catch (e) { setError(e.response?.data?.detail || 'Não foi possível finalizar.'); } }
-  async function remove(v) { if (!window.confirm(`Excluir a viagem ${v.codigo_viagem}?`)) return; try { await api.delete(`/viagens/${v.id}`, auth()); await load(); } catch (e) { setError(e.response?.data?.detail || 'Não foi possível excluir.'); } }
+  async function remove(v) { if (!window.confirm(`Excluir a rota ${v.codigo_viagem}?`)) return; try { await api.delete(`/viagens/${v.id}`, auth()); await load(); } catch (e) { setError(e.response?.data?.detail || 'Não foi possível excluir.'); } }
 
   const emExecucao = viagens.filter(v => v.status === 'execucao').length;
   const finalizadas = viagens.filter(v => v.status === 'finalizada');
@@ -1291,7 +1435,7 @@ function Viagens({ customers, user }) {
   const despesasTotal = finalizadas.reduce((s, v) => s + Number(v.despesas_total || 0), 0);
   const saldoLiquido = totalBruto - despesasTotal;
 
-  return <><Head eyebrow="LOGÍSTICA" title="Viagens" subtitle={isAdmin ? "Planeje o carregamento do caminhão — turno e carga. As rotas e clientes de cada viagem são adicionadas pelo entregador no app." : "Crie a viagem do dia (turno e carga); adicione as rotas e clientes pelo app do celular."} />
+  return <><Head eyebrow="LOGÍSTICA" title="Rotas" subtitle={isAdmin ? "Monte a rota do entregador — turno, carga, paradas, clientes e produtos. Abra Detalhes para editar, mesmo depois de concluída." : "Crie a rota do dia (turno e carga); adicione as paradas e clientes pelo app do celular."} />
     <section className="panel table-panel" style={{ marginBottom: 22 }}>
       <form className="os-form" onSubmit={submit}>
         {isAdmin && <label>Entregador<select required value={form.driver} data-testid="viagem-driver-select" onChange={e => setForm({ ...form, driver: e.target.value })}><option value="">Selecione</option>{drivers.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}</select></label>}
@@ -1301,7 +1445,7 @@ function Viagens({ customers, user }) {
 
       <div style={{ padding: '0 23px 20px' }}>
         {error && <div className="error" data-testid="viagem-form-error" style={{ marginBottom: 12 }}>{error}</div>}
-        <button className="primary" data-testid="viagem-submit-button" onClick={submit}><Plus size={15} /> Criar viagem</button>
+        <button className="primary" data-testid="viagem-submit-button" onClick={submit}><Plus size={15} /> Criar rota</button>
       </div>
     </section>
 
@@ -1312,15 +1456,15 @@ function Viagens({ customers, user }) {
       {loading && <Loader2 size={16} className="spin blue-text" />}
     </div>
     <div className="stats">
-      <Stat label="Viagens no dia" value={viagens.length} detail={`Limite de ${VIAGENS_POR_DIA} por entregador`} Icon={Truck} />
+      <Stat label="Rotas no dia" value={viagens.length} detail={`Limite de ${VIAGENS_POR_DIA} por entregador`} Icon={Truck} />
       <Stat label="Em execução" value={emExecucao} detail="Rotas em andamento agora" Icon={CircleDollarSign} tone="green" />
       <Stat label="Finalizadas" value={finalizadas.length} detail="Rotas concluídas no dia" Icon={CalendarCheck} />
       <Stat label="Saldo líquido das rotas" value={money(saldoLiquido)} detail={`Receita ${money(totalBruto)} − despesas ${money(despesasTotal)}`} Icon={WalletCards} tone="orange" />
     </div>
-    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>ENTREGADOR</th><th>VIAGEM DO DIA</th><th>TURNO</th><th>ROTAS</th><th>CLIENTES</th><th>CARGA</th><th>ENTREGAS</th><th>RECEITA</th><th>DESPESAS</th><th>SALDO</th><th>SITUAÇÃO</th><th /></tr></thead><tbody>
+    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>ENTREGADOR</th><th>ROTA DO DIA</th><th>TURNO</th><th>PARADAS</th><th>CLIENTES</th><th>CARGA</th><th>ENTREGAS</th><th>RECEITA</th><th>DESPESAS</th><th>SALDO</th><th>SITUAÇÃO</th><th /></tr></thead><tbody>
       {viagens.map(v => {
         const totalClientes = (v.rotas || []).reduce((s, r) => s + (r.clientes?.length || 0), 0);
-        return <tr key={v.id} data-testid={`viagem-row-${v.id}`}>
+        return <Fragment key={v.id}><tr data-testid={`viagem-row-${v.id}`}>
         <td><b>{v.codigo_viagem}</b></td>
         <td>{v.driver}</td>
         <td>{v.numero}/{VIAGENS_POR_DIA}</td>
@@ -1334,12 +1478,15 @@ function Viagens({ customers, user }) {
         <td>{v.saldo_liquido != null ? <b className={v.saldo_liquido >= 0 ? 'green-text' : 'orange-text'}>{money(v.saldo_liquido)}</b> : '—'}</td>
         <td><span className={`tag ${VIAGEM_STATUS_TAG[v.status]}`}>{VIAGEM_STATUS_LABEL[v.status]}</span></td>
         <td><div className="row-actions">
-          {v.status === 'planejada' && <><button className="action-btn ghost" data-testid={`viagem-iniciar-${v.id}`} onClick={() => iniciar(v)}><Check size={13} /> Iniciar</button><button className="action-btn reject" aria-label="Excluir viagem" data-testid={`viagem-excluir-${v.id}`} onClick={() => remove(v)}><Trash2 size={13} /></button></>}
+          {isAdmin && <button className="action-btn ghost" data-testid={`viagem-detalhes-${v.id}`} onClick={() => setOpenId(openId === v.id ? null : v.id)}>{openId === v.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />} {openId === v.id ? 'Fechar' : 'Detalhes'}</button>}
+          {v.status === 'planejada' && <><button className="action-btn ghost" data-testid={`viagem-iniciar-${v.id}`} onClick={() => iniciar(v)}><Check size={13} /> Iniciar</button><button className="action-btn reject" aria-label="Excluir rota" data-testid={`viagem-excluir-${v.id}`} onClick={() => remove(v)}><Trash2 size={13} /></button></>}
           {v.status === 'execucao' && <button className="action-btn ghost" data-testid={`viagem-finalizar-${v.id}`} onClick={() => finalizar(v)}><Check size={13} /> Finalizar</button>}
         </div></td>
-      </tr>;
+      </tr>
+      {isAdmin && openId === v.id && <tr><td colSpan={13} style={{ padding: 0 }}><AdminTripEditor v={v} customers={customers} drivers={drivers} brandsCatalog={brandsCatalog} onSaved={load} /></td></tr>}
+      </Fragment>;
       })}
-      {viagens.length === 0 && <tr><td colSpan={13} className="muted" style={{ padding: 16 }}>Nenhuma viagem registrada nessa data.</td></tr>}
+      {viagens.length === 0 && <tr><td colSpan={13} className="muted" style={{ padding: 16 }}>Nenhuma rota registrada nessa data.</td></tr>}
     </tbody></table></div></section>
   </>
 }
@@ -1391,19 +1538,19 @@ function Receipts({ customers }) {
   useEffect(() => { load(); }, [start, end]);
   useAutoRefresh(load);
 
-  return <><Head eyebrow="AUDITORIA" title="Comprovantes de Entrega" subtitle="Busque um lançamento por cliente, período, viagem ou nº de sequência para conferir a assinatura." />
+  return <><Head eyebrow="AUDITORIA" title="Comprovantes de Entrega" subtitle="Busque um lançamento por cliente, período, rota ou nº de sequência para conferir a assinatura." />
     <div className="report-toolbar">
       <div className="report-filters">
         <label>De<input type="date" value={start} max={end} data-testid="receipts-start-date" onChange={e => setStart(e.target.value)} /></label>
         <label>Até<input type="date" value={end} min={start} data-testid="receipts-end-date" onChange={e => setEnd(e.target.value)} /></label>
         <label>Cliente<input value={customer} placeholder="Buscar por nome" data-testid="receipts-customer-input" onChange={e => setCustomer(e.target.value)} onKeyDown={e => e.key === 'Enter' && load()} /></label>
-        <label>Código da viagem<input value={codigoViagem} placeholder="ex: 001092026001" data-testid="receipts-viagem-input" onChange={e => setCodigoViagem(e.target.value)} onKeyDown={e => e.key === 'Enter' && load()} /></label>
+        <label>Código da rota<input value={codigoViagem} placeholder="ex: 001092026001" data-testid="receipts-viagem-input" onChange={e => setCodigoViagem(e.target.value)} onKeyDown={e => e.key === 'Enter' && load()} /></label>
         <label className="os-field-narrow">Nº entrega<input value={entryNumber} placeholder="ex: 7" data-testid="receipts-entry-number-input" onChange={e => setEntryNumber(e.target.value)} onKeyDown={e => e.key === 'Enter' && load()} /></label>
         <button type="button" className="ghost-btn" data-testid="receipts-search-button" onClick={load}><Search size={14} /> Buscar</button>
       </div>
       {loading && <Loader2 size={16} className="spin blue-text" />}
     </div>
-    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>Nº</th><th>VIAGEM</th><th>DATA</th><th>CLIENTE</th><th>ENTREGADOR</th><th>PRODUTO</th><th>TOTAL</th><th>ASSINATURA</th><th /></tr></thead><tbody>
+    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>Nº</th><th>ROTA</th><th>DATA</th><th>CLIENTE</th><th>ENTREGADOR</th><th>PRODUTO</th><th>TOTAL</th><th>ASSINATURA</th><th /></tr></thead><tbody>
       {entries.map(e => {
         const items = e.items?.length ? e.items : (e.brand ? [{ brand: e.brand, quantity: e.billed_quantity ?? e.quantity }] : []);
         return <tr key={e.id} data-testid={`receipt-row-${e.id}`}>
@@ -1553,6 +1700,10 @@ const apiError = (e, fallback) => { const d = e?.response?.data?.detail; return 
 // Trocas de MF somadas a um pedido que já existia ocupam carga além da quantidade do pedido.
 const mergedSwapQty = c => (c.mf_swaps || []).filter(s => s.merged).reduce((a, s) => a + Number(s.quantity || 0), 0);
 const clienteLoad = c => Number(c.quantity || 0) + mergedSwapQty(c);
+// Pedido do cliente na parada: um ou mais produtos (paradas antigas guardam só um, nos campos de topo).
+const pedidoItems = c => c.items?.length ? c.items : (c.brand ? [{ brand: c.brand, quantity: c.quantity, sale_type: c.sale_type, out_of_catalog: c.out_of_catalog, price: c.price, price_full: c.price_full }] : []);
+const pedidoLabel = c => pedidoItems(c).map(i => `${Number(i.quantity) || 0} × ${i.brand}${i.sale_type === 'full' ? ' completo' : ''}`).join(' · ') || 'sem produto';
+const mergeItem = (list, item) => { const i = list.findIndex(x => sameName(x.brand, item.brand) && x.sale_type === item.sale_type); return i >= 0 ? list.map((x, j) => j === i ? { ...x, quantity: Number(x.quantity) + Number(item.quantity) } : x) : [...list, item]; };
 const entryItemsLabel = e => entryItemsList(e).map(it => `${it.quantity} ${it.brand}`).join(' + ') || galoes(Number(e.billed_quantity ?? e.quantity ?? 0));
 // A quantidade da entrega não inclui o galão com microfuro; este rótulo diz o que aconteceu com ele.
 function entryMfLabel(e) {
@@ -1568,8 +1719,8 @@ function entryPayLabel(e) {
   return parts.join(' + ') || money(0);
 }
 // <option> só aceita texto: o rótulo vai pronto, numa string só.
-const viagemOptionLabel = v => `${TURNO_LABELS[v.turno]} · Viagem ${v.numero} · ${v.codigo_viagem}`;
-const MOBILE_TITLES = { rota: 'Rota de hoje', viagens: 'Viagens do dia', diario: 'Controle diário', caixa: 'Caixa do dia', despesas: 'Despesas', mais: 'Ajustes' };
+const viagemOptionLabel = v => `${TURNO_LABELS[v.turno]} · Rota ${v.numero} · ${v.codigo_viagem}`;
+const MOBILE_TITLES = { rota: 'Rota de hoje', viagens: 'Rotas do dia', diario: 'Controle diário', caixa: 'Caixa do dia', despesas: 'Despesas', mais: 'Ajustes' };
 const MOBILE_SCALES = [[1, 'Normal'], [1.15, 'Grande'], [1.3, 'Maior']];
 
 function MobBtn({ kind = 'primary', h = 60, icon: Icon, lead: Lead, children, className = '', ...rest }) {
@@ -1607,10 +1758,10 @@ function MobileStuckTrips({ viagens, onFinalizar }) {
   const [asking, setAsking] = useState(null);
   if (!viagens?.length) return null;
   return <section className="mob-alert col" data-testid="mob-stuck-trips">
-    <div className="mob-alert-head"><TriangleAlert size={20} /><b>Viagem anterior ainda aberta</b></div>
-    <span>Conclua para liberar as viagens de hoje.</span>
+    <div className="mob-alert-head"><TriangleAlert size={20} /><b>Rota anterior ainda aberta</b></div>
+    <span>Conclua para liberar as rotas de hoje.</span>
     {viagens.map(v => asking === v.id
-      ? <MobileConfirm key={v.id} testid={`mob-stuck-confirm-${v.id}`} title={`Concluir a viagem de ${shortDate(v.date)}?`} text="O que sobrou da carga volta para o estoque." confirmLabel="Concluir" onCancel={() => setAsking(null)} onConfirm={() => { setAsking(null); onFinalizar(v); }} />
+      ? <MobileConfirm key={v.id} testid={`mob-stuck-confirm-${v.id}`} title={`Concluir a rota de ${shortDate(v.date)}?`} text="O que sobrou da carga volta para o estoque." confirmLabel="Concluir" onCancel={() => setAsking(null)} onConfirm={() => { setAsking(null); onFinalizar(v); }} />
       : <MobBtn key={v.id} kind="warn" h={48} lead={Flag} data-testid={`mob-stuck-finalizar-${v.id}`} onClick={() => setAsking(v.id)}>{TURNO_LABELS[v.turno]} de {shortDate(v.date)} · {v.codigo_viagem}</MobBtn>)}
   </section>
 }
@@ -1661,14 +1812,14 @@ function buildLaunchLines(customer, stop) {
   const lineFor = brand => {
     let l = lines.find(x => sameName(x.brand, brand));
     if (!l) {
-      // Produto fora do cadastro do cliente: o preço vem do que ficou gravado na rota (catálogo); sem ele, o entregador informa.
-      const own = sameName(stop.brand, brand);
-      l = { brand, priceExchange: own && stop.price != null ? Number(stop.price) || 0 : 0, priceFull: own && stop.price_full != null ? Number(stop.price_full) || 0 : null, qtyExchange: 0, qtyFull: 0, mf: 0, outOfCatalog: true, askPrice: !(own && stop.price != null), priceStr: '' };
+      // Produto fora do cadastro do cliente: o preço vem do que ficou gravado na parada (catálogo); sem ele, o entregador informa.
+      const own = pedidoItems(stop).find(i => sameName(i.brand, brand));
+      l = { brand, priceExchange: own?.price != null ? Number(own.price) || 0 : 0, priceFull: own?.price_full != null ? Number(own.price_full) || 0 : null, qtyExchange: 0, qtyFull: 0, mf: 0, outOfCatalog: true, askPrice: own?.price == null, priceStr: '' };
       lines.push(l);
     }
     return l;
   };
-  if (stop.brand) { const l = lineFor(stop.brand), q = Number(stop.quantity) || 0; if (stop.sale_type === 'full') l.qtyFull += q; else l.qtyExchange += q; }
+  for (const it of pedidoItems(stop)) { const l = lineFor(it.brand), q = Number(it.quantity) || 0; if (it.sale_type === 'full') l.qtyFull += q; else l.qtyExchange += q; }
   for (const s of (stop.mf_swaps || [])) if (s.merged && s.brand) lineFor(s.brand).qtyExchange += Number(s.quantity) || 0;
   return lines;
 }
@@ -1766,7 +1917,7 @@ function MobileLaunchPanel({ stop, user, date, viagemId, cargaRestante, othersPe
   return <>
     <div className="mob-launch-head">
       <button type="button" className="mob-sq" aria-label={step === 1 ? 'Fechar' : 'Voltar'} data-testid="mob-panel-close" onClick={() => step === 1 ? onClose() : setStep(step - 1)}>{step === 1 ? <X size={20} /> : <ArrowLeft size={20} />}</button>
-      <div><span className="mob-eyebrow">Rota {pad2(stop.rota_numero)} · Parada {pad2(stop.seq)}</span><b>{stop.name}</b></div>
+      <div><span className="mob-eyebrow">Parada {pad2(stop.rota_numero)} · Nº {pad2(stop.seq)}</span><b>{stop.name}</b></div>
     </div>
     <div className="mob-steps">{LAUNCH_STEPS.map((label, i) => <div key={label} className={i + 1 === step ? 'now' : i + 1 < step ? 'past' : ''} data-testid={`mob-step-${i + 1}`}>{i + 1} {label}</div>)}</div>
 
@@ -1774,11 +1925,11 @@ function MobileLaunchPanel({ stop, user, date, viagemId, cargaRestante, othersPe
       {step === 1 && <>
         {swapQty > 0 && <div className="mob-swap-band" data-testid="mob-swap-band"><RefreshCw size={20} /><b>Troca de MF · levar {swapQty} galão(ões) bom(ns) e recolher o com defeito</b></div>}
         {stop.brand && <div className="mob-order-box" data-testid="mob-order-banner">
-          <span className="mob-eyebrow">Pedido da rota</span>
-          <b>{Number(stop.quantity) || 0} × {stop.brand} · {stop.sale_type === 'full' ? 'completo (vasilhame + água)' : 'somente água'}{stop.out_of_catalog ? ' · produto novo p/ cliente' : ''}</b>
+          <span className="mob-eyebrow">Pedido do cliente</span>
+          {pedidoItems(stop).map(i => <b key={`${i.brand}-${i.sale_type}`}>{Number(i.quantity) || 0} × {i.brand} · {i.sale_type === 'full' ? 'completo (vasilhame + água)' : 'somente água'}{i.out_of_catalog ? ' · produto novo p/ cliente' : ''}</b>)}
           {stop.notes && <span>{stop.notes}</span>}
         </div>}
-        {lines.length === 0 && <p className="mob-muted">Este cliente não tem produto no cadastro nem pedido na rota. Volte em Viagens do dia e escolha o produto da parada.</p>}
+        {lines.length === 0 && <p className="mob-muted">Este cliente não tem produto no cadastro nem pedido na parada. Volte em Rotas do dia e escolha o produto do cliente.</p>}
         {lines.map((l, i) => <section className="mob-brand-sec" key={l.brand} data-testid={`mob-line-${i}`}>
           <div className="mob-brand-top"><b>{l.brand}</b><b>{money(lineTotal(l))}</b></div>
           {l.askPrice && <label className="mob-field"><b className="mob-label">Preço combinado (R$ por galão)</b><input className="mob-input" inputMode="decimal" placeholder="0,00" value={l.priceStr || ''} data-testid={`mob-line-price-${i}`} onChange={e => mod(i, x => ({ ...x, priceStr: e.target.value, priceExchange: parseMoney(e.target.value) }))} onFocus={e => e.target.select()} /></label>}
@@ -1799,8 +1950,8 @@ function MobileLaunchPanel({ stop, user, date, viagemId, cargaRestante, othersPe
         {totalMf > 0 && <section className="mob-mf-ask" data-testid="mob-mf-decision">
           <b>{totalMf} galão{totalMf > 1 ? 'ões' : ''} com microfuro · o que foi decidido?</b>
           {MF_PLANS.map(([k, label, Icon]) => <button type="button" key={k} className={`mob-pick${mfPlan === k ? ' on' : ''}`} disabled={k === 'swap' && swapDisabled} data-testid={`mob-mf-${k}`} onClick={() => setMfPlan(k)}><Icon size={20} /><span>{label}</span></button>)}
-          {swapDisabled && <span className="mob-muted" data-testid="mob-mf-no-spare">A carga desta viagem está certa para a rota e não tem sobra para trocar agora. A troca fica para o próximo dia útil ({shortDate(nextBusinessDay())}).</span>}
-          {mfPlan === 'reschedule' && <span className="mob-muted" data-testid="mob-mf-reschedule-info">Fica como troca de MF pendente para incluir numa viagem a partir de {shortDate(nextBusinessDay())}.</span>}
+          {swapDisabled && <span className="mob-muted" data-testid="mob-mf-no-spare">A carga desta rota está certa para as entregas e não tem sobra para trocar agora. A troca fica para o próximo dia útil ({shortDate(nextBusinessDay())}).</span>}
+          {mfPlan === 'reschedule' && <span className="mob-muted" data-testid="mob-mf-reschedule-info">Fica como troca de MF pendente para incluir numa rota a partir de {shortDate(nextBusinessDay())}.</span>}
         </section>}
         {failAsk
           ? <MobileConfirm testid="mob-fail-confirm" title="Marcar como não entregue?" text="Nada é descontado do estoque." confirmLabel="Não entreguei" onCancel={() => setFailAsk(false)} onConfirm={confirmFail} />
@@ -1835,7 +1986,7 @@ function MobileLaunchPanel({ stop, user, date, viagemId, cargaRestante, othersPe
         <MobileSignatureBox canvasRef={canvasRef} onSigned={setSigned} />
       </>}
 
-      {error && <div className="mob-error" data-testid="mob-panel-error">{error}{error.includes('carga da viagem') && <button type="button" className="mob-link" data-testid="mob-panel-error-open-viagens" onClick={onOpenViagens}>Abrir Viagens do dia para ajustar</button>}</div>}
+      {error && <div className="mob-error" data-testid="mob-panel-error">{error}{error.includes('carga da rota') && <button type="button" className="mob-link" data-testid="mob-panel-error-open-viagens" onClick={onOpenViagens}>Abrir Rotas do dia para ajustar</button>}</div>}
     </div></div>
 
     <div className="mob-launch-foot">
@@ -1880,22 +2031,22 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
     {dayClosed && <section className="mob-band" data-testid="mob-day-closed-summary"><Lock size={20} /><b>Dia fechado. Lançamentos bloqueados.</b></section>}
 
     {!viagemAtiva && !dayClosed && <section className="mob-poster" data-testid="mob-trip-banner">
-      <span className="mob-eyebrow">{lastDone ? `Viagem ${lastDone.numero} concluída` : 'Nenhuma viagem em execução'}</span>
-      <b>{plannedEmpty ? `Viagem ${nextPlanned.numero} ainda sem clientes.` : nextPlanned ? `Viagem ${nextPlanned.numero} pronta para sair.` : lastDone ? 'Quer fazer outra viagem hoje?' : 'Crie a viagem para liberar os lançamentos.'}</b>
+      <span className="mob-eyebrow">{lastDone ? `Rota ${lastDone.numero} concluída` : 'Nenhuma rota em execução'}</span>
+      <b>{plannedEmpty ? `Rota ${nextPlanned.numero} ainda sem clientes.` : nextPlanned ? `Rota ${nextPlanned.numero} pronta para sair.` : lastDone ? 'Quer fazer outra rota hoje?' : 'Crie a rota para liberar os lançamentos.'}</b>
       {plannedEmpty
-        ? <MobBtn kind="white" lead={RouteIcon} icon={ArrowRight} data-testid="mob-build-planned-button" onClick={() => onOpenViagens(nextPlanned.id)}>Montar rota da viagem {nextPlanned.numero}</MobBtn>
+        ? <MobBtn kind="white" lead={RouteIcon} icon={ArrowRight} data-testid="mob-build-planned-button" onClick={() => onOpenViagens(nextPlanned.id)}>Montar paradas da rota {nextPlanned.numero}</MobBtn>
         : nextPlanned
-          ? <MobBtn kind="white" lead={Truck} icon={ArrowRight} data-testid="mob-start-planned-button" onClick={() => onStartTrip(nextPlanned)}>Iniciar viagem {nextPlanned.numero} · {TURNO_LABELS[nextPlanned.turno]}</MobBtn>
-          : <MobBtn kind="white" lead={Plus} icon={ArrowRight} data-testid="mob-new-delivery-button" onClick={() => onOpenViagens()}>Criar viagem</MobBtn>}
+          ? <MobBtn kind="white" lead={Truck} icon={ArrowRight} data-testid="mob-start-planned-button" onClick={() => onStartTrip(nextPlanned)}>Iniciar rota {nextPlanned.numero} · {TURNO_LABELS[nextPlanned.turno]}</MobBtn>
+          : <MobBtn kind="white" lead={Plus} icon={ArrowRight} data-testid="mob-new-delivery-button" onClick={() => onOpenViagens()}>Criar rota</MobBtn>}
       {/* Sair sem rota montada continua possível: dá para incluir clientes pela busca durante a viagem. */}
       {plannedEmpty && <button type="button" className="mob-link on-accent" data-testid="mob-start-planned-button" onClick={() => onStartTrip(nextPlanned)}>Iniciar sem clientes<ChevronRight size={16} /></button>}
-      {nextPlanned && !plannedEmpty && <button type="button" className="mob-link on-accent" data-testid="mob-poster-open-viagens" onClick={() => onOpenViagens(nextPlanned.id)}>Ver rotas e clientes<ChevronRight size={16} /></button>}
+      {nextPlanned && !plannedEmpty && <button type="button" className="mob-link on-accent" data-testid="mob-poster-open-viagens" onClick={() => onOpenViagens(nextPlanned.id)}>Ver paradas e clientes<ChevronRight size={16} /></button>}
     </section>}
 
     {viagemAtiva && <section className="mob-tripbar" data-testid="mob-trip-banner">
       <div className="mob-tripbar-top">
-        <div><span className="mob-eyebrow red"><i />Viagem em execução</span><b>{TURNO_LABELS[viagemAtiva.turno]} · Viagem {viagemAtiva.numero} · {viagemAtiva.codigo_viagem}</b></div>
-        <MobBtn kind="outline" h={44} icon={ChevronRight} data-testid="mob-open-viagens" onClick={() => onOpenViagens(viagemAtiva.id)}>Viagens</MobBtn>
+        <div><span className="mob-eyebrow red"><i />Rota em execução</span><b>{TURNO_LABELS[viagemAtiva.turno]} · Rota {viagemAtiva.numero} · {viagemAtiva.codigo_viagem}</b></div>
+        <MobBtn kind="outline" h={44} icon={ChevronRight} data-testid="mob-open-viagens" onClick={() => onOpenViagens(viagemAtiva.id)}>Rotas</MobBtn>
       </div>
       <div className="mob-carga">
         {carga ? <div className="mob-bar"><div className={atual > carga ? 'over' : ''} style={{ width: `${Math.min(100, Math.round(atual / carga * 100))}%` }} /></div> : null}
@@ -1908,24 +2059,24 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
       <div className="mob-alert-head"><TriangleAlert size={20} /><b>Troca de MF pendente</b></div>
       {mfPending.map(m => <div className="mob-mfitem" key={m.id}>
         <span><b>{m.customer}</b><small>{m.quantity} un de {m.brand}{m.due_date ? ` · prevista ${shortDate(m.due_date)}` : ''}</small></span>
-        {!dayClosed && <MobBtn kind="warn" h={48} lead={Plus} data-testid={`mob-mf-include-${m.id}`} onClick={() => onIncludeMf(m)}>{mfTarget ? `Incluir na viagem ${mfTarget.numero}` : 'Criar viagem para incluir'}</MobBtn>}
+        {!dayClosed && <MobBtn kind="warn" h={48} lead={Plus} data-testid={`mob-mf-include-${m.id}`} onClick={() => onIncludeMf(m)}>{mfTarget ? `Incluir na rota ${mfTarget.numero}` : 'Criar rota para incluir'}</MobBtn>}
       </div>)}
     </section>}
 
     {viagemAtiva && stops.length > 0 && pending.length === 0 && <section className="mob-card" data-testid="mob-all-done">
       <div className="mob-card-body">
-        <span className="mob-eyebrow red"><CircleCheck size={16} />Todas as rotas concluídas</span>
+        <span className="mob-eyebrow red"><CircleCheck size={16} />Todas as entregas concluídas</span>
         <b className="mob-h24">{done.length} entrega{done.length === 1 ? '' : 's'} · {money(tripTotal)}</b>
         <span className="mob-muted">{failed.length > 0 ? `${failed.length} não entregue(s). ` : ''}Conclua para limpar a tela e devolver a sobra da carga.</span>
       </div>
       {finishAsk
-        ? <MobileConfirm testid="mob-finish-confirm" title="Concluir mesmo assim?" text={diff > 0 ? `Faltam ${diff} unidade(s) para bater com a carga total (${atual}/${carga}).` : `Foram lançadas ${-diff} unidade(s) a mais que a carga total (${atual}/${carga}).`} confirmLabel="Concluir viagem" onCancel={() => setFinishAsk(false)} onConfirm={() => { setFinishAsk(false); onFinishTrip(viagemAtiva); }} />
-        : <MobBtn h={64} lead={Flag} icon={ArrowRight} data-testid="mob-finish-trip" onClick={askFinish}>Concluir viagem</MobBtn>}
+        ? <MobileConfirm testid="mob-finish-confirm" title="Concluir mesmo assim?" text={diff > 0 ? `Faltam ${diff} unidade(s) para bater com a carga total (${atual}/${carga}).` : `Foram lançadas ${-diff} unidade(s) a mais que a carga total (${atual}/${carga}).`} confirmLabel="Concluir rota" onCancel={() => setFinishAsk(false)} onConfirm={() => { setFinishAsk(false); onFinishTrip(viagemAtiva); }} />
+        : <MobBtn h={64} lead={Flag} icon={ArrowRight} data-testid="mob-finish-trip" onClick={askFinish}>Concluir rota</MobBtn>}
     </section>}
 
     {viagemAtiva && stops.length === 0 && <section className="mob-card plain" data-testid="mob-empty-trip">
-      <div className="mob-card-body"><b className="mob-h20">Esta viagem ainda não tem clientes.</b><span className="mob-muted">Monte as rotas da viagem e adicione os clientes de cada uma.</span></div>
-      <MobBtn lead={RouteIcon} icon={ArrowRight} data-testid="mob-build-routes" onClick={() => onOpenViagens(viagemAtiva.id)}>Montar rotas</MobBtn>
+      <div className="mob-card-body"><b className="mob-h20">Esta rota ainda não tem clientes.</b><span className="mob-muted">Monte as paradas da rota e adicione os clientes de cada uma.</span></div>
+      <MobBtn lead={RouteIcon} icon={ArrowRight} data-testid="mob-build-routes" onClick={() => onOpenViagens(viagemAtiva.id)}>Montar paradas</MobBtn>
     </section>}
 
     {stops.length > 0 && <>
@@ -1937,7 +2088,7 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
 
       {next && <section className="mob-card mob-next" data-testid="mob-next-stop">
         <div className="mob-card-body">
-          <span className="mob-eyebrow">Próxima parada · Rota {pad2(next.rota_numero)} · Nº {pad2(next.seq)}</span>
+          <span className="mob-eyebrow">Próximo cliente · Parada {pad2(next.rota_numero)} · Nº {pad2(next.seq)}</span>
           {next.mf_swap_quantity > 0 && <span className="mob-tag swap big"><RefreshCw size={14} />Troca MF · {next.mf_swap_quantity} un</span>}
           <b className="mob-h26">{next.name}</b>
           {next.address && <span className="mob-muted">{next.address}</span>}
@@ -1957,7 +2108,7 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
       <div className="mob-sec-head"><b>Pendentes</b><b>{pending.length}</b></div>
       {pendingRows.map(s => <button type="button" className="mob-row" key={s.key} data-testid={`mob-customer-row-${s.id}`} onClick={() => onOpenStop(s)}>
         <span className="mob-num">{pad2(s.seq)}</span>
-        <span className="mob-row-main"><b>{s.name}</b><small>Rota {pad2(s.rota_numero)} · {orderSub(s)}</small></span>
+        <span className="mob-row-main"><b>{s.name}</b><small>Parada {pad2(s.rota_numero)} · {orderSub(s)}</small></span>
         {s.mf_swap_quantity > 0 && <span className="mob-tag swap"><RefreshCw size={12} />TROCA MF</span>}
         {s.prazo && <span className="mob-tag warn">a prazo</span>}
         <ChevronRight size={22} />
@@ -2170,13 +2321,22 @@ function MobileProductConfig({ customer, rotaNumero, brandsCatalog, busy, onCanc
   const priceLabel = b => b.price != null ? `${money(b.price)} somente água${b.price_full ? ` · ${money(b.price_full)} completo` : ''}` : 'preço informado na entrega';
   const pick = name => { setBrand(name); const s = prefs.find(p => sameName(p.brand, name)) || others.find(b => sameName(b.name, name)); if (!(s && Number(s.price_full) > 0)) setFull(false); };
   const n = Number(qty) || 1;
-  function confirm() {
+  const [added, setAdded] = useState([]);
+  const current = () => ({ brand, quantity: n, sale_type: full && hasFull ? 'full' : 'exchange', out_of_catalog: !pref, price: sel?.price ?? undefined, price_full: sel?.price_full ?? undefined });
+  const items = brand ? mergeItem(added, current()) : added;
+  const totalQty = items.reduce((a, i) => a + Number(i.quantity), 0);
+  // O cliente pode pedir mais de um produto: guarda o atual e libera a escolha do próximo.
+  function addMore() {
     if (!brand) return;
-    onConfirm({ id: customer.id, name: customer.name, brand, quantity: n, sale_type: full && hasFull ? 'full' : 'exchange', out_of_catalog: !pref, price: sel?.price ?? undefined, price_full: sel?.price_full ?? undefined });
+    setAdded(items); setBrand(''); setQty(''); setFull(false); setShowOther(prefs.length === 0);
+  }
+  function confirm() {
+    if (!items.length) return;
+    onConfirm({ id: customer.id, name: customer.name, ...items[0], quantity: totalQty, items });
   }
   return <div className="mob-config" data-testid="mob-viagem-client-config">
     <div className="mob-config-head">
-      <span><span className="mob-eyebrow">Adicionar à Rota {pad2(rotaNumero)}</span><b>{customer.name}</b></span>
+      <span><span className="mob-eyebrow">Adicionar à Parada {pad2(rotaNumero)}</span><b>{customer.name}</b></span>
       <button type="button" className="mob-link dark" data-testid="mob-viagem-client-cancel" onClick={onCancel}>Cancelar</button>
     </div>
     <div className="mob-field">
@@ -2195,7 +2355,11 @@ function MobileProductConfig({ customer, rotaNumero, brandsCatalog, busy, onCanc
         </div>
       </div>
     </div>
-    <MobBtn h={56} icon={Check} disabled={!brand || busy} data-testid="mob-viagem-client-confirm" onClick={confirm}>{brand ? `Adicionar ${n} × ${brand}` : 'Escolha o produto'}</MobBtn>
+    {added.length > 0 && <div className="mob-field"><b className="mob-label">Já no pedido</b>
+      <div className="mob-chips">{added.map(i => <span className="mob-chip" key={`${i.brand}-${i.sale_type}`} data-testid={`mob-viagem-client-item-${i.brand}`}>{i.quantity} × {i.brand}{i.sale_type === 'full' ? ' · completo' : ''}<button type="button" aria-label="Tirar produto do pedido" onClick={() => setAdded(prev => prev.filter(x => x !== i))}><X size={14} /></button></span>)}</div>
+    </div>}
+    <button type="button" className="mob-link h48" disabled={!brand} data-testid="mob-viagem-client-more" onClick={addMore}><Plus size={16} />{brand ? `Incluir ${n} × ${brand} e escolher outro produto` : 'Escolha um produto para incluir outro'}</button>
+    <MobBtn h={56} icon={Check} disabled={!items.length || busy} data-testid="mob-viagem-client-confirm" onClick={confirm}>{!items.length ? 'Escolha o produto' : items.length === 1 ? `Adicionar ${items[0].quantity} × ${items[0].brand}` : `Adicionar ${items.length} produtos · ${totalQty} un`}</MobBtn>
   </div>
 }
 
@@ -2232,27 +2396,27 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
   function openPicker(viagemId, rotaId) { setPicker({ viagemId, rotaId }); setPickQ(''); setConfig(null); }
 
   async function create() {
-    if (turnoFull) return toast('Limite de 6 viagens neste turno.');
+    if (turnoFull) return toast('Limite de 6 rotas neste turno.');
     await run(async () => {
       let v = await onCreate({ turno, create_first_rota: true, carga_total: cargaItems.length ? undefined : (Number(carga) || undefined), carga_items: cargaItems.length ? cargaItems : undefined });
       if (!v.rotas?.length) v = await onAddRota(v.id, { clientes: [] });
       setCargaItems([]); setShowMore(false);
       setOpenTripId(v.id); openPicker(v.id, v.rotas[v.rotas.length - 1].id);
-      toast('Viagem criada. Adicione os clientes da Rota 01 e toque em Iniciar.', 4000);
-    }, 'Não foi possível criar a viagem.');
+      toast('Rota criada. Adicione os clientes da Parada 01 e toque em Iniciar.', 4000);
+    }, 'Não foi possível criar a rota.');
   }
   async function addRota(v) {
-    await run(async () => { const updated = await onAddRota(v.id, { clientes: [] }); openPicker(v.id, updated.rotas[updated.rotas.length - 1].id); }, 'Não foi possível criar a rota.');
+    await run(async () => { const updated = await onAddRota(v.id, { clientes: [] }); openPicker(v.id, updated.rotas[updated.rotas.length - 1].id); }, 'Não foi possível criar a parada.');
   }
   async function addCliente(v, rota, cliente) {
-    await run(async () => { await onAddRotaCliente(v.id, rota.id, cliente); setConfig(null); setPickQ(''); toast(`${cliente.name} adicionado à Rota ${pad2(rota.numero)}.`); }, 'Não foi possível adicionar o cliente.');
+    await run(async () => { await onAddRotaCliente(v.id, rota.id, cliente); setConfig(null); setPickQ(''); toast(`${cliente.name} adicionado à Parada ${pad2(rota.numero)}.`); }, 'Não foi possível adicionar o cliente.');
   }
   async function scheduleMf(v, m, hit) {
     await run(async () => {
       let rota = hit?.rota || (v.rotas || [])[(v.rotas || []).length - 1];
       if (!rota) { const updated = await onAddRota(v.id, { clientes: [] }); rota = updated.rotas[updated.rotas.length - 1]; }
       await onScheduleMf(v.id, rota.id, m.id);
-      toast(`Troca de MF de ${m.customer} adicionada à viagem.`);
+      toast(`Troca de MF de ${m.customer} adicionada à rota.`);
     }, 'Não foi possível incluir a troca de MF.');
   }
 
@@ -2267,24 +2431,24 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
 
   return <>
     {focus
-      ? <button type="button" className="mob-link dark h44" data-testid="mob-viagens-all" onClick={closeFocus}><ArrowLeft size={18} />Todas as viagens</button>
+      ? <button type="button" className="mob-link dark h44" data-testid="mob-viagens-all" onClick={closeFocus}><ArrowLeft size={18} />Todas as rotas</button>
       : <button type="button" className="mob-link dark h44" data-testid="mob-viagens-close" onClick={onBack}><ArrowLeft size={18} />Voltar para a rota</button>}
 
     {focus ? null : dayClosed
-      ? <section className="mob-band" data-testid="mob-day-closed-banner"><Lock size={20} /><b>Dia fechado — viagens somente para consulta.</b></section>
+      ? <section className="mob-band" data-testid="mob-day-closed-banner"><Lock size={20} /><b>Dia fechado — rotas somente para consulta.</b></section>
       : <section className="mob-card" data-testid="mob-viagem-form">
-        <div className="mob-card-head"><b>Criar viagem</b></div>
+        <div className="mob-card-head"><b>Criar rota</b></div>
         <div className="mob-card-body gap14">
           <div className="mob-field"><b className="mob-label">Turno</b>
             <div className="mob-seg" data-testid="mob-viagem-turno">{[0, 1].map(t => <button type="button" key={t} className={turno === t ? 'on' : ''} data-testid={`mob-viagem-turno-${t}`} onClick={() => setTurno(t)}>{TURNO_LABELS[t]}</button>)}</div>
           </div>
           {cargaItems.length === 0 && <div className="mob-qrow wrap">
-            <span><b>Carga da viagem</b><small>Galões no caminhão</small></span>
+            <span><b>Carga da rota</b><small>Galões no caminhão</small></span>
             <MobileStepper label="carga" testid="mob-viagem-carga" value={carga} onType={v => { const d = onlyDigits(v); setCarga(d === '' ? '' : Number(d)); }} onDec={() => setCarga(Math.max(0, (Number(carga) || 0) - 5))} onInc={() => setCarga((Number(carga) || 0) + 5)} />
           </div>}
           <button type="button" className="mob-link h44" data-testid="mob-viagem-more" onClick={() => setShowMore(!showMore)}>{showMore ? <ChevronUp size={18} /> : <ChevronDown size={18} />}Carga por produto (opcional){cargaItems.length > 0 ? ` · total ${cargaItemsTotal} un` : ''}</button>
           {showMore && <div className="mob-field">
-            <span className="mob-muted">Se preencher, o sistema desconta do estoque ao iniciar e devolve a sobra ao concluir a viagem.</span>
+            <span className="mob-muted">Se preencher, o sistema desconta do estoque ao iniciar e devolve a sobra ao concluir a rota.</span>
             <div className="mob-carga-add">
               <select className="mob-input" value={newCargaBrand} data-testid="mob-viagem-carga-brand" onChange={e => setNewCargaBrand(e.target.value)}>
                 <option value="">Produto</option>
@@ -2296,13 +2460,13 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
             {cargaItems.length > 0 && <div className="mob-chips">{cargaItems.map(i => <span className="mob-chip" key={i.brand} data-testid={`mob-viagem-carga-chip-${i.brand}`}>{i.brand} · {i.quantity}<button type="button" aria-label="Remover item da carga" onClick={() => setCargaItems(prev => prev.filter(x => x.brand !== i.brand))}><X size={14} /></button></span>)}</div>}
           </div>}
         </div>
-        <MobBtn h={64} lead={RouteIcon} icon={ArrowRight} disabled={turnoFull || busy} data-testid="mob-viagem-create" onClick={create}>{turnoFull ? 'Limite de 6 viagens no turno' : 'Criar viagem e montar rotas'}</MobBtn>
+        <MobBtn h={64} lead={RouteIcon} icon={ArrowRight} disabled={turnoFull || busy} data-testid="mob-viagem-create" onClick={create}>{turnoFull ? 'Limite de 6 rotas no turno' : 'Criar rota e montar paradas'}</MobBtn>
       </section>}
 
     <section className="mob-list">
-      <div className="mob-sec-head"><b>{focus ? 'Montando a viagem' : 'Viagens de hoje'}</b><b>{focus ? '' : `${viagens.length}/${VIAGENS_POR_DIA}`}</b></div>
-      {viagens.length === 0 && <p className="mob-muted pad">Nenhuma viagem criada hoje.</p>}
-      {viagens.length > 0 && shown.length === 0 && <p className="mob-muted pad">Nenhuma viagem em aberto.</p>}
+      <div className="mob-sec-head"><b>{focus ? 'Montando a rota' : 'Rotas de hoje'}</b><b>{focus ? '' : `${viagens.length}/${VIAGENS_POR_DIA}`}</b></div>
+      {viagens.length === 0 && <p className="mob-muted pad">Nenhuma rota criada hoje.</p>}
+      {viagens.length > 0 && shown.length === 0 && <p className="mob-muted pad">Nenhuma rota em aberto.</p>}
       {shown.map(v => {
         const rotas = v.rotas || [];
         const allClients = rotas.flatMap(r => (r.clientes || []).map(c => ({ ...c, rota: r, st: statusOf(v, c) })));
@@ -2314,25 +2478,25 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
         return <div className="mob-trip" key={v.id} data-testid={`mob-viagem-${v.id}`}>
           <div className="mob-trip-head">
             <span className={`mob-badge lg ${v.status}`}>{pad2(v.numero)}</span>
-            <span className="mob-row-main"><b>{TURNO_LABELS[v.turno]} · Viagem {v.numero}</b><small>{v.codigo_viagem} · {v.status === 'finalizada' ? `${v.entregas || 0} entrega${v.entregas === 1 ? '' : 's'} · ${money(v.saldo_liquido ?? v.total_bruto)}` : v.carga_total ? `carga ${v.carga_total} un` : 'sem carga definida'}</small></span>
+            <span className="mob-row-main"><b>{TURNO_LABELS[v.turno]} · Rota {v.numero}</b><small>{v.codigo_viagem} · {v.status === 'finalizada' ? `${v.entregas || 0} entrega${v.entregas === 1 ? '' : 's'} · ${money(v.saldo_liquido ?? v.total_bruto)}` : v.carga_total ? `carga ${v.carga_total} un` : 'sem carga definida'}</small></span>
             <span className={`mob-tag ${v.status === 'execucao' ? 'warn' : 'neutral'}`}>{{ planejada: 'Planejada', execucao: 'Em execução', finalizada: 'Concluída' }[v.status]}</span>
           </div>
 
           {v.status === 'planejada' && !dayClosed && (asking === `del:${v.id}`
-            ? <MobileConfirm testid="mob-viagem-excluir-confirm" title={`Excluir a viagem ${v.codigo_viagem}?`} text={allClients.length ? `${allClients.length} cliente(s) saem das rotas.` : undefined} confirmLabel="Excluir" busy={busy} onCancel={() => setAsking(null)} onConfirm={() => run(async () => { await onDelete(v); setAsking(null); }, 'Não foi possível excluir a viagem.')} />
+            ? <MobileConfirm testid="mob-viagem-excluir-confirm" title={`Excluir a rota ${v.codigo_viagem}?`} text={allClients.length ? `${allClients.length} cliente(s) saem das paradas.` : undefined} confirmLabel="Excluir" busy={busy} onCancel={() => setAsking(null)} onConfirm={() => run(async () => { await onDelete(v); setAsking(null); }, 'Não foi possível excluir a rota.')} />
             : <div className="mob-grid21">
-              <MobBtn h={52} icon={Play} kind={viagemAtiva ? 'disabled' : 'primary'} data-testid={`mob-viagem-iniciar-${v.id}`} onClick={() => viagemAtiva ? toast('Conclua a viagem em execução primeiro.') : run(() => onIniciar(v), 'Não foi possível iniciar a viagem.')}>{viagemAtiva ? 'Aguardando' : 'Iniciar'}</MobBtn>
+              <MobBtn h={52} icon={Play} kind={viagemAtiva ? 'disabled' : 'primary'} data-testid={`mob-viagem-iniciar-${v.id}`} onClick={() => viagemAtiva ? toast('Conclua a rota em execução primeiro.') : run(() => onIniciar(v), 'Não foi possível iniciar a rota.')}>{viagemAtiva ? 'Aguardando' : 'Iniciar'}</MobBtn>
               <MobBtn h={52} kind="outline" data-testid={`mob-viagem-excluir-${v.id}`} onClick={() => setAsking(`del:${v.id}`)}>Excluir</MobBtn>
             </div>)}
 
           {v.status === 'execucao' && (asking === `fin:${v.id}`
-            ? <MobileConfirm testid="mob-viagem-finalizar-confirm" title="Concluir a viagem agora?" text={`${pendingCount > 0 ? `${pendingCount} parada(s) ainda pendente(s). ` : ''}${v.carga_total && atual !== v.carga_total ? `Carga ${atual}/${v.carga_total} un. ` : ''}A sobra da carga volta para o estoque.`} confirmLabel="Concluir viagem" busy={busy} onCancel={() => setAsking(null)} onConfirm={() => run(async () => { await onFinalizar(v); setAsking(null); }, 'Não foi possível concluir a viagem.')} />
+            ? <MobileConfirm testid="mob-viagem-finalizar-confirm" title="Concluir a rota agora?" text={`${pendingCount > 0 ? `${pendingCount} cliente(s) ainda pendente(s). ` : ''}${v.carga_total && atual !== v.carga_total ? `Carga ${atual}/${v.carga_total} un. ` : ''}A sobra da carga volta para o estoque.`} confirmLabel="Concluir rota" busy={busy} onCancel={() => setAsking(null)} onConfirm={() => run(async () => { await onFinalizar(v); setAsking(null); }, 'Não foi possível concluir a rota.')} />
             : <div className="mob-grid2">
               <MobBtn h={52} kind="outline" icon={ArrowRight} data-testid={`mob-viagem-abrir-rota-${v.id}`} onClick={onBack}>Abrir rota</MobBtn>
               <MobBtn h={52} kind="outline" icon={Flag} data-testid={`mob-viagem-finalizar-${v.id}`} onClick={() => setAsking(`fin:${v.id}`)}>Concluir</MobBtn>
             </div>)}
 
-          {!focus && <button type="button" className="mob-link h44" data-testid={`mob-viagem-toggle-${v.id}`} onClick={() => { setOpenTripId(isOpen ? null : v.id); setPicker(null); setConfig(null); }}>{isOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}{isOpen ? 'Ocultar' : 'Ver'} rotas e clientes ({rotas.length} rota{rotas.length === 1 ? '' : 's'} · {allClients.length} cliente{allClients.length === 1 ? '' : 's'})</button>}
+          {!focus && <button type="button" className="mob-link h44" data-testid={`mob-viagem-toggle-${v.id}`} onClick={() => { setOpenTripId(isOpen ? null : v.id); setPicker(null); setConfig(null); }}>{isOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}{isOpen ? 'Ocultar' : 'Ver'} paradas e clientes ({rotas.length} parada{rotas.length === 1 ? '' : 's'} · {allClients.length} cliente{allClients.length === 1 ? '' : 's'})</button>}
 
           {isOpen && <div className="mob-editor" data-testid={`mob-viagem-editor-${v.id}`}>
             {editable && mfPending.length > 0 && <div className="mob-mfblock" data-testid="mob-viagem-mf-pendentes">
@@ -2342,7 +2506,7 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
                 const last = rotas[rotas.length - 1];
                 return <div className="mob-mfitem" key={m.id}>
                   <span><b>{m.customer}</b><small>{m.quantity} × {m.brand}{m.entry_number ? ` · da entrega Nº ${m.entry_number}` : ''}{m.due_date ? ` · prevista ${shortDate(m.due_date)}` : ''}</small></span>
-                  <MobBtn kind="warn" h={48} lead={Plus} disabled={busy} data-testid={`mob-mf-add-${m.id}`} onClick={() => scheduleMf(v, m, hit)}>{hit ? `Somar ao pedido (Rota ${pad2(hit.rota.numero)})` : `Adicionar à Rota ${pad2(last?.numero || 1)}`}</MobBtn>
+                  <MobBtn kind="warn" h={48} lead={Plus} disabled={busy} data-testid={`mob-mf-add-${m.id}`} onClick={() => scheduleMf(v, m, hit)}>{hit ? `Somar ao pedido (Parada ${pad2(hit.rota.numero)})` : `Adicionar à Parada ${pad2(last?.numero || 1)}`}</MobBtn>
                 </div>
               })}
             </div>}
@@ -2355,17 +2519,19 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
               const pickRows = picking && !cfg ? customers.filter(c => !inTrip.has(c.id) && (!pq || c.name.toLowerCase().includes(pq) || (c.code || '').toLowerCase().includes(pq) || (c.address || '').toLowerCase().includes(pq))).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR')).slice(0, 20) : [];
               return <div className="mob-rota" key={r.id} data-testid={`mob-viagem-rota-${r.id}`}>
                 <div className="mob-rota-head">
-                  <span className="mob-row-main"><b>Rota {pad2(r.numero)}</b><small>{cl.length} cliente{cl.length === 1 ? '' : 's'} · {cl.reduce((a, c) => a + clienteLoad(c), 0)} un</small></span>
-                  {canRemove && <button type="button" className="mob-sq" aria-label="Excluir rota" data-testid={`mob-viagem-rota-excluir-${r.id}`} onClick={() => cl.length ? setAsking(`rota:${r.id}`) : run(() => onRemoveRota(v.id, r.id), 'Não foi possível excluir a rota.')}><Trash2 size={18} /></button>}
+                  <span className="mob-row-main"><b>Parada {pad2(r.numero)}</b><small>{cl.length} cliente{cl.length === 1 ? '' : 's'} · {cl.reduce((a, c) => a + clienteLoad(c), 0)} un</small></span>
+                  {canRemove && <button type="button" className="mob-sq" aria-label="Excluir parada" data-testid={`mob-viagem-rota-excluir-${r.id}`} onClick={() => cl.length ? setAsking(`rota:${r.id}`) : run(() => onRemoveRota(v.id, r.id), 'Não foi possível excluir a parada.')}><Trash2 size={18} /></button>}
                 </div>
-                {asking === `rota:${r.id}` && <MobileConfirm testid="mob-viagem-rota-excluir-confirm" title={`Excluir a Rota ${pad2(r.numero)}?`} text={`${cl.length} cliente(s) saem da viagem.`} confirmLabel="Excluir rota" busy={busy} onCancel={() => setAsking(null)} onConfirm={() => run(async () => { await onRemoveRota(v.id, r.id); setAsking(null); }, 'Não foi possível excluir a rota.')} />}
+                {asking === `rota:${r.id}` && <MobileConfirm testid="mob-viagem-rota-excluir-confirm" title={`Excluir a Parada ${pad2(r.numero)}?`} text={`${cl.length} cliente(s) saem da rota.`} confirmLabel="Excluir parada" busy={busy} onCancel={() => setAsking(null)} onConfirm={() => run(async () => { await onRemoveRota(v.id, r.id); setAsking(null); }, 'Não foi possível excluir a parada.')} />}
                 {cl.map(c => <div className="mob-client" key={c.id} data-testid={`mob-viagem-rota-cliente-${c.id}`}>
                   <span className="mob-row-main">
                     {c.mf_swap_quantity > 0 && <span className="mob-tag swap sm"><RefreshCw size={11} />Troca MF · {c.mf_swap_quantity} un</span>}
                     <b>{c.name}</b>
-                    <small>{c.brand || 'sem produto'}{c.sale_type === 'full' ? ' · completo' : ' · somente água'}{c.out_of_catalog ? ' · produto novo p/ cliente' : ''}{c.st === 'done' ? ' · entregue' : c.st === 'failed' ? ' · não entregue' : ''}</small>
+                    <small>{pedidoItems(c).length > 1 ? pedidoLabel(c) : `${c.brand || 'sem produto'}${c.sale_type === 'full' ? ' · completo' : ' · somente água'}`}{c.out_of_catalog ? ' · produto novo p/ cliente' : ''}{c.st === 'done' ? ' · entregue' : c.st === 'failed' ? ' · não entregue' : ''}</small>
                   </span>
-                  {editable && c.st === 'pending'
+                  {editable && c.st === 'pending' && pedidoItems(c).length > 1
+                    ? <><b className="mob-locked">{Number(c.quantity) || 0} un</b><button type="button" className="mob-x" aria-label="Remover cliente" data-testid={`mob-viagem-rota-cliente-remover-${c.id}`} onClick={() => run(() => onRemoveRotaCliente(v.id, r.id, c.id), 'Não foi possível remover o cliente.')}><X size={20} /></button></>
+                    : editable && c.st === 'pending'
                     ? <>
                       <MobileClientQty value={c.quantity} testid={`mob-viagem-cliente-edit-qty-${c.id}`} onCommit={q => run(() => onUpdateRotaCliente(v.id, r.id, c.id, { quantity: q }), 'Não foi possível salvar a quantidade.')} />
                       <button type="button" className="mob-x" aria-label="Remover cliente" data-testid={`mob-viagem-rota-cliente-remover-${c.id}`} onClick={() => run(() => onRemoveRotaCliente(v.id, r.id, c.id), 'Não foi possível remover o cliente.')}><X size={20} /></button>
@@ -2388,13 +2554,13 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
                 {editable && !picking && !cfg && <button type="button" className="mob-link dark h52 pad" data-testid={`mob-viagem-rota-add-cliente-${r.id}`} onClick={() => openPicker(v.id, r.id)}><UserPlus size={18} />Adicionar cliente</button>}
               </div>
             })}
-            {rotas.length === 0 && !editable && <p className="mob-muted pad">Viagem sem rotas.</p>}
-            {editable && <button type="button" className="mob-dashed" disabled={busy} data-testid={`mob-viagem-rota-add-${v.id}`} onClick={() => addRota(v)}><Plus size={18} />Nova rota</button>}
+            {rotas.length === 0 && !editable && <p className="mob-muted pad">Rota sem paradas.</p>}
+            {editable && <button type="button" className="mob-dashed" disabled={busy} data-testid={`mob-viagem-rota-add-${v.id}`} onClick={() => addRota(v)}><Plus size={18} />Nova parada</button>}
           </div>}
-          {focus && <MobBtn kind="outline" h={52} icon={Check} data-testid="mob-viagem-focus-done" onClick={closeFocus}>Pronto — ver todas as viagens</MobBtn>}
+          {focus && <MobBtn kind="outline" h={52} icon={Check} data-testid="mob-viagem-focus-done" onClick={closeFocus}>Pronto — ver todas as rotas</MobBtn>}
         </div>
       })}
-      {!focus && concluidas.length > 0 && <button type="button" className="mob-link h48" data-testid="mob-viagens-done-toggle" onClick={() => setShowDone(!showDone)}>{showDone ? <ChevronUp size={18} /> : <ChevronDown size={18} />}{showDone ? 'Ocultar' : 'Ver'} viagens concluídas ({concluidas.length})</button>}
+      {!focus && concluidas.length > 0 && <button type="button" className="mob-link h48" data-testid="mob-viagens-done-toggle" onClick={() => setShowDone(!showDone)}>{showDone ? <ChevronUp size={18} /> : <ChevronDown size={18} />}{showDone ? 'Ocultar' : 'Ver'} rotas concluídas ({concluidas.length})</button>}
     </section>
   </>
 }
@@ -2407,9 +2573,9 @@ function MobileDiarioTab({ entries, date }) {
   const totals = todays.reduce((s, e) => ({ qty: s.qty + Number(e.billed_quantity || 0), pix: s.pix + Number(e.pix_value || 0), cash: s.cash + Number(e.cash_value || 0), mf: s.mf + Number(e.mf_quantity || 0) }), { qty: 0, pix: 0, cash: 0, mf: 0 });
   const mfDetail = e => e.mf_plan === 'swap' ? 'trocado' : e.mf_plan === 'refused' ? 'cliente não quis' : (e.mf_date || '');
   return <>
-    {rotaOptions.length > 0 && <label className="mob-field"><b className="mob-label">Filtrar por rota</b>
+    {rotaOptions.length > 0 && <label className="mob-field"><b className="mob-label">Filtrar por parada</b>
       <select className="mob-input" value={rotaFilter} data-testid="mob-diario-viagem-filter" onChange={e => setRotaFilter(e.target.value)}>
-        <option value="">Todas as rotas de hoje</option>
+        <option value="">Todas as paradas de hoje</option>
         {rotaOptions.map(e => <option key={e.rota_codigo} value={e.rota_codigo}>{e.rota_codigo}</option>)}
       </select>
     </label>}
@@ -2421,7 +2587,7 @@ function MobileDiarioTab({ entries, date }) {
     {totals.mf > 0 && <span className="mob-muted" data-testid="mob-diario-mf-note">O total de galões não conta {totals.mf} com microfuro (MF). Veja o detalhe em cada lançamento.</span>}
     <section className="mob-list">
       <div className="mob-sec-head"><b>Lançamentos de hoje</b><b>{todays.length}</b></div>
-      {todays.length === 0 && <p className="mob-muted pad">Nada lançado ainda. Conclua uma parada na aba Rota.</p>}
+      {todays.length === 0 && <p className="mob-muted pad">Nada lançado ainda. Conclua uma entrega na aba Rota.</p>}
       {todays.map(e => <div className="mob-entry" key={e.id} data-testid={`mob-entry-${e.id}`}>
         <div><b>{e.customer}{e.entry_number ? <small> Nº {e.entry_number}</small> : null}</b><b>{money(e.total)}</b></div>
         <div className="mob-chips">
@@ -2455,7 +2621,7 @@ function MobileCaixaTab({ entries, expenses, expensesTotal, viagens, date, pendi
   for (const v of (viagens || [])) viagemInfo[v.id] = v;
   const viagemOptions = (viagens || []).filter(v => todaysAll.some(e => e.viagem_id === v.id));
   const porRota = {};
-  for (const e of todays) { const k = e.rota_codigo || 'Sem rota'; porRota[k] = (porRota[k] || 0) + Number(e.pix_value || 0) + Number(e.cash_value || 0); }
+  for (const e of todays) { const k = e.rota_codigo || 'Sem parada'; porRota[k] = (porRota[k] || 0) + Number(e.pix_value || 0) + Number(e.cash_value || 0); }
   const rotaInfo = {};
   for (const v of (viagens || [])) for (const r of (v.rotas || [])) rotaInfo[r.codigo_rota] = { ...r, viagem: v };
   const rotas = Object.keys(porRota).sort((a, b) => (rotaInfo[a]?.numero || 0) - (rotaInfo[b]?.numero || 0));
@@ -2464,18 +2630,18 @@ function MobileCaixaTab({ entries, expenses, expensesTotal, viagens, date, pendi
     [QrCode, 'Recebido em Pix', 'já na conta da empresa', money(pix)],
     [Banknote, 'Recebido em dinheiro', 'antes das despesas', money(cash)],
     [Clock3, 'Vendas a prazo', 'lançadas hoje', money(comp)],
-    [WalletCards, `Despesas${selectedViagem ? ' da viagem' : ' do dia'}`, 'pagas com o dinheiro em mãos', `−${money(filteredExpensesTotal)}`],
+    [WalletCards, `Despesas${selectedViagem ? ' da rota' : ' do dia'}`, 'pagas com o dinheiro em mãos', `−${money(filteredExpensesTotal)}`],
   ];
 
   return <>
-    {viagemOptions.length > 0 && <label className="mob-field"><b className="mob-label">Filtrar por viagem</b>
+    {viagemOptions.length > 0 && <label className="mob-field"><b className="mob-label">Filtrar por rota</b>
       <select className="mob-input" value={viagemFilter} data-testid="mob-caixa-viagem-filter" onChange={e => setViagemFilter(e.target.value)}>
-        <option value="">Todas as viagens de hoje</option>
+        <option value="">Todas as rotas de hoje</option>
         {viagemOptions.map(v => <option key={v.id} value={v.id}>{viagemOptionLabel(v)}</option>)}
       </select>
     </label>}
     <section className="mob-hero">
-      <span className="mob-eyebrow">{selectedViagem ? `Saldo · ${TURNO_LABELS[selectedViagem.turno]} · Viagem ${selectedViagem.numero}` : 'Saldo líquido do dia'}</span>
+      <span className="mob-eyebrow">{selectedViagem ? `Saldo · ${TURNO_LABELS[selectedViagem.turno]} · Rota ${selectedViagem.numero}` : 'Saldo líquido do dia'}</span>
       <b data-testid="mob-cash-to-deliver">{money(netTotal)}</b>
       <span className="mob-muted">Pix + dinheiro recebidos, já descontadas as despesas</span>
     </section>
@@ -2488,10 +2654,10 @@ function MobileCaixaTab({ entries, expenses, expensesTotal, viagens, date, pendi
       <span className="mob-muted">{cashInHand < 0 ? 'As despesas passaram do dinheiro recebido' : 'Dinheiro recebido menos as despesas'} · o Pix já está na conta</span>
     </section>
     {rotas.length > 0 && <section className="mob-list">
-      <div className="mob-sec-head"><b>Resumo por rota</b><b>{rotas.length}</b></div>
+      <div className="mob-sec-head"><b>Resumo por parada</b><b>{rotas.length}</b></div>
       {rotas.map(codigo => { const info = rotaInfo[codigo]; return <div className="mob-cash-row" key={codigo} data-testid={`mob-cash-rota-${codigo}`}>
         <Truck size={22} />
-        <span className="mob-row-main"><b>{info ? `${TURNO_LABELS[info.viagem.turno]} · Viagem ${info.viagem.numero} · Rota ${pad2(info.numero)}` : codigo}</b><small>Pix + dinheiro</small></span>
+        <span className="mob-row-main"><b>{info ? `${TURNO_LABELS[info.viagem.turno]} · Rota ${info.viagem.numero} · Parada ${pad2(info.numero)}` : codigo}</b><small>Pix + dinheiro</small></span>
         <b>{money(porRota[codigo])}</b>
       </div> })}
     </section>}
@@ -2500,12 +2666,12 @@ function MobileCaixaTab({ entries, expenses, expensesTotal, viagens, date, pendi
       : abertas.length > 0
         ? <section className="mob-card pad14" data-testid="mob-close-day-blocked">
           <span className="mob-eyebrow"><Lock size={14} />Ainda não dá para fechar o dia</span>
-          <b className="mob-h20">{abertas.length === 1 ? `A viagem ${abertas[0].numero} está ${abertas[0].status === 'execucao' ? 'em execução' : 'planejada'}.` : `${abertas.length} viagens ainda estão abertas.`}</b>
-          <span className="mob-muted">Conclua ou exclua {abertas.length === 1 ? 'a viagem' : 'as viagens'} para liberar o fechamento.</span>
-          <MobBtn kind="outline" h={52} icon={ChevronRight} data-testid="mob-close-day-open-viagens" onClick={() => onOpenViagens(abertas[0].id)}>Abrir viagem {abertas[0].numero}</MobBtn>
+          <b className="mob-h20">{abertas.length === 1 ? `A rota ${abertas[0].numero} está ${abertas[0].status === 'execucao' ? 'em execução' : 'planejada'}.` : `${abertas.length} rotas ainda estão abertas.`}</b>
+          <span className="mob-muted">Conclua ou exclua {abertas.length === 1 ? 'a rota' : 'as rotas'} para liberar o fechamento.</span>
+          <MobBtn kind="outline" h={52} icon={ChevronRight} data-testid="mob-close-day-open-viagens" onClick={() => onOpenViagens(abertas[0].id)}>Abrir rota {abertas[0].numero}</MobBtn>
         </section>
         : confirming
-        ? <MobileConfirm testid="mob-close-day-confirm" title="Fechar o dia agora?" text={pendingStops > 0 ? `Ainda há ${pendingStops} parada(s) pendente(s) na rota. Depois de fechar, só o administrador reabre.` : 'Depois de fechar, só o administrador reabre os lançamentos.'} confirmLabel={closingDay ? 'Fechando...' : 'Sim, fechar'} busy={closingDay} onCancel={() => setConfirming(false)} onConfirm={async () => { await onCloseDay(); setConfirming(false); }} />
+        ? <MobileConfirm testid="mob-close-day-confirm" title="Fechar o dia agora?" text={pendingStops > 0 ? `Ainda há ${pendingStops} cliente(s) pendente(s) na rota. Depois de fechar, só o administrador reabre.` : 'Depois de fechar, só o administrador reabre os lançamentos.'} confirmLabel={closingDay ? 'Fechando...' : 'Sim, fechar'} busy={closingDay} onCancel={() => setConfirming(false)} onConfirm={async () => { await onCloseDay(); setConfirming(false); }} />
         : <MobBtn h={64} icon={Lock} data-testid="mob-close-day-button" onClick={() => setConfirming(true)}>Fechar o dia</MobBtn>}
   </>
 }
@@ -2541,7 +2707,7 @@ function MobileDespesasTab({ user, date, viagens, viagemAtiva, onOpenViagens, da
   const value = parseMoney(amount);
   async function submit() {
     setError('');
-    if (!viagemId) return setError('Selecione a viagem que gerou essa despesa.');
+    if (!viagemId) return setError('Selecione a rota que gerou essa despesa.');
     if (!(value > 0)) return setError('Informe um valor válido.');
     try {
       const { data } = await api.post('/expenses', { type: category, driver: user.name, amount: value, notes: note, status: 'approved', viagem_id: viagemId, photo }, auth());
@@ -2555,11 +2721,11 @@ function MobileDespesasTab({ user, date, viagens, viagemAtiva, onOpenViagens, da
   return <>
     {dayClosed && <section className="mob-band" data-testid="mob-expense-day-closed"><Lock size={20} /><b>Dia fechado — despesas somente para consulta.</b></section>}
     {!dayClosed && !hasTrips && <section className="mob-card plain" data-testid="mob-expense-no-trip">
-      <div className="mob-card-body"><b className="mob-h20">Nenhuma viagem criada hoje.</b><span className="mob-muted">Crie uma viagem para poder atribuir despesas a ela.</span></div>
-      <MobBtn lead={Plus} icon={ArrowRight} onClick={() => onOpenViagens()}>Criar viagem</MobBtn>
+      <div className="mob-card-body"><b className="mob-h20">Nenhuma rota criada hoje.</b><span className="mob-muted">Crie uma rota para poder atribuir despesas a ela.</span></div>
+      <MobBtn lead={Plus} icon={ArrowRight} onClick={() => onOpenViagens()}>Criar rota</MobBtn>
     </section>}
     {!dayClosed && hasTrips && <>
-      <label className="mob-field"><b className="mob-label">Viagem desta despesa</b>
+      <label className="mob-field"><b className="mob-label">Rota desta despesa</b>
         <select className="mob-input" value={viagemId} data-testid="mob-expense-viagem-select" onChange={e => setViagemId(e.target.value)}>
           {viagens.map(v => <option key={v.id} value={v.id}>{`${viagemOptionLabel(v)}${v.status === 'execucao' ? ' (em execução)' : v.status === 'finalizada' ? ' (concluída)' : ''}`}</option>)}
         </select>
@@ -2683,8 +2849,8 @@ function DriverMobileApp({ user, customers, onLogout }) {
   const offRoute = viagemAtiva && q ? customers.filter(c => !inTripIds.has(c.id) && (c.name.toLowerCase().includes(q) || (c.code || '').toLowerCase().includes(q) || (c.address || '').toLowerCase().includes(q))) : [];
 
   async function createViagem(payload) { const { data } = await api.post('/viagens', payload, auth()); await loadViagens(); return data; }
-  async function iniciarViagem(v) { await api.post(`/viagens/${v.id}/iniciar`, {}, auth()); await loadViagens(); setTab('rota'); showToast('Viagem iniciada — boa rota!'); }
-  async function finalizarViagem(v) { await api.post(`/viagens/${v.id}/finalizar`, {}, auth()); setLaunchKey(null); setSearch(''); await Promise.all([loadViagens(), loadMfPending()]); showToast(`Viagem ${v.numero || ''} concluída.`); }
+  async function iniciarViagem(v) { await api.post(`/viagens/${v.id}/iniciar`, {}, auth()); await loadViagens(); setTab('rota'); showToast('Rota iniciada — bom trabalho!'); }
+  async function finalizarViagem(v) { await api.post(`/viagens/${v.id}/finalizar`, {}, auth()); setLaunchKey(null); setSearch(''); await Promise.all([loadViagens(), loadMfPending()]); showToast(`Rota ${v.numero || ''} concluída.`); }
   async function deleteViagem(v) { await api.delete(`/viagens/${v.id}`, auth()); await Promise.all([loadViagens(), loadMfPending()]); }
   async function addRota(viagemId, payload) { const { data } = await api.post(`/viagens/${viagemId}/rotas`, payload, auth()); await loadViagens(); return data; }
   async function addRotaCliente(viagemId, rotaId, cliente) { const { data } = await api.post(`/viagens/${viagemId}/rotas/${rotaId}/clientes`, cliente, auth()); await loadViagens(); return data; }
@@ -2694,14 +2860,14 @@ function DriverMobileApp({ user, customers, onLogout }) {
   async function scheduleMf(viagemId, rotaId, movementId) { const { data } = await api.post(`/viagens/${viagemId}/rotas/${rotaId}/mf-troca`, { movement_id: movementId }, auth()); await Promise.all([loadViagens(), loadMfPending()]); return data; }
 
   const guard = (fn, fallback) => async (...args) => { try { await fn(...args); } catch (e) { showToast(apiError(e, fallback), 6000); } };
-  const startTrip = guard(iniciarViagem, 'Não foi possível iniciar a viagem.');
-  const finishTrip = guard(finalizarViagem, 'Não foi possível concluir a viagem.');
+  const startTrip = guard(iniciarViagem, 'Não foi possível iniciar a rota.');
+  const finishTrip = guard(finalizarViagem, 'Não foi possível concluir a rota.');
   const deleteEntry = guard(async entry => { await api.delete(`/daily-entries/${entry.id}`, auth()); await Promise.all([loadEntries(), loadViagens(), loadMfPending()]); showToast('Entrega excluída.'); }, 'Não foi possível excluir a entrega.');
 
   function openViagens(tripId) { setTab('viagens'); if (tripId) setOpenTripId(tripId); if (!wide) setLaunchKey(null); }
   function openStop(stop) {
     if (dayClosed) return showToast('O dia está fechado. Peça ao administrador para reabrir.');
-    if (!viagemAtiva) return showToast('Inicie a viagem antes de lançar.');
+    if (!viagemAtiva) return showToast('Inicie a rota antes de lançar.');
     setLaunchKey(stop.key);
   }
   const pickOffRoute = guard(async c => {
@@ -2716,15 +2882,15 @@ function DriverMobileApp({ user, customers, onLogout }) {
   // Um toque no aviso já encaixa a troca na viagem em execução (ou na próxima planejada).
   const includeMf = async m => {
     const target = viagemAtiva || viagensComProgresso.find(v => v.status === 'planejada');
-    if (!target) { openViagens(); return showToast('Crie a viagem; depois toque de novo em incluir a troca de MF.', 5000); }
+    if (!target) { openViagens(); return showToast('Crie a rota; depois toque de novo em incluir a troca de MF.', 5000); }
     try {
       let rota = (target.rotas || [])[(target.rotas || []).length - 1];
       if (!rota) { const updated = await addRota(target.id, { clientes: [] }); rota = updated.rotas[updated.rotas.length - 1]; }
       await scheduleMf(target.id, rota.id, m.id);
-      showToast(`Troca de MF de ${m.customer} incluída na viagem ${target.numero}.`, 4000);
+      showToast(`Troca de MF de ${m.customer} incluída na rota ${target.numero}.`, 4000);
     } catch (e) {
-      const missing = [404, 405].includes(e?.response?.status) && !['Rota não encontrada', 'Troca de MF pendente não encontrada', 'Viagem não encontrada'].includes(e?.response?.data?.detail);
-      showToast(missing ? 'O servidor ainda não tem a função de incluir troca de MF na viagem — publique a versão nova do backend.' : apiError(e, 'Não foi possível incluir a troca de MF.'), 8000);
+      const missing = [404, 405].includes(e?.response?.status) && !['Parada não encontrada', 'Troca de MF pendente não encontrada', 'Rota não encontrada'].includes(e?.response?.data?.detail);
+      showToast(missing ? 'O servidor ainda não tem a função de incluir troca de MF na rota — publique a versão nova do backend.' : apiError(e, 'Não foi possível incluir a troca de MF.'), 8000);
     }
   };
 
@@ -2733,7 +2899,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
     setLaunchKey(null); setTab('rota'); setSearch('');
     loadMfPending(); loadViagens();
     const restam = pendingStops.some(s => !sameName(s.name, entry.customer));
-    const base = `Entrega Nº ${entry.entry_number} registrada · ${entry.customer}. ${restam ? 'Escolha a próxima na lista.' : 'Era a última parada: conclua a viagem.'}`;
+    const base = `Entrega Nº ${entry.entry_number} registrada · ${entry.customer}. ${restam ? 'Escolha a próxima na lista.' : 'Era o último cliente: conclua a rota.'}`;
     if (entry.warnings?.length) showToast(`${base} Atenção: ${entry.warnings.join(' ')}`, 9000);
     else showToast(base, 4000);
   }
