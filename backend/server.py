@@ -1802,8 +1802,9 @@ async def reports(start: Optional[str] = None, end: Optional[str] = None, user=D
     exp_query = {}
     if start or end:
         rng = {}
-        if start: rng["$gte"] = start
-        if end: rng["$lte"] = end + "T23:59:59"
+        # created_at é UTC: o dia de Manaus vai das 04:00 UTC até 03:59 UTC do dia seguinte.
+        if start: rng["$gte"] = local_day_start_utc(start)
+        if end: rng["$lte"] = local_day_end_utc(end)
         exp_query["created_at"] = rng
     expenses = await db.expenses.find(exp_query, {"_id": 0}).to_list(None)
     products = await db.products.find({}, {"_id": 0}).to_list(1000)
@@ -1826,8 +1827,9 @@ async def export_reports_csv(start: Optional[str] = None, end: Optional[str] = N
     exp_query = {}
     if start or end:
         rng = {}
-        if start: rng["$gte"] = start
-        if end: rng["$lte"] = end + "T23:59:59"
+        # created_at é UTC: o dia de Manaus vai das 04:00 UTC até 03:59 UTC do dia seguinte.
+        if start: rng["$gte"] = local_day_start_utc(start)
+        if end: rng["$lte"] = local_day_end_utc(end)
         exp_query["created_at"] = rng
     expenses = await db.expenses.find(exp_query, {"_id": 0}).to_list(None)
     buf = io.StringIO()
