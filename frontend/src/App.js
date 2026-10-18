@@ -2585,7 +2585,12 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
                     <span className="mob-row-main"><b>{c.name}</b><small>{brandListOf(c).map(b => b.brand).join(', ') || 'sem marca cadastrada'}{c.address ? ` · ${c.address}` : ''}</small></span>
                     <Plus size={20} />
                   </button>)}
-                  {pickRows.length === 0 && <p className="mob-muted pad">Nenhum cliente encontrado.</p>}
+                  {/* Quem já está na rota não aparece para adicionar de novo: o caminho é editar os produtos do pedido. */}
+                  {pq && allClients.filter(c => c.st === 'pending' && c.name.toLowerCase().includes(pq)).map(c => <button type="button" className="mob-row sm pad" key={`in-${c.id}`} data-testid={`mob-viagem-client-in-trip-${c.id}`} onClick={() => setConfig({ viagemId: v.id, rotaId: c.rota.id, customer: customers.find(x => x.id === c.id) || { id: c.id, name: c.name, brands: [] }, cliente: c })}>
+                    <span className="mob-row-main"><b>{c.name}</b><small>Já está na Parada {pad2(c.rota.numero)} · {pedidoLabel(c)} — toque para adicionar produtos</small></span>
+                    <Pencil size={18} />
+                  </button>)}
+                  {pickRows.length === 0 && !(pq && allClients.some(c => c.st === 'pending' && c.name.toLowerCase().includes(pq))) && <p className="mob-muted pad">Nenhum cliente encontrado.</p>}
                 </div>}
                 {cfg && <MobileProductConfig key={cfg.cliente ? `edit-${cfg.cliente.id}` : cfg.customer.id} customer={cfg.customer} rotaNumero={r.numero} brandsCatalog={brandsCatalog} busy={busy} initialItems={cfg.cliente ? pedidoItems(cfg.cliente) : undefined} onCancel={() => setConfig(null)}
                   onConfirm={cliente => cfg.cliente
