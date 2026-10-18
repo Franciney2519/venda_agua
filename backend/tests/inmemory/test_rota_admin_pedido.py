@@ -50,3 +50,22 @@ def test_admin_edits_concluded_route_and_reassigns_driver(c):
     nova = r.json()["rotas"][1]
     assert c.post(f"/api/viagens/{v['id']}/rotas/{nova['id']}/clientes", json={"id": cust["id"] + "x", "name": "Outro Cliente", "brand": "Agua C", "quantity": 1}, headers=A).status_code == 200
     assert c.delete(f"/api/viagens/{v['id']}/rotas/{nova['id']}", headers=A).status_code == 200
+
+
+def test_delivery_order_is_saved(c):
+    A, D = _auth(c)
+    v, rota = _trip(c, D, _day(43))
+    url = f"/api/viagens/{v['id']}/rotas/{rota['id']}/clientes"
+    for n in ("Um", "Dois", "Tres"):
+        cust = c.post("/api/customers", json={"name": f"Ordem {n}", "brands": [{"brand": "Agua O", "price": 5}]}, headers=A).json()
+        c.post(url, json={"id": cust["id"], "name": cust["name"], "brand": "Agua O", "quantity": 1}, headers=D)
+    ids = [cl["id"] for cl in c.get("/api/viagens", params={"date": _day(43)}, headers=D).json()["viagens"][0]["rotas"][0]["clientes"]]
+    wanted = [ids[2], ids[0], ids[1]]
+    r = c.post(f"/api/viagens/{v['id']}/ordem", json={"clientes": [{"rota_id": rota["id"], "id": i} for i in wanted]}, headers=D)
+    assert r.status_code == 200, r.text
+    clientes = r.json()["rotas"][0]["clientes"]
+    assert sorted(clientes, key=lambda x: x["ordem"]) == [next(x for x in clientes if x["id"] == i) for i in wanted]
+
+    assert c.post(f"/api/viagens/{v['id']}/iniciar", headers=D).status_code == 200
+    assert c.post(f"/api/viagens/{v['id']}/finalizar", headers=D).status_code == 200
+    assert c.post(f"/api/viagens/{v['id']}/ordem", json={"clientes": []}, headers=D).status_code == 400

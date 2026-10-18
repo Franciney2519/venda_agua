@@ -1216,6 +1216,19 @@ async def schedule_mf_troca(item_id: str, rota_id: str, data: dict, user=Depends
     await db.stock_movements.update_one({"id": m["id"]}, {"$set": {"scheduled_viagem_id": item_id, "scheduled_rota_id": target_rota["id"], "scheduled_cliente_id": cliente["id"]}})
     return await db.viagens.find_one({"id": item_id}, {"_id": 0})
 
+@api.post("/viagens/{item_id}/ordem")
+async def reorder_rota_clientes(item_id: str, data: dict, user=Depends(current_user)):
+    """Sequência de entrega da rota: grava a posição de cada cliente (lista [{rota_id, id}] na ordem desejada)."""
+    v = await _own_viagem_or_404(item_id, user)
+    await ensure_day_open(v.get("date") or today_local(), v.get("driver") or user["name"], user)
+    _ensure_editable(v, user)
+    pos = {(c.get("rota_id"), c.get("id")): i for i, c in enumerate(data.get("clientes") or [])}
+    for r in (v.get("rotas") or []):
+        for c in (r.get("clientes") or []):
+            if (r["id"], c.get("id")) in pos: c["ordem"] = pos[(r["id"], c.get("id"))]
+    await _save_rotas(v)
+    return await db.viagens.find_one({"id": item_id}, {"_id": 0})
+
 CLIENTE_ROTA_EDITABLE_FIELDS = ("status", "name", "brand", "quantity", "sale_type", "notes", "out_of_catalog", "price", "price_full")
 
 @api.patch("/viagens/{item_id}/rotas/{rota_id}/clientes/{cliente_id}")
