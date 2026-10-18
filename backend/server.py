@@ -1323,6 +1323,17 @@ async def finalizar_viagem(item_id: str, user=Depends(current_user)):
     v = await _own_viagem_or_404(item_id, user)
     if v["status"] == "finalizada": raise HTTPException(400, "Rota já está concluída")
     entregas = await db.daily_entries.find({"viagem_id": item_id}, {"_id": 0}).to_list(None)
+    # O entregador só encerra a rota depois de atender cada cliente: entrega lançada (com assinatura)
+    # ou "não entregue". Rota de dia anterior que ficou presa e o administrador podem encerrar mesmo assim.
+    if user.get("role") != "admin" and (v.get("date") or today_local()) >= today_local():
+        pendentes = [c.get("name") for r in (v.get("rotas") or []) for c in (r.get("clientes") or [])
+                     if c.get("status") != "nao_entregue"
+                     and not any(_same(e.get("customer"), c.get("name")) and (not e.get("rota_id") or e.get("rota_id") == r["id"]) for e in entregas)]
+        if pendentes:
+            nomes = ", ".join(pendentes[:3]) + (f" e mais {len(pendentes) - 3}" if len(pendentes) > 3 else "")
+            quem = "1 cliente" if len(pendentes) == 1 else f"{len(pendentes)} clientes"
+            cada = "nele" if len(pendentes) == 1 else "em cada um"
+            raise HTTPException(400, f"Ainda falta atender {quem}: {nomes}. Lance a entrega ou marque \"Não consegui entregar\" {cada} antes de encerrar a rota.")
     despesas = await db.expenses.find({"viagem_id": item_id, "status": {"$ne": "rejected"}}, {"_id": 0}).to_list(None)
     values = {"status": "finalizada", **trip_totals(entregas, despesas), "updated_at": now()}
 

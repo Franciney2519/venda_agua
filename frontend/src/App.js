@@ -1432,7 +1432,7 @@ function Viagens({ customers, user }) {
   }
 
   async function iniciar(v) { try { await api.post(`/viagens/${v.id}/iniciar`, {}, auth()); await load(); } catch (e) { setError(e.response?.data?.detail || 'Não foi possível iniciar.'); } }
-  async function finalizar(v) { try { await api.post(`/viagens/${v.id}/finalizar`, {}, auth()); await load(); } catch (e) { setError(e.response?.data?.detail || 'Não foi possível finalizar.'); } }
+  async function finalizar(v) { if (!window.confirm(`Encerrar a rota ${v.codigo_viagem}? Clientes sem entrega lançada ficam sem atendimento e a sobra da carga volta ao estoque.`)) return; try { await api.post(`/viagens/${v.id}/finalizar`, {}, auth()); await load(); } catch (e) { setError(e.response?.data?.detail || 'Não foi possível finalizar.'); } }
   async function remove(v) { if (!window.confirm(`Excluir a rota ${v.codigo_viagem}?`)) return; try { await api.delete(`/viagens/${v.id}`, auth()); await load(); } catch (e) { setError(e.response?.data?.detail || 'Não foi possível excluir.'); } }
 
   const openTrip = viagens.find(v => v.id === openId);
@@ -1777,6 +1777,41 @@ function MobileBottomNav({ tab, setTab }) {
 }
 
 function MobileToast({ text }) { if (!text) return null; return <div className="mob-toast" role="status" data-testid="mob-toast">{text}</div> }
+
+// Rotas encerradas no dia, só para consulta: resumo e, ao tocar, cada cliente com o que foi entregue e como pagou.
+function MobileDoneTrips({ viagens, entries }) {
+  const [open, setOpen] = useState(null);
+  const done = viagens.filter(v => v.status === 'finalizada');
+  if (!done.length) return null;
+  const payOf = e => [['Pix', e.pix_value], ['Dinheiro', e.cash_value], ['A prazo', e.comp_value]].filter(([, x]) => Number(x) > 0).map(([l, x]) => `${l} ${money(x)}`).join(' + ') || 'sem valor';
+  return <section className="mob-list" data-testid="mob-done-trips">
+    <div className="mob-sec-head"><b>Rotas concluídas hoje</b><b>{done.length}</b></div>
+    {done.map(v => {
+      const isOpen = open === v.id;
+      const clients = orderedClients(v).map(({ c, r }) => ({ c, entry: entries.find(e => e.viagem_id === v.id && entryOfStop(e, r.id, c.name)) }));
+      return <div className="mob-trip" key={v.id} data-testid={`mob-done-trip-${v.id}`}>
+        <button type="button" className="mob-trip-head mob-done-head" aria-expanded={isOpen} data-testid={`mob-done-trip-toggle-${v.id}`} onClick={() => setOpen(isOpen ? null : v.id)}>
+          <span className="mob-badge lg finalizada">{pad2(v.numero)}</span>
+          <span className="mob-row-main"><b>{TURNO_LABELS[v.turno]} · Rota {v.numero}</b><small>{v.entregas || 0} entrega{v.entregas === 1 ? '' : 's'} · {money(v.total_bruto || 0)}{v.carga_devolvida_total ? ` · sobra ${v.carga_devolvida_total} un` : ''}</small></span>
+          {isOpen ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+        </button>
+        {isOpen && <div className="mob-done-list" data-testid={`mob-done-trip-detail-${v.id}`}>
+          <span className="mob-muted">{v.codigo_viagem} · somente consulta</span>
+          {clients.map(({ c, entry }, i) => <div className="mob-client mob-client-ord" key={`${c.id}-${i}`}>
+            <div className="mob-client-top">
+              <span className="mob-seq">{pad2(i + 1)}</span>
+              <b className="mob-client-name">{c.name}</b>
+              <b className="mob-locked">{entry ? money(entry.total) : '—'}</b>
+            </div>
+            <small className="mob-client-sub mob-done-sub">{entry ? `${entryItemsLabel(entry)} · ${payOf(entry)}${entry.entry_number ? ` · Nº ${entry.entry_number}` : ''}` : c.status === 'nao_entregue' ? 'Não entregue' : 'Sem entrega lançada'}</small>
+          </div>)}
+          {clients.length === 0 && <span className="mob-muted">Rota sem clientes.</span>}
+          {(v.despesas_total > 0 || v.saldo_liquido != null) && <div className="mob-done-total"><span>Receita {money(v.total_bruto || 0)}{v.despesas_total > 0 ? ` − despesas ${money(v.despesas_total)}` : ''}</span><b>{money(v.saldo_liquido ?? v.total_bruto ?? 0)}</b></div>}
+        </div>}
+      </div>;
+    })}
+  </section>;
+}
 
 function MobileStuckTrips({ viagens, onFinalizar }) {
   const [asking, setAsking] = useState(null);
@@ -2183,6 +2218,7 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
       {plannedEmpty && <button type="button" className="mob-link on-accent" data-testid="mob-start-planned-button" onClick={() => onStartTrip(nextPlanned)}>Iniciar sem clientes<ChevronRight size={16} /></button>}
       {nextPlanned && !plannedEmpty && <button type="button" className="mob-link on-accent" data-testid="mob-poster-open-viagens" onClick={() => onOpenViagens(nextPlanned.id)}>Ver clientes da rota<ChevronRight size={16} /></button>}
     </section>}
+    {!viagemAtiva && <MobileDoneTrips viagens={viagens} entries={entries} />}
 
     {viagemAtiva && <section className="mob-tripbar" data-testid="mob-trip-banner">
       <div className="mob-tripbar-top">
@@ -2211,8 +2247,8 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
         <span className="mob-muted">{failed.length > 0 ? `${failed.length} não entregue(s). ` : ''}Conclua para limpar a tela e devolver a sobra da carga.</span>
       </div>
       {finishAsk
-        ? <MobileConfirm testid="mob-finish-confirm" title="Concluir mesmo assim?" text={diff > 0 ? `${diff === 1 ? 'Sobra' : 'Sobram'} ${diff} un no caminhão (${atual}/${carga} entregues) — voltam para o estoque.` : `Foram lançadas ${-diff} unidade(s) a mais que a carga total (${atual}/${carga}).`} confirmLabel="Concluir rota" onCancel={() => setFinishAsk(false)} onConfirm={() => { setFinishAsk(false); onFinishTrip(viagemAtiva); }} />
-        : <MobBtn h={64} lead={Flag} icon={ArrowRight} data-testid="mob-finish-trip" onClick={askFinish}>Concluir rota</MobBtn>}
+        ? <MobileConfirm testid="mob-finish-confirm" title="Concluir mesmo assim?" text={diff > 0 ? `${diff === 1 ? 'Sobra' : 'Sobram'} ${diff} un no caminhão (${atual}/${carga} entregues) — voltam para o estoque.` : `Foram lançadas ${-diff} unidade(s) a mais que a carga total (${atual}/${carga}).`} confirmLabel="Encerrar rota" onCancel={() => setFinishAsk(false)} onConfirm={() => { setFinishAsk(false); onFinishTrip(viagemAtiva); }} />
+        : <MobBtn h={64} lead={Flag} icon={ArrowRight} data-testid="mob-finish-trip" onClick={askFinish}>Encerrar rota</MobBtn>}
     </section>}
 
     {viagemAtiva && stops.length === 0 && <section className="mob-card plain" data-testid="mob-empty-trip">
@@ -2642,11 +2678,13 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
             </div>)}
 
           {v.status === 'execucao' && (asking === `fin:${v.id}`
-            ? <MobileConfirm testid="mob-viagem-finalizar-confirm" title="Concluir a rota agora?" text={`${pendingCount > 0 ? `${pendingCount} cliente(s) ainda pendente(s). ` : ''}${v.carga_total && atual !== v.carga_total ? `Carga ${atual}/${v.carga_total} un. ` : ''}A sobra da carga volta para o estoque.`} confirmLabel="Concluir rota" busy={busy} onCancel={() => setAsking(null)} onConfirm={() => run(async () => { await onFinalizar(v); setAsking(null); }, 'Não foi possível concluir a rota.')} />
+            ? <MobileConfirm testid="mob-viagem-finalizar-confirm" title="Encerrar a rota agora?" text={`${pendingCount > 0 ? `${pendingCount} cliente(s) ainda pendente(s). ` : ''}${v.carga_total && atual !== v.carga_total ? `Carga ${atual}/${v.carga_total} un. ` : ''}A sobra da carga volta para o estoque.`} confirmLabel="Encerrar rota" busy={busy} onCancel={() => setAsking(null)} onConfirm={() => run(async () => { await onFinalizar(v); setAsking(null); }, 'Não foi possível encerrar a rota.')} />
             : <div className="mob-grid2">
               <MobBtn h={52} kind="outline" icon={ArrowRight} data-testid={`mob-viagem-abrir-rota-${v.id}`} onClick={onBack}>Abrir rota</MobBtn>
-              <MobBtn h={52} kind="outline" icon={Flag} data-testid={`mob-viagem-finalizar-${v.id}`} onClick={() => setAsking(`fin:${v.id}`)}>Concluir</MobBtn>
+              {/* Só encerra depois de atender cada cliente: entrega lançada (pagamento e assinatura) ou "não entregue". */}
+              <MobBtn h={52} kind={pendingCount > 0 ? 'disabled' : 'outline'} icon={Flag} data-testid={`mob-viagem-finalizar-${v.id}`} onClick={() => pendingCount > 0 ? toast(`${pendingCount === 1 ? 'Falta 1 cliente' : `Faltam ${pendingCount} clientes`}: ${pendingCount === 1 ? 'abra-o' : 'abra cada um'} na aba Rota e lance a entrega ou toque em "Não consegui entregar".`, 6000) : setAsking(`fin:${v.id}`)}>Encerrar rota</MobBtn>
             </div>)}
+          {v.status === 'execucao' && pendingCount > 0 && asking !== `fin:${v.id}` && <span className="mob-muted" data-testid={`mob-viagem-pendentes-${v.id}`}>Para encerrar, atenda {pendingCount === 1 ? 'o cliente pendente' : `os ${pendingCount} clientes pendentes`} na aba Rota.</span>}
 
           {!focus && <button type="button" className="mob-link h44" data-testid={`mob-viagem-toggle-${v.id}`} onClick={() => { setOpenTripId(isOpen ? null : v.id); setPicker(null); setConfig(null); }}>{isOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}{isOpen ? 'Ocultar' : 'Ver'} clientes ({allClients.length})</button>}
 
@@ -3032,7 +3070,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
 
   const guard = (fn, fallback) => async (...args) => { try { await fn(...args); } catch (e) { showToast(apiError(e, fallback), 6000); } };
   const startTrip = guard(iniciarViagem, 'Não foi possível iniciar a rota.');
-  const finishTrip = guard(finalizarViagem, 'Não foi possível concluir a rota.');
+  const finishTrip = guard(finalizarViagem, 'Não foi possível encerrar a rota.');
   const deleteEntry = guard(async entry => { await api.delete(`/daily-entries/${entry.id}`, auth()); await Promise.all([loadEntries(), loadViagens(), loadMfPending()]); showToast('Entrega excluída.'); }, 'Não foi possível excluir a entrega.');
 
   function openViagens(tripId) { setTab('viagens'); if (tripId) setOpenTripId(tripId); if (!wide) setLaunchKey(null); }

@@ -108,7 +108,7 @@ def test_schedule_mf_as_new_client_and_resolve_on_delivery(c):
     assert c.delete(f"/api/daily-entries/{e.json()['id']}", headers=D).status_code == 200
     assert _product(c, A, prod).get("defective_quantity", 0) == before.get("defective_quantity", 0)
     assert mf["id"] in _pending_ids(c, D, include_scheduled=1) and mf["id"] not in _pending_ids(c, D)
-    assert c.post(f"/api/viagens/{v['id']}/finalizar", headers=D).status_code == 200
+    assert c.post(f"/api/viagens/{v['id']}/finalizar", headers=A).status_code == 200
 
 
 def test_schedule_mf_merges_into_existing_order_and_respects_load(c):
@@ -176,5 +176,5 @@ def test_unschedule_when_removed_failed_or_trip_gone(c):
 
     v, rota = schedule(_day(11), 0)  # trip finished without delivering to that customer
     assert c.post(f"/api/viagens/{v['id']}/iniciar", headers=D).status_code == 200
-    assert c.post(f"/api/viagens/{v['id']}/finalizar", headers=D).status_code == 200
+    assert c.post(f"/api/viagens/{v['id']}/finalizar", headers=A).status_code == 200
     assert mf["id"] in _pending_ids(c, D)

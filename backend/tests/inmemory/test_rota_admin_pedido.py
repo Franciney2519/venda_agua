@@ -41,7 +41,7 @@ def test_admin_edits_concluded_route_and_reassigns_driver(c):
     assert c.post(f"/api/viagens/{v['id']}/iniciar", headers=D).status_code == 200
     r = c.patch(f"/api/viagens/{v['id']}", json={"driver": "Outro"}, headers=A)
     assert r.status_code == 400
-    assert c.post(f"/api/viagens/{v['id']}/finalizar", headers=D).status_code == 200
+    assert c.post(f"/api/viagens/{v['id']}/finalizar", headers=A).status_code == 200
 
     # Concluded: locked for the driver, still editable by the admin.
     assert c.post(f"/api/viagens/{v['id']}/rotas", json={"clientes": []}, headers=D).status_code == 400
@@ -67,5 +67,25 @@ def test_delivery_order_is_saved(c):
     assert sorted(clientes, key=lambda x: x["ordem"]) == [next(x for x in clientes if x["id"] == i) for i in wanted]
 
     assert c.post(f"/api/viagens/{v['id']}/iniciar", headers=D).status_code == 200
-    assert c.post(f"/api/viagens/{v['id']}/finalizar", headers=D).status_code == 200
+    assert c.post(f"/api/viagens/{v['id']}/finalizar", headers=A).status_code == 200
     assert c.post(f"/api/viagens/{v['id']}/ordem", json={"clientes": []}, headers=D).status_code == 400
+
+
+def test_driver_cannot_end_route_with_clients_left(c):
+    A, D = _auth(c)
+    v, rota = _trip(c, D, _day(44))
+    url = f"/api/viagens/{v['id']}/rotas/{rota['id']}/clientes"
+    custs = [c.post("/api/customers", json={"name": f"Fim {n}", "brands": [{"brand": "Agua F", "price": 5}]}, headers=A).json() for n in ("A", "B")]
+    for cu in custs:
+        c.post(url, json={"id": cu["id"], "name": cu["name"], "brand": "Agua F", "quantity": 1}, headers=D)
+    assert c.post(f"/api/viagens/{v['id']}/iniciar", headers=D).status_code == 200
+
+    r = c.post(f"/api/viagens/{v['id']}/finalizar", headers=D)
+    assert r.status_code == 400 and "2 clientes" in r.json()["detail"]
+    e = c.post("/api/daily-entries", json={"customer": custs[0]["name"], "date": _day(44), "viagem_id": v["id"], "rota_id": rota["id"], "cash_value": 5,
+                                           "items": [{"brand": "Agua F", "quantity": 1, "price": 5, "sale_type": "exchange"}]}, headers=D)
+    assert e.status_code == 200, e.text
+    r = c.post(f"/api/viagens/{v['id']}/finalizar", headers=D)
+    assert r.status_code == 400 and "1 cliente: Fim B" in r.json()["detail"]
+    c.patch(f"{url}/{custs[1]['id']}", json={"status": "nao_entregue"}, headers=D)
+    assert c.post(f"/api/viagens/{v['id']}/finalizar", headers=D).status_code == 200
