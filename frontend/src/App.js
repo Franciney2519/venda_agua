@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import axios from "axios";
 import { BrowserRouter, Routes, Route, NavLink, Navigate, Link } from "react-router-dom";
 import { LayoutDashboard, Truck, Package, WalletCards, Users, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, Clock3, CircleDollarSign, BarChart3, Save, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle, CalendarCheck, Wallet, Eye, EyeOff, Minus, Sun, Moon, Camera, Search, Fuel, Utensils, Wrench, Receipt, ChevronRight, RefreshCw, Eraser, Percent, Route as RouteIcon, Ellipsis, ArrowRight, ArrowLeft, ChevronUp, ChevronDown, CircleCheck, CircleX, TriangleAlert, Flag, Lock, QrCode, Banknote, Split, CalendarClock, MessageCircle, MessageSquareText, Hand, Play } from "lucide-react";
@@ -703,7 +703,7 @@ function Finance({ data, setData, create, user }) {
 
 const MARGIN_STATUS_LABEL = { saudavel: 'Saudável', atencao: 'Em atenção', baixa: 'Margem baixa', prejuizo: 'Em prejuízo', sem_custo: 'Sem custo' };
 const MARGIN_STATUS_TAG = { saudavel: 'green', atencao: 'orange', baixa: 'orange', prejuizo: 'red', sem_custo: 'gray' };
-const pct = v => v == null ? '—' : `${(v * 100).toFixed(1)}%`;
+const pct = v => v == null ? '—' : `${(v * 100).toFixed(1).replace('.', ',')}%`;
 // Três jeitos de medir o lucro; o usuário escolhe qual a tela mostra.
 const MARGIN_MODES = {
   margem: { label: 'Margem de lucro', short: 'Margem', formula: '(venda − custo) ÷ venda', hint: 'De cada R$ 1 vendido, quanto sobra de lucro.' },
@@ -738,6 +738,7 @@ function MarginReport() {
   const semCusto = rows.filter(r => r.status === 'sem_custo');
   const abaixoMeta = rows.filter(r => r.status === 'baixa' || r.status === 'prejuizo');
   const M = MARGIN_MODES[mode];
+  const media_ = mode === 'markup' ? 'médio' : 'média';
   const revenueTotal = report?.revenue_total || 0;
   const expensesTotal = report?.expenses_total || 0;
   // Despesas não são de uma marca ou cliente: na margem líquida cada linha leva a parte proporcional à sua receita.
@@ -778,7 +779,7 @@ function MarginReport() {
       <Stat label="Em prejuízo" value={report?.counts?.prejuizo ?? '—'} detail="Vendendo no vermelho" Icon={AlertTriangle} tone={report?.counts?.prejuizo > 0 ? 'red' : 'green'} />
     </div>
     <div className="stats" style={{ marginTop: -6 }}>
-      <Stat label={`${M.short} média`} value={pct(media)} detail={`Considerando produtos com custo cadastrado · alvo padrão ${pct(defaultTarget)}`} Icon={Percent} />
+      <Stat label={`${M.short} ${media_}`} value={pct(media)} detail={`Considerando produtos com custo cadastrado · alvo padrão ${pct(defaultTarget)}`} Icon={Percent} />
       <Stat label="Receita no período" value={money(report?.revenue_total)} detail={report ? `${report.start} a ${report.end}` : ''} Icon={ArrowUpRight} />
       <Stat label="Despesas no período" value={money(report?.expenses_total)} detail="Combustível, pedágio etc. lançados pelos entregadores" Icon={WalletCards} tone="orange" />
       <Stat label="Lucro líquido" value={money(report?.lucro_liquido)} detail="Margem bruta − despesas do período" Icon={CircleDollarSign} tone={report?.lucro_liquido < 0 ? 'red' : 'green'} />
@@ -813,7 +814,7 @@ function MarginReport() {
 
     <section className="panel table-panel" style={{ marginBottom: 22 }}>
       <div className="panel-head" style={{ padding: '18px 23px' }}><div><h3>{M.short} por categoria</h3><p className="muted">Como cada categoria de produto está performando</p></div></div>
-      <div className="table-wrap"><table><thead><tr><th>CATEGORIA</th><th>PRODUTOS</th><th>RECEITA</th><th>{M.short.toUpperCase()} MÉDIA</th><th>EM RISCO</th></tr></thead><tbody>
+      <div className="table-wrap"><table><thead><tr><th>CATEGORIA</th><th>PRODUTOS</th><th>RECEITA</th><th>{M.short.toUpperCase()} {media_.toUpperCase()}</th><th>EM RISCO</th></tr></thead><tbody>
         {(report?.categories || []).map(c => <tr key={c.category} data-testid={`margin-category-${c.category}`}>
           <td><b>{c.category}</b></td><td>{c.produtos}</td><td>{money(c.revenue)}</td>
           <td><span className={`tag ${tagFor(catPct(c), defaultTarget)}`}>{pct(catPct(c))}</span></td>
@@ -1400,6 +1401,8 @@ function Viagens({ customers, user }) {
   const [error, setError] = useState('');
   const [openId, setOpenId] = useState(null);
   const [brandsCatalog, setBrandsCatalog] = useState([]);
+  const detailRef = useRef(null);
+  useEffect(() => { if (openId) detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [openId]);
 
   async function load() {
     setLoading(true);
@@ -1429,6 +1432,7 @@ function Viagens({ customers, user }) {
   async function finalizar(v) { try { await api.post(`/viagens/${v.id}/finalizar`, {}, auth()); await load(); } catch (e) { setError(e.response?.data?.detail || 'Não foi possível finalizar.'); } }
   async function remove(v) { if (!window.confirm(`Excluir a rota ${v.codigo_viagem}?`)) return; try { await api.delete(`/viagens/${v.id}`, auth()); await load(); } catch (e) { setError(e.response?.data?.detail || 'Não foi possível excluir.'); } }
 
+  const openTrip = viagens.find(v => v.id === openId);
   const emExecucao = viagens.filter(v => v.status === 'execucao').length;
   const finalizadas = viagens.filter(v => v.status === 'finalizada');
   const totalBruto = finalizadas.reduce((s, v) => s + Number(v.total_bruto || 0), 0);
@@ -1464,8 +1468,8 @@ function Viagens({ customers, user }) {
     <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>ENTREGADOR</th><th>ROTA DO DIA</th><th>TURNO</th><th>PARADAS</th><th>CLIENTES</th><th>CARGA</th><th>ENTREGAS</th><th>RECEITA</th><th>DESPESAS</th><th>SALDO</th><th>SITUAÇÃO</th><th /></tr></thead><tbody>
       {viagens.map(v => {
         const totalClientes = (v.rotas || []).reduce((s, r) => s + (r.clientes?.length || 0), 0);
-        return <Fragment key={v.id}><tr data-testid={`viagem-row-${v.id}`}>
-        <td><b>{v.codigo_viagem}</b></td>
+        return <tr key={v.id} data-testid={`viagem-row-${v.id}`}>
+        <td><b>{v.codigo_viagem}</b>{isAdmin && <button className="action-btn ghost" style={{ display: 'flex', marginTop: 6 }} data-testid={`viagem-detalhes-${v.id}`} onClick={() => setOpenId(openId === v.id ? null : v.id)}>{openId === v.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />} {openId === v.id ? 'Fechar' : 'Detalhes'}</button>}</td>
         <td>{v.driver}</td>
         <td>{v.numero}/{VIAGENS_POR_DIA}</td>
         <td>{TURNO_LABELS[v.turno]}</td>
@@ -1478,16 +1482,20 @@ function Viagens({ customers, user }) {
         <td>{v.saldo_liquido != null ? <b className={v.saldo_liquido >= 0 ? 'green-text' : 'orange-text'}>{money(v.saldo_liquido)}</b> : '—'}</td>
         <td><span className={`tag ${VIAGEM_STATUS_TAG[v.status]}`}>{VIAGEM_STATUS_LABEL[v.status]}</span></td>
         <td><div className="row-actions">
-          {isAdmin && <button className="action-btn ghost" data-testid={`viagem-detalhes-${v.id}`} onClick={() => setOpenId(openId === v.id ? null : v.id)}>{openId === v.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />} {openId === v.id ? 'Fechar' : 'Detalhes'}</button>}
           {v.status === 'planejada' && <><button className="action-btn ghost" data-testid={`viagem-iniciar-${v.id}`} onClick={() => iniciar(v)}><Check size={13} /> Iniciar</button><button className="action-btn reject" aria-label="Excluir rota" data-testid={`viagem-excluir-${v.id}`} onClick={() => remove(v)}><Trash2 size={13} /></button></>}
           {v.status === 'execucao' && <button className="action-btn ghost" data-testid={`viagem-finalizar-${v.id}`} onClick={() => finalizar(v)}><Check size={13} /> Finalizar</button>}
         </div></td>
-      </tr>
-      {isAdmin && openId === v.id && <tr><td colSpan={13} style={{ padding: 0 }}><AdminTripEditor v={v} customers={customers} drivers={drivers} brandsCatalog={brandsCatalog} onSaved={load} /></td></tr>}
-      </Fragment>;
+      </tr>;
       })}
       {viagens.length === 0 && <tr><td colSpan={13} className="muted" style={{ padding: 16 }}>Nenhuma rota registrada nessa data.</td></tr>}
     </tbody></table></div></section>
+    {isAdmin && openTrip && <section className="panel table-panel" style={{ marginTop: 22 }} ref={detailRef} data-testid="admin-trip-detail">
+      <div className="panel-head" style={{ padding: '18px 23px 0' }}>
+        <div><h3>Rota {openTrip.codigo_viagem} · {openTrip.driver}</h3><p className="muted">{TURNO_LABELS[openTrip.turno]} · {VIAGEM_STATUS_LABEL[openTrip.status]}</p></div>
+        <button className="ghost-btn" data-testid="admin-trip-detail-close" onClick={() => setOpenId(null)}><X size={14} /> Fechar</button>
+      </div>
+      <AdminTripEditor key={openTrip.id} v={openTrip} customers={customers} drivers={drivers} brandsCatalog={brandsCatalog} onSaved={load} />
+    </section>}
   </>
 }
 
@@ -1692,9 +1700,18 @@ function nextBusinessDay() {
 const shortDate = iso => (iso || '').split('-').reverse().slice(0, 2).join('/');
 const pad2 = n => String(n).padStart(2, '0');
 const sameName = (a, b) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase();
+// Lançamentos antigos não têm rota_id: para eles vale só o nome.
+const entryOfStop = (e, rotaId, name) => sameName(e.customer, name) && (!e.rota_id || !rotaId || e.rota_id === rotaId);
 const onlyDigits = (raw, max = 4) => String(raw).replace(/\D/g, '').slice(0, max);
-const parseMoney = raw => Math.max(0, Number(String(raw ?? '').replace(',', '.')) || 0);
+// Aceita o que o entregador digita: "R$ 10", "5 reais", "1.000", "1.000,50", "10,5" ou "10.50".
+const parseMoney = raw => {
+  let s = String(raw ?? '').replace(/[^\d,.-]/g, '');
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+  return Math.max(0, Number(s) || 0);
+};
 const round2 = v => Math.round(v * 100) / 100;
+const moneyInput = v => v > 0 ? v.toFixed(2).replace('.', ',') : '';
 const galoes = n => `${n} ${n === 1 ? 'galão' : 'galões'}`;
 const apiError = (e, fallback) => { const d = e?.response?.data?.detail; return typeof d === 'string' && d ? d : fallback; };
 // Trocas de MF somadas a um pedido que já existia ocupam carga além da quantidade do pedido.
@@ -1838,6 +1855,9 @@ function MobileLaunchPanel({ stop, user, date, viagemId, cargaRestante, othersPe
   const [mfPlan, setMfPlan] = useState(draft?.mfPlan ?? null);
   const [payMode, setPayMode] = useState(draft?.payMode ?? (customer.payment_type === 'prazo' ? 'prazo' : null));
   const [pixStr, setPixStr] = useState(draft?.pixStr ?? '');
+  const [cashStr, setCashStr] = useState(draft?.cashStr ?? '');
+  // Pix + dinheiro: o campo digitado por último manda e o outro completa o total.
+  const [splitLead, setSplitLead] = useState(draft?.splitLead ?? 'pix');
   const [compDays, setCompDays] = useState(draft?.compDays ?? 15);
   const [signerName, setSignerName] = useState(draft?.signerName ?? '');
   const [signed, setSigned] = useState(false);
@@ -1850,8 +1870,8 @@ function MobileLaunchPanel({ stop, user, date, viagemId, cargaRestante, othersPe
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = 0; }, [step]);
 
   useEffect(() => {
-    try { localStorage.setItem(draftKey, JSON.stringify({ v: 2, lines, mfPlan, payMode, pixStr, compDays, signerName })); } catch { /* ignore quota errors */ }
-  }, [draftKey, lines, mfPlan, payMode, pixStr, compDays, signerName]);
+    try { localStorage.setItem(draftKey, JSON.stringify({ v: 2, lines, mfPlan, payMode, pixStr, cashStr, splitLead, compDays, signerName })); } catch { /* ignore quota errors */ }
+  }, [draftKey, lines, mfPlan, payMode, pixStr, cashStr, splitLead, compDays, signerName]);
   function clearDraft() { try { localStorage.removeItem(draftKey); } catch { /* ignore */ } }
 
   const fullPrice = l => l.priceFull != null ? l.priceFull : parseMoney(l.priceFullManual);
@@ -1860,7 +1880,8 @@ function MobileLaunchPanel({ stop, user, date, viagemId, cargaRestante, othersPe
   const total = round2(lines.reduce((s, l) => s + lineTotal(l), 0));
   const qty = lines.reduce((s, l) => s + l.qtyExchange + l.qtyFull, 0);
   const totalMf = lines.reduce((s, l) => s + l.mf, 0);
-  const pix = payMode === 'pix' ? total : payMode === 'misto' ? Math.min(total, round2(parseMoney(pixStr))) : 0;
+  const splitPart = str => Math.min(total, Math.max(0, round2(parseMoney(str))));
+  const pix = payMode === 'pix' ? total : payMode === 'misto' ? (splitLead === 'cash' ? round2(total - splitPart(cashStr)) : splitPart(pixStr)) : 0;
   const cash = payMode === 'dinheiro' ? total : payMode === 'misto' ? round2(total - pix) : 0;
   const comp = payMode === 'prazo' ? total : 0;
   // A troca na hora gasta 2 unidades da carga por MF (a boa que fica e a com defeito que volta no caminhão) e a carga ainda precisa cobrir o resto da rota.
@@ -1869,15 +1890,22 @@ function MobileLaunchPanel({ stop, user, date, viagemId, cargaRestante, othersPe
   useEffect(() => { if (totalMf === 0) setMfPlan(null); }, [totalMf]);
 
   const mod = (i, fn) => setLines(prev => prev.map((l, j) => j === i ? fn(l) : l));
-  const typed = raw => Math.max(0, parseInt(onlyDigits(raw), 10) || 0);
+  const typed = raw => { const s = String(raw).trim(); return s.startsWith('-') ? 0 : Math.max(0, parseInt(onlyDigits(s.split(/[.,]/)[0], 3), 10) || 0); };
   const missingPrice = lines.some(l => ((l.qtyExchange > 0 || l.mf > 0) && l.askPrice && l.priceExchange <= 0) || (l.qtyFull > 0 && fullPrice(l) <= 0));
+  // Mesmo critério do servidor: a troca de MF na hora gasta 2 un da carga por galão.
+  const cargaUse = qty + (mfPlan === 'swap' ? 2 * totalMf : 0);
+  const overCarga = cargaRestante != null && cargaUse > cargaRestante;
+  const tightCarga = !overCarga && cargaRestante != null && othersPending > 0 && cargaUse + othersPending > cargaRestante;
+  const nothingToPay = total <= 0;
+  const splitTyped = parseMoney(splitLead === 'cash' ? cashStr : pixStr);
+  const splitOver = payMode === 'misto' && splitTyped > total + 0.005;
 
   const qtyLabel = `${galoes(qty)}${totalMf ? ` · ${totalMf} MF` : ''}`;
-  const payShort = { pix: 'Pix', dinheiro: 'Dinheiro', misto: `Pix ${money(pix)} + Dinheiro ${money(cash)}`, prazo: `A prazo · ${compDays} dias` }[payMode] || '';
-  const canNext = step === 1 ? ((qty > 0 || totalMf > 0) && (totalMf === 0 || !!mfPlan) && !missingPrice) : step === 2 ? !!payMode : (signed && !saving);
+  const payShort = total <= 0 ? 'Nada a receber' : { pix: 'Pix', dinheiro: 'Dinheiro', misto: `Pix ${money(pix)} + Dinheiro ${money(cash)}`, prazo: `A prazo · ${compDays} dias` }[payMode] || '';
+  const canNext = step === 1 ? ((qty > 0 || totalMf > 0) && (totalMf === 0 || !!mfPlan) && !missingPrice && !overCarga) : step === 2 ? (nothingToPay || (!!payMode && !splitOver)) : (signed && !saving);
   const primaryLabel = step === 1
-    ? (qty + totalMf === 0 ? 'Informe a quantidade' : totalMf > 0 && !mfPlan ? 'Decida sobre o MF' : missingPrice ? 'Informe o preço' : 'Continuar')
-    : step === 2 ? (payMode ? 'Continuar' : 'Escolha o pagamento')
+    ? (qty + totalMf === 0 ? 'Informe a quantidade' : totalMf > 0 && !mfPlan ? 'Decida sobre o MF' : missingPrice ? 'Informe o preço' : overCarga ? 'Acima da carga' : 'Continuar')
+    : step === 2 ? (nothingToPay ? 'Continuar' : !payMode ? 'Escolha o pagamento' : splitOver ? 'Valor acima do total' : 'Continuar')
       : (saving ? 'Enviando...' : signed ? 'Concluir entrega' : 'Aguardando assinatura');
 
   async function complete() {
@@ -1953,6 +1981,8 @@ function MobileLaunchPanel({ stop, user, date, viagemId, cargaRestante, othersPe
           {swapDisabled && <span className="mob-muted" data-testid="mob-mf-no-spare">A carga desta rota está certa para as entregas e não tem sobra para trocar agora. A troca fica para o próximo dia útil ({shortDate(nextBusinessDay())}).</span>}
           {mfPlan === 'reschedule' && <span className="mob-muted" data-testid="mob-mf-reschedule-info">Fica como troca de MF pendente para incluir numa rota a partir de {shortDate(nextBusinessDay())}.</span>}
         </section>}
+        {tightCarga && <span className="mob-muted" data-testid="mob-tight-carga">Atenção: depois deste lançamento sobram {galoes(Math.max(0, cargaRestante - cargaUse))} no caminhão, e as outras paradas ainda pedem {galoes(othersPending)}.</span>}
+        {overCarga && <div className="mob-error" data-testid="mob-over-carga">Passa da carga da rota: restam {galoes(cargaRestante)} no caminhão e este lançamento usa {galoes(cargaUse)}{mfPlan === 'swap' ? ' (a troca de MF na hora conta 2 por galão)' : ''}. Ajuste a quantidade ou a carga da rota.</div>}
         {failAsk
           ? <MobileConfirm testid="mob-fail-confirm" title="Marcar como não entregue?" text="Nada é descontado do estoque." confirmLabel="Não entreguei" onCancel={() => setFailAsk(false)} onConfirm={confirmFail} />
           : <button type="button" className="mob-link h48" data-testid="mob-fail-button" onClick={() => setFailAsk(true)}><CircleX size={18} />Não consegui entregar</button>}
@@ -1964,18 +1994,22 @@ function MobileLaunchPanel({ stop, user, date, viagemId, cargaRestante, othersPe
           <b data-testid="mob-launch-total">{money(total)}</b>
           <span className="mob-muted">{qtyLabel}</span>
         </section>
+        {nothingToPay ? <span className="mob-muted" data-testid="mob-nothing-to-pay">Nada a receber nesta entrega — não precisa escolher a forma de pagamento.</span> : <>
         <b className="mob-label">Como o cliente pagou?</b>
         <div className="mob-grid2">
           {PAY_MODES.map(([k, label, Icon]) => <button type="button" key={k} className={`mob-tile${payMode === k ? ' on' : ''}`} data-testid={`mob-pay-${k}`} onClick={() => setPayMode(k)}><Icon size={24} /><span>{label}</span></button>)}
         </div>
-        {payMode === 'misto' && <>
-          <div className="mob-grid2">
-            <label className="mob-field"><b className="mob-label">Pix</b><input className="mob-input big" inputMode="decimal" placeholder="0,00" value={pixStr} data-testid="mob-pix-input" onChange={e => setPixStr(e.target.value)} onFocus={e => e.target.select()} /></label>
-            <div className="mob-field"><b className="mob-label">Dinheiro (resto)</b><span className="mob-readonly" data-testid="mob-cash-rest">{money(cash)}</span></div>
-          </div>
-          <span className="mob-muted">Digite o Pix — o dinheiro completa sozinho.</span>
         </>}
-        {payMode === 'prazo' && <div className="mob-field"><b className="mob-label">Prazo</b>
+        {!nothingToPay && payMode === 'misto' && <>
+          <div className="mob-grid2">
+            <label className="mob-field"><b className="mob-label">Pix{splitLead === 'cash' ? ' (resto)' : ''}</b><input className="mob-input big" inputMode="decimal" placeholder="0,00" value={splitLead === 'pix' ? pixStr : moneyInput(pix)} data-testid="mob-pix-input" onChange={e => { setSplitLead('pix'); setPixStr(e.target.value); }} onFocus={e => e.target.select()} /></label>
+            <label className="mob-field"><b className="mob-label">Dinheiro{splitLead === 'pix' ? ' (resto)' : ''}</b><input className="mob-input big" inputMode="decimal" placeholder="0,00" value={splitLead === 'cash' ? cashStr : moneyInput(cash)} data-testid="mob-cash-input" onChange={e => { setSplitLead('cash'); setCashStr(e.target.value); }} onFocus={e => e.target.select()} /></label>
+          </div>
+          {splitOver
+            ? <div className="mob-error" data-testid="mob-split-over">O valor digitado ({money(splitTyped)}) passa do total de {money(total)}. Corrija para continuar.</div>
+            : <span className="mob-muted">Digite o Pix ou o dinheiro — o outro completa sozinho.</span>}
+        </>}
+        {!nothingToPay && payMode === 'prazo' && <div className="mob-field"><b className="mob-label">Prazo</b>
           <div className="mob-seg">{[15, 30].map(d => <button type="button" key={d} className={compDays === d ? 'on' : ''} data-testid={`mob-comp-${d}`} onClick={() => setCompDays(d)}>{d} dias</button>)}</div>
         </div>}
       </>}
@@ -2070,7 +2104,7 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
         <span className="mob-muted">{failed.length > 0 ? `${failed.length} não entregue(s). ` : ''}Conclua para limpar a tela e devolver a sobra da carga.</span>
       </div>
       {finishAsk
-        ? <MobileConfirm testid="mob-finish-confirm" title="Concluir mesmo assim?" text={diff > 0 ? `Faltam ${diff} unidade(s) para bater com a carga total (${atual}/${carga}).` : `Foram lançadas ${-diff} unidade(s) a mais que a carga total (${atual}/${carga}).`} confirmLabel="Concluir rota" onCancel={() => setFinishAsk(false)} onConfirm={() => { setFinishAsk(false); onFinishTrip(viagemAtiva); }} />
+        ? <MobileConfirm testid="mob-finish-confirm" title="Concluir mesmo assim?" text={diff > 0 ? `${diff === 1 ? 'Sobra' : 'Sobram'} ${diff} un no caminhão (${atual}/${carga} entregues) — voltam para o estoque.` : `Foram lançadas ${-diff} unidade(s) a mais que a carga total (${atual}/${carga}).`} confirmLabel="Concluir rota" onCancel={() => setFinishAsk(false)} onConfirm={() => { setFinishAsk(false); onFinishTrip(viagemAtiva); }} />
         : <MobBtn h={64} lead={Flag} icon={ArrowRight} data-testid="mob-finish-trip" onClick={askFinish}>Concluir rota</MobBtn>}
     </section>}
 
@@ -2102,7 +2136,7 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
       </section>}
     </>}
 
-    {viagemAtiva && <label className="mob-search"><Search size={20} /><input placeholder="Buscar cliente ou endereço" value={search} data-testid="mob-search-input" onChange={e => setSearch(e.target.value)} /></label>}
+    {viagemAtiva && <label className="mob-search"><Search size={20} /><input aria-label="Buscar cliente ou endereço" placeholder="Buscar cliente ou endereço" value={search} data-testid="mob-search-input" onChange={e => setSearch(e.target.value)} /></label>}
 
     {stops.length > 0 && <section className="mob-list" data-testid="mob-pending-orders">
       <div className="mob-sec-head"><b>Pendentes</b><b>{pending.length}</b></div>
@@ -2420,7 +2454,7 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
     }, 'Não foi possível incluir a troca de MF.');
   }
 
-  const statusOf = (v, c) => entries.some(e => e.viagem_id === v.id && sameName(e.customer, c.name)) ? 'done' : c.status === 'nao_entregue' ? 'failed' : 'pending';
+  const statusOf = (v, c, r) => entries.some(e => e.viagem_id === v.id && entryOfStop(e, r.id, c.name)) ? 'done' : c.status === 'nao_entregue' ? 'failed' : 'pending';
   const pq = pickQ.trim().toLowerCase();
   // Montando uma viagem: a tela mostra só ela. As concluídas ficam recolhidas no fim da lista.
   const focus = viagens.find(v => v.id === openTripId && v.status !== 'finalizada' && !dayClosed);
@@ -2469,7 +2503,7 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
       {viagens.length > 0 && shown.length === 0 && <p className="mob-muted pad">Nenhuma rota em aberto.</p>}
       {shown.map(v => {
         const rotas = v.rotas || [];
-        const allClients = rotas.flatMap(r => (r.clientes || []).map(c => ({ ...c, rota: r, st: statusOf(v, c) })));
+        const allClients = rotas.flatMap(r => (r.clientes || []).map(c => ({ ...c, rota: r, st: statusOf(v, c, r) })));
         const editable = v.status !== 'finalizada' && !dayClosed;
         const isOpen = openTripId === v.id;
         const inTrip = new Set(allClients.map(c => c.id));
@@ -2838,7 +2872,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
 
   const entriesDaViagem = entries.filter(e => e.viagem_id === viagemAtiva?.id);
   const stops = (viagemAtiva?.rotas || []).flatMap(r => (r.clientes || []).map((c, i) => {
-    const entry = entriesDaViagem.find(e => sameName(e.customer, c.name));
+    const entry = entriesDaViagem.find(e => entryOfStop(e, r.id, c.name));
     const customer = customers.find(x => x.id === c.id) || customers.find(x => sameName(x.name, c.name));
     return { ...c, key: `${r.id}:${c.id}`, rota_id: r.id, rota_numero: r.numero, seq: i + 1, customer, entry, address: customer?.address || '', prazo: customer?.payment_type === 'prazo', status: entry ? 'done' : c.status === 'nao_entregue' ? 'failed' : 'pending' };
   }));
