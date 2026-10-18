@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import axios from "axios";
 import { BrowserRouter, Routes, Route, NavLink, Navigate, Link } from "react-router-dom";
-import { LayoutDashboard, Truck, Package, WalletCards, Users, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, Clock3, CircleDollarSign, BarChart3, Save, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle, CalendarCheck, Wallet, Eye, EyeOff, Minus, Sun, Moon, Camera, Search, Fuel, Utensils, Wrench, Receipt, ChevronRight, RefreshCw, Eraser, Percent, Route as RouteIcon, Ellipsis, ArrowRight, ArrowLeft, ChevronUp, ChevronDown, CircleCheck, CircleX, TriangleAlert, Flag, Lock, QrCode, Banknote, Split, CalendarClock, MessageCircle, MessageSquareText, Hand, Play } from "lucide-react";
+import { LayoutDashboard, Truck, Package, WalletCards, Users, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, Clock3, CircleDollarSign, BarChart3, Save, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle, CalendarCheck, Wallet, Eye, EyeOff, Minus, Sun, Moon, Camera, Search, Fuel, Utensils, Wrench, Receipt, ChevronRight, RefreshCw, Eraser, Percent, Route as RouteIcon, Ellipsis, ArrowRight, ArrowLeft, ChevronUp, ChevronDown, CircleCheck, CircleX, TriangleAlert, Flag, Lock, QrCode, Banknote, Split, CalendarClock, MessageCircle, MessageSquareText, Hand, Play, GripVertical } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import logoImg from "./assets/logo.png";
@@ -1355,39 +1355,42 @@ function AdminTripEditor({ v, customers, drivers, brandsCatalog, onSaved }) {
       <label className="os-field-narrow">Carga total<input type="number" value={carga} data-testid="admin-trip-carga" onChange={e => setCarga(e.target.value)} onBlur={() => { if (String(carga) !== String(v.carga_total ?? '')) run(() => api.patch(base, { carga_total: carga === '' ? null : Number(carga) }, auth()), 'Não foi possível salvar a carga.'); }} /></label>
     </div>
     {error && <div className="error" data-testid="admin-trip-error">{error}</div>}
-    {rotas.map(r => {
-      const cl = r.clientes || [];
-      return <div key={r.id} style={{ border: '1px solid var(--line, #dfe5ec)', borderRadius: 10, padding: '12px 14px' }} data-testid={`admin-parada-${r.id}`}>
+    {(() => {
+      const list = orderedClients(v).map(({ c, r }) => ({ ...c, rota: r }));
+      const target = rotas[rotas.length - 1];
+      // Rota antiga sem grupo de clientes: cria o grupo e devolve o id.
+      const targetId = async () => target ? target.id : (await api.post(`${base}/rotas`, { clientes: [] }, auth())).data.rotas.slice(-1)[0].id;
+      const saveOrder = keys => run(() => api.post(`${base}/ordem`, { clientes: keys.map(k => { const [rota_id, id] = k.split(':'); return { rota_id, id }; }) }, auth()), 'Não foi possível salvar a ordem de entrega.');
+      return <div style={{ border: '1px solid var(--line, #dfe5ec)', borderRadius: 10, padding: '12px 14px' }} data-testid={`admin-clientes-${v.id}`}>
         <div className="row-actions" style={{ justifyContent: 'space-between' }}>
-          <span><b>Parada {pad2(r.numero)}</b> <small className="muted">{cl.length} cliente{cl.length === 1 ? '' : 's'} · {cl.reduce((a, c) => a + clienteLoad(c), 0)} un</small></span>
-          <button type="button" className="action-btn reject" aria-label="Excluir parada" disabled={busy} data-testid={`admin-parada-excluir-${r.id}`} onClick={() => { if (window.confirm(`Excluir a Parada ${pad2(r.numero)}${cl.length ? ` e seus ${cl.length} cliente(s)` : ''}?`)) run(() => api.delete(`${base}/rotas/${r.id}`, auth()), 'Não foi possível excluir a parada.'); }}><Trash2 size={13} /></button>
+          <span><b>Clientes da rota</b> <small className="muted">{list.length} cliente{list.length === 1 ? '' : 's'} · {list.reduce((a, c) => a + clienteLoad(c), 0)} un{list.length > 1 ? ' · arraste ⠿ para mudar a ordem de entrega' : ''}</small></span>
         </div>
-        {cl.map(c => {
-          const key = `${r.id}:${c.id}`;
-          return <div key={c.id} style={{ borderTop: '1px solid var(--line, #dfe5ec)', marginTop: 8, paddingTop: 8 }} data-testid={`admin-parada-cliente-${c.id}`}>
-            <div className="row-actions" style={{ justifyContent: 'space-between' }}>
-              <span><b>{c.name}</b> <small className="muted">{pedidoLabel(c)}{c.mf_swap_quantity > 0 ? ` · troca MF ${c.mf_swap_quantity} un` : ''}</small>{c.status === 'nao_entregue' && <span className="tag red" style={{ marginLeft: 6 }}>Não entregue</span>}</span>
-              {editing !== key && <span className="row-actions">
-                <button type="button" className="action-btn ghost" disabled={busy} data-testid={`admin-cliente-editar-${c.id}`} onClick={() => { setEditing(key); setAdding(null); }}><Pencil size={13} /> Produtos</button>
-                <button type="button" className="action-btn reject" aria-label="Remover cliente" disabled={busy} data-testid={`admin-cliente-remover-${c.id}`} onClick={() => { if (window.confirm(`Tirar ${c.name} da Parada ${pad2(r.numero)}?`)) run(() => api.delete(`${base}/rotas/${r.id}/clientes/${c.id}`, auth()), 'Não foi possível remover o cliente.'); }}><Trash2 size={13} /></button>
-              </span>}
-            </div>
-            {editing === key && <AdminPedidoForm customer={customerOf(c)} brandsCatalog={brandsCatalog} initialItems={pedidoItems(c)} busy={busy} confirmLabel="Salvar produtos" onCancel={() => setEditing(null)} onConfirm={items => run(() => api.patch(`${base}/rotas/${r.id}/clientes/${c.id}`, { items }, auth()), 'Não foi possível salvar os produtos.').then(ok => ok && setEditing(null))} />}
-          </div>
-        })}
-        {adding === r.id
+        <DragList items={list} keyOf={c => `${c.rota.id}:${c.id}`} disabled={busy || list.length < 2} onReorder={saveOrder}
+          render={(c, i, handle) => {
+            const key = `${c.rota.id}:${c.id}`;
+            return <div style={{ borderTop: '1px solid var(--line, #dfe5ec)', marginTop: 8, paddingTop: 8 }} data-testid={`admin-parada-cliente-${c.id}`}>
+              <div className="row-actions" style={{ justifyContent: 'space-between' }}>
+                <span className="row-actions">{handle}<b style={{ minWidth: 26 }}>{pad2(i + 1)}</b><span><b>{c.name}</b> <small className="muted">{pedidoLabel(c)}{c.mf_swap_quantity > 0 ? ` · troca MF ${c.mf_swap_quantity} un` : ''}</small>{c.status === 'nao_entregue' && <span className="tag red" style={{ marginLeft: 6 }}>Não entregue</span>}</span></span>
+                {editing !== key && <span className="row-actions">
+                  <button type="button" className="action-btn ghost" disabled={busy} data-testid={`admin-cliente-editar-${c.id}`} onClick={() => { setEditing(key); setAdding(null); }}><Pencil size={13} /> Produtos</button>
+                  <button type="button" className="action-btn reject" aria-label="Remover cliente" disabled={busy} data-testid={`admin-cliente-remover-${c.id}`} onClick={() => { if (window.confirm(`Tirar ${c.name} da rota?`)) run(() => api.delete(`${base}/rotas/${c.rota.id}/clientes/${c.id}`, auth()), 'Não foi possível remover o cliente.'); }}><Trash2 size={13} /></button>
+                </span>}
+              </div>
+              {editing === key && <AdminPedidoForm customer={customerOf(c)} brandsCatalog={brandsCatalog} initialItems={pedidoItems(c)} busy={busy} confirmLabel="Salvar produtos" onCancel={() => setEditing(null)} onConfirm={items => run(() => api.patch(`${base}/rotas/${c.rota.id}/clientes/${c.id}`, { items }, auth()), 'Não foi possível salvar os produtos.').then(ok => ok && setEditing(null))} />}
+            </div>;
+          }} />
+        {list.length === 0 && <p className="muted" style={{ marginTop: 8 }}>Nenhum cliente ainda.</p>}
+        {adding
           ? <div style={{ marginTop: 10 }}>
             <label className="muted" style={{ display: 'block', marginBottom: 6 }}>Cliente</label>
-            <CustomerCombobox customers={customers.filter(c => !inTrip.has(c.id))} value={pickName} onPick={setPickName} testId={`admin-parada-cliente-busca-${r.id}`} />
+            <CustomerCombobox customers={customers.filter(c => !inTrip.has(c.id))} value={pickName} onPick={setPickName} testId={`admin-cliente-busca-${v.id}`} />
             {picked
-              ? <AdminPedidoForm key={picked.id} customer={picked} brandsCatalog={brandsCatalog} busy={busy} confirmLabel="Adicionar cliente" onCancel={() => setAdding(null)} onConfirm={items => run(() => api.post(`${base}/rotas/${r.id}/clientes`, toPayload(picked, items), auth()), 'Não foi possível adicionar o cliente.').then(ok => ok && setPickName(''))} />
+              ? <AdminPedidoForm key={picked.id} customer={picked} brandsCatalog={brandsCatalog} busy={busy} confirmLabel="Adicionar cliente" onCancel={() => setAdding(null)} onConfirm={items => run(async () => { const rid = await targetId(); await api.post(`${base}/rotas/${rid}/clientes`, toPayload(picked, items), auth()); }, 'Não foi possível adicionar o cliente.').then(ok => ok && setPickName(''))} />
               : <div className="row-actions" style={{ marginTop: 8 }}><button type="button" className="ghost-btn" onClick={() => setAdding(null)}>Fechar</button></div>}
           </div>
-          : <button type="button" className="ghost-btn" style={{ marginTop: 10 }} disabled={busy} data-testid={`admin-parada-add-cliente-${r.id}`} onClick={() => { setAdding(r.id); setPickName(''); setEditing(null); }}><UserPlus size={14} /> Adicionar cliente</button>}
-      </div>
-    })}
-    {rotas.length === 0 && <p className="muted">Nenhuma parada ainda.</p>}
-    <div className="row-actions"><button type="button" className="ghost-btn" disabled={busy} data-testid={`admin-parada-add-${v.id}`} onClick={() => run(() => api.post(`${base}/rotas`, { clientes: [] }, auth()), 'Não foi possível criar a parada.')}><Plus size={14} /> Nova parada</button></div>
+          : <button type="button" className="ghost-btn" style={{ marginTop: 10 }} disabled={busy} data-testid={`admin-add-cliente-${v.id}`} onClick={() => { setAdding(true); setPickName(''); setEditing(null); }}><UserPlus size={14} /> Adicionar cliente</button>}
+      </div>;
+    })()}
   </div>
 }
 
@@ -1439,7 +1442,7 @@ function Viagens({ customers, user }) {
   const despesasTotal = finalizadas.reduce((s, v) => s + Number(v.despesas_total || 0), 0);
   const saldoLiquido = totalBruto - despesasTotal;
 
-  return <><Head eyebrow="LOGÍSTICA" title="Rotas" subtitle={isAdmin ? "Monte a rota do entregador — turno, carga, paradas, clientes e produtos. Abra Detalhes para editar, mesmo depois de concluída." : "Crie a rota do dia (turno e carga); adicione as paradas e clientes pelo app do celular."} />
+  return <><Head eyebrow="LOGÍSTICA" title="Rotas" subtitle={isAdmin ? "Monte a rota do entregador — turno, carga, clientes, produtos e a ordem de entrega. Abra Detalhes para editar, mesmo depois de concluída." : "Crie a rota do dia (turno e carga); adicione os clientes pelo app do celular."} />
     <section className="panel table-panel" style={{ marginBottom: 22 }}>
       <form className="os-form" onSubmit={submit}>
         {isAdmin && <label>Entregador<select required value={form.driver} data-testid="viagem-driver-select" onChange={e => setForm({ ...form, driver: e.target.value })}><option value="">Selecione</option>{drivers.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}</select></label>}
@@ -1465,7 +1468,7 @@ function Viagens({ customers, user }) {
       <Stat label="Finalizadas" value={finalizadas.length} detail="Rotas concluídas no dia" Icon={CalendarCheck} />
       <Stat label="Saldo líquido das rotas" value={money(saldoLiquido)} detail={`Receita ${money(totalBruto)} − despesas ${money(despesasTotal)}`} Icon={WalletCards} tone="orange" />
     </div>
-    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>ENTREGADOR</th><th>ROTA DO DIA</th><th>TURNO</th><th>PARADAS</th><th>CLIENTES</th><th>CARGA</th><th>ENTREGAS</th><th>RECEITA</th><th>DESPESAS</th><th>SALDO</th><th>SITUAÇÃO</th><th /></tr></thead><tbody>
+    <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>CÓDIGO</th><th>ENTREGADOR</th><th>ROTA DO DIA</th><th>TURNO</th><th>CLIENTES</th><th>CARGA</th><th>ENTREGAS</th><th>RECEITA</th><th>DESPESAS</th><th>SALDO</th><th>SITUAÇÃO</th><th /></tr></thead><tbody>
       {viagens.map(v => {
         const totalClientes = (v.rotas || []).reduce((s, r) => s + (r.clientes?.length || 0), 0);
         return <tr key={v.id} data-testid={`viagem-row-${v.id}`}>
@@ -1473,7 +1476,6 @@ function Viagens({ customers, user }) {
         <td>{v.driver}</td>
         <td>{v.numero}/{VIAGENS_POR_DIA}</td>
         <td>{TURNO_LABELS[v.turno]}</td>
-        <td>{v.rotas?.length ?? '—'}</td>
         <td>{totalClientes || '—'}</td>
         <td>{v.carga_total ?? '—'}{v.status === 'finalizada' && v.quantidade_entregue != null ? <small className="muted" style={{ display: 'block' }}>entregue {v.quantidade_entregue}{v.carga_devolvida_total != null ? ` · devolvida ${v.carga_devolvida_total}` : ''}</small> : ''}</td>
         <td>{v.entregas ?? '—'}{v.mf_quantity_total > 0 ? <small className="orange-text" style={{ display: 'block' }}>{v.mf_quantity_total} un MF{v.problemas ? ` (${v.problemas} entrega${v.problemas > 1 ? 's' : ''})` : ''}</small> : ''}</td>
@@ -1487,7 +1489,7 @@ function Viagens({ customers, user }) {
         </div></td>
       </tr>;
       })}
-      {viagens.length === 0 && <tr><td colSpan={13} className="muted" style={{ padding: 16 }}>Nenhuma rota registrada nessa data.</td></tr>}
+      {viagens.length === 0 && <tr><td colSpan={12} className="muted" style={{ padding: 16 }}>Nenhuma rota registrada nessa data.</td></tr>}
     </tbody></table></div></section>
     {isAdmin && openTrip && <section className="panel table-panel" style={{ marginTop: 22 }} ref={detailRef} data-testid="admin-trip-detail">
       <div className="panel-head" style={{ padding: '18px 23px 0' }}>
@@ -1717,6 +1719,11 @@ const apiError = (e, fallback) => { const d = e?.response?.data?.detail; return 
 // Trocas de MF somadas a um pedido que já existia ocupam carga além da quantidade do pedido.
 const mergedSwapQty = c => (c.mf_swaps || []).filter(s => s.merged).reduce((a, s) => a + Number(s.quantity || 0), 0);
 const clienteLoad = c => Number(c.quantity || 0) + mergedSwapQty(c);
+// Clientes da rota na sequência de entrega: a ordem que o entregador arrastou; sem ela, a ordem em que foram incluídos.
+// Por dentro a rota ainda guarda os clientes em grupos (rotas[].clientes); a tela mostra uma lista só.
+const orderedClients = v => (v?.rotas || []).flatMap(r => (r.clientes || []).map((c, i) => ({ c, r, k: c.ordem ?? 1e6 + (Number(r.numero) || 0) * 1000 + i }))).sort((a, b) => a.k - b.k);
+// Quem já foi atendido fica fixo no topo: a numeração de quem foi entregue não muda depois.
+const doneFirst = (list, isDone) => [...list.filter(isDone), ...list.filter(x => !isDone(x))];
 // Pedido do cliente na parada: um ou mais produtos (paradas antigas guardam só um, nos campos de topo).
 const pedidoItems = c => c.items?.length ? c.items : (c.brand ? [{ brand: c.brand, quantity: c.quantity, sale_type: c.sale_type, out_of_catalog: c.out_of_catalog, price: c.price, price_full: c.price_full }] : []);
 const pedidoLabel = c => pedidoItems(c).map(i => `${Number(i.quantity) || 0} × ${i.brand}${i.sale_type === 'full' ? ' completo' : ''}`).join(' · ') || 'sem produto';
@@ -1781,6 +1788,106 @@ function MobileStuckTrips({ viagens, onFinalizar }) {
       ? <MobileConfirm key={v.id} testid={`mob-stuck-confirm-${v.id}`} title={`Concluir a rota de ${shortDate(v.date)}?`} text="O que sobrou da carga volta para o estoque." confirmLabel="Concluir" onCancel={() => setAsking(null)} onConfirm={() => { setAsking(null); onFinalizar(v); }} />
       : <MobBtn key={v.id} kind="warn" h={48} lead={Flag} data-testid={`mob-stuck-finalizar-${v.id}`} onClick={() => setAsking(v.id)}>{TURNO_LABELS[v.turno]} de {shortDate(v.date)} · {v.codigo_viagem}</MobBtn>)}
   </section>
+}
+
+// Primeiro rolável acima do elemento; sem nenhum, a própria página.
+function scrollParentOf(el) {
+  for (let p = el?.parentElement; p; p = p.parentElement) {
+    const oy = getComputedStyle(p).overflowY;
+    if ((oy === 'auto' || oy === 'scroll') && p.scrollHeight > p.clientHeight) return p;
+  }
+  return document.scrollingElement || document.documentElement;
+}
+
+// Lista que o usuário reordena arrastando a alça (dedo ou mouse). onReorder recebe as chaves na nova ordem.
+// isFixed: itens que não se movem e ficam no topo (ex.: clientes já entregues).
+function DragList({ items, keyOf, render, onReorder, disabled, isFixed = () => false }) {
+  const [order, setOrder] = useState(null);
+  const [dragKey, setDragKey] = useState(null);
+  const refs = useRef({});
+  const pointerY = useRef(0);
+  const scroller = useRef(null);
+  const live = useRef({});
+  const startY = useRef(0);
+  const moved = useRef(false);
+  const itemsKey = items.map(keyOf).join('|');
+  // Depois de salvar, a lista nova chega do servidor: aí a ordem local deixa de ser necessária.
+  useEffect(() => { setOrder(null); }, [itemsKey]);
+  const keys = order || items.map(keyOf);
+  const byKey = Object.fromEntries(items.map(i => [keyOf(i), i]));
+  const list = keys.map(k => byKey[k]).filter(Boolean);
+  const fixedKeys = keys.filter(k => byKey[k] && isFixed(byKey[k]));
+  live.current = { keys, dragKey, fixedKeys, itemsKey, onReorder };
+  function place(y) {
+    const { keys: ks, dragKey: dk, fixedKeys: fx } = live.current;
+    if (!dk) return;
+    const rest = ks.filter(k => k !== dk && !fx.includes(k));
+    // O item arrastado continua no fluxo: quem está abaixo dele aparece deslocado pela altura dele.
+    const dragH = refs.current[dk]?.getBoundingClientRect().height || 0;
+    const from = ks.indexOf(dk);
+    let at = rest.length;
+    for (let i = 0; i < rest.length; i++) {
+      const box = refs.current[rest[i]]?.getBoundingClientRect();
+      if (!box) continue;
+      const mid = box.top + box.height / 2 - (ks.indexOf(rest[i]) > from ? dragH : 0);
+      if (y < mid) { at = i; break; }
+    }
+    const next = [...fx, ...rest.slice(0, at), dk, ...rest.slice(at)];
+    if (next.join('|') !== ks.join('|')) setOrder(next);
+  }
+  // Perto da borda de cima ou de baixo, a lista rola sozinha enquanto o dedo estiver parado ali.
+  useEffect(() => {
+    if (!dragKey) return undefined;
+    document.body.classList.add('drag-active');
+    let raf;
+    const tick = () => {
+      const sc = scroller.current;
+      if (sc) {
+        const isDoc = sc === document.scrollingElement || sc === document.documentElement;
+        const box = isDoc ? { top: 0, bottom: window.innerHeight } : sc.getBoundingClientRect();
+        const y = pointerY.current, edge = 70;
+        if (!moved.current && Math.abs(y - startY.current) > 8) moved.current = true;
+        const dy = y < box.top + edge ? -Math.ceil((box.top + edge - y) / 6) : y > box.bottom - edge ? Math.ceil((y - (box.bottom - edge)) / 6) : 0;
+        if (dy && moved.current) { sc.scrollTop += dy; place(y); }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    // Movimento e soltura escutados na janela: ao reordenar, o React move o próprio item arrastado
+    // na página e o navegador perde a captura do ponteiro — o "soltar" não chegaria ao botão.
+    const onMove = e => { pointerY.current = e.clientY; place(e.clientY); };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', finish);
+    return () => {
+      cancelAnimationFrame(raf); document.body.classList.remove('drag-active');
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', finish);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragKey]);
+  function start(e, k) {
+    if (disabled) return;
+    e.preventDefault();
+    pointerY.current = e.clientY; startY.current = e.clientY; moved.current = false;
+    scroller.current = scrollParentOf(refs.current[k]);
+    setDragKey(k); setOrder(keys);
+  }
+  // Lê o estado mais recente por live.current: é chamado pelos ouvintes da janela.
+  function finish() {
+    const { keys: ks, dragKey: dk, itemsKey: ik, onReorder: save } = live.current;
+    if (!dk) return;
+    live.current.dragKey = null;
+    setDragKey(null);
+    if (ks.join('|') !== ik) save(ks); else setOrder(null);
+  }
+  return list.map((item, i) => {
+    const k = keyOf(item);
+    const handle = disabled || isFixed(item) ? null : <button type="button" className="mob-drag" aria-label="Arrastar para mudar a ordem" data-testid={`drag-${k}`}
+      onPointerDown={e => start(e, k)}><GripVertical size={18} /></button>;
+    return <div key={k} ref={el => { refs.current[k] = el; }} className={dragKey === k ? 'drag-item dragging' : 'drag-item'}>{render(item, i, handle)}</div>;
+  });
 }
 
 function MobileStepper({ value, onDec, onInc, onInc5, onType, small, testid, label }) {
@@ -1945,7 +2052,7 @@ function MobileLaunchPanel({ stop, user, date, viagemId, cargaRestante, othersPe
   return <>
     <div className="mob-launch-head">
       <button type="button" className="mob-sq" aria-label={step === 1 ? 'Fechar' : 'Voltar'} data-testid="mob-panel-close" onClick={() => step === 1 ? onClose() : setStep(step - 1)}>{step === 1 ? <X size={20} /> : <ArrowLeft size={20} />}</button>
-      <div><span className="mob-eyebrow">Parada {pad2(stop.rota_numero)} · Nº {pad2(stop.seq)}</span><b>{stop.name}</b></div>
+      <div><span className="mob-eyebrow">Parada {pad2(stop.seq)}</span><b>{stop.name}</b></div>
     </div>
     <div className="mob-steps">{LAUNCH_STEPS.map((label, i) => <div key={label} className={i + 1 === step ? 'now' : i + 1 < step ? 'past' : ''} data-testid={`mob-step-${i + 1}`}>{i + 1} {label}</div>)}</div>
 
@@ -2068,13 +2175,13 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
       <span className="mob-eyebrow">{lastDone ? `Rota ${lastDone.numero} concluída` : 'Nenhuma rota em execução'}</span>
       <b>{plannedEmpty ? `Rota ${nextPlanned.numero} ainda sem clientes.` : nextPlanned ? `Rota ${nextPlanned.numero} pronta para sair.` : lastDone ? 'Quer fazer outra rota hoje?' : 'Crie a rota para liberar os lançamentos.'}</b>
       {plannedEmpty
-        ? <MobBtn kind="white" lead={RouteIcon} icon={ArrowRight} data-testid="mob-build-planned-button" onClick={() => onOpenViagens(nextPlanned.id)}>Montar paradas da rota {nextPlanned.numero}</MobBtn>
+        ? <MobBtn kind="white" lead={RouteIcon} icon={ArrowRight} data-testid="mob-build-planned-button" onClick={() => onOpenViagens(nextPlanned.id)}>Adicionar clientes da rota {nextPlanned.numero}</MobBtn>
         : nextPlanned
           ? <MobBtn kind="white" lead={Truck} icon={ArrowRight} data-testid="mob-start-planned-button" onClick={() => onStartTrip(nextPlanned)}>Iniciar rota {nextPlanned.numero} · {TURNO_LABELS[nextPlanned.turno]}</MobBtn>
           : <MobBtn kind="white" lead={Plus} icon={ArrowRight} data-testid="mob-new-delivery-button" onClick={() => onOpenViagens()}>Criar rota</MobBtn>}
       {/* Sair sem rota montada continua possível: dá para incluir clientes pela busca durante a viagem. */}
       {plannedEmpty && <button type="button" className="mob-link on-accent" data-testid="mob-start-planned-button" onClick={() => onStartTrip(nextPlanned)}>Iniciar sem clientes<ChevronRight size={16} /></button>}
-      {nextPlanned && !plannedEmpty && <button type="button" className="mob-link on-accent" data-testid="mob-poster-open-viagens" onClick={() => onOpenViagens(nextPlanned.id)}>Ver paradas e clientes<ChevronRight size={16} /></button>}
+      {nextPlanned && !plannedEmpty && <button type="button" className="mob-link on-accent" data-testid="mob-poster-open-viagens" onClick={() => onOpenViagens(nextPlanned.id)}>Ver clientes da rota<ChevronRight size={16} /></button>}
     </section>}
 
     {viagemAtiva && <section className="mob-tripbar" data-testid="mob-trip-banner">
@@ -2109,8 +2216,8 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
     </section>}
 
     {viagemAtiva && stops.length === 0 && <section className="mob-card plain" data-testid="mob-empty-trip">
-      <div className="mob-card-body"><b className="mob-h20">Esta rota ainda não tem clientes.</b><span className="mob-muted">Monte as paradas da rota e adicione os clientes de cada uma.</span></div>
-      <MobBtn lead={RouteIcon} icon={ArrowRight} data-testid="mob-build-routes" onClick={() => onOpenViagens(viagemAtiva.id)}>Montar paradas</MobBtn>
+      <div className="mob-card-body"><b className="mob-h20">Esta rota ainda não tem clientes.</b><span className="mob-muted">Adicione os clientes e arraste para definir a ordem de entrega.</span></div>
+      <MobBtn lead={RouteIcon} icon={ArrowRight} data-testid="mob-build-routes" onClick={() => onOpenViagens(viagemAtiva.id)}>Adicionar clientes</MobBtn>
     </section>}
 
     {stops.length > 0 && <>
@@ -2122,7 +2229,7 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
 
       {next && <section className="mob-card mob-next" data-testid="mob-next-stop">
         <div className="mob-card-body">
-          <span className="mob-eyebrow">Próximo cliente · Parada {pad2(next.rota_numero)} · Nº {pad2(next.seq)}</span>
+          <span className="mob-eyebrow">Próximo cliente · Parada {pad2(next.seq)}</span>
           {next.mf_swap_quantity > 0 && <span className="mob-tag swap big"><RefreshCw size={14} />Troca MF · {next.mf_swap_quantity} un</span>}
           <b className="mob-h26">{next.name}</b>
           {next.address && <span className="mob-muted">{next.address}</span>}
@@ -2142,7 +2249,7 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
       <div className="mob-sec-head"><b>Pendentes</b><b>{pending.length}</b></div>
       {pendingRows.map(s => <button type="button" className="mob-row" key={s.key} data-testid={`mob-customer-row-${s.id}`} onClick={() => onOpenStop(s)}>
         <span className="mob-num">{pad2(s.seq)}</span>
-        <span className="mob-row-main"><b>{s.name}</b><small>Parada {pad2(s.rota_numero)} · {orderSub(s)}</small></span>
+        <span className="mob-row-main"><b>{s.name}</b><small>Parada {pad2(s.seq)} · {orderSub(s)}</small></span>
         {s.mf_swap_quantity > 0 && <span className="mob-tag swap"><RefreshCw size={12} />TROCA MF</span>}
         {s.prazo && <span className="mob-tag warn">a prazo</span>}
         <ChevronRight size={22} />
@@ -2341,65 +2448,71 @@ function MobileClientQty({ value, onCommit, testid }) {
   return <input className="mob-qty-input" type="number" inputMode="numeric" min="0" aria-label="Quantidade" value={draft} data-testid={testid} onChange={e => setDraft(onlyDigits(e.target.value, 3))} onFocus={e => e.target.select()} onBlur={commit} />
 }
 
-// Pedido do cliente na parada. Com initialItems edita o pedido de quem já está na parada.
-function MobileProductConfig({ customer, rotaNumero, brandsCatalog, busy, initialItems, onCancel, onConfirm }) {
+// Pedido do cliente na parada. Tocar no produto já põe 1 no pedido e abre o contador ali mesmo.
+// Com initialItems edita o pedido de quem já está na parada.
+function MobileProductConfig({ customer, brandsCatalog, busy, initialItems, onCancel, onConfirm }) {
   const editing = !!initialItems;
   const prefs = brandListOf(customer);
-  const others = brandsCatalog.filter(b => !prefs.some(p => sameName(p.brand, b.name)));
-  const [brand, setBrand] = useState(editing ? '' : prefs[0]?.brand || '');
+  const options = [
+    ...prefs.map(p => ({ brand: p.brand, price: p.price, price_full: p.price_full, own: true })),
+    ...brandsCatalog.filter(b => !prefs.some(p => sameName(p.brand, b.name))).map(b => ({ brand: b.name, price: b.price, price_full: b.price_full, own: false })),
+  ];
+  for (const i of initialItems || []) if (!options.some(o => sameName(o.brand, i.brand))) options.push({ brand: i.brand, price: i.price, price_full: i.price_full, own: !i.out_of_catalog });
+  const [qty, setQtyMap] = useState(() => {
+    const m = {};
+    for (const i of initialItems || []) { const o = options.find(x => sameName(x.brand, i.brand)); const k = o.brand; m[k] = m[k] || { exchange: 0, full: 0 }; m[k][i.sale_type === 'full' ? 'full' : 'exchange'] += Number(i.quantity) || 0; }
+    return m;
+  });
   const [showOther, setShowOther] = useState(prefs.length === 0);
-  const [qty, setQty] = useState('');
-  const [full, setFull] = useState(false);
-  const pref = prefs.find(p => sameName(p.brand, brand));
-  const cat = others.find(b => sameName(b.name, brand));
-  const sel = pref || cat;
-  const hasFull = !!sel && sel.price_full != null && Number(sel.price_full) > 0;
+  const qOf = (b, t) => qty[b]?.[t] || 0;
+  const setQ = (b, t, v) => setQtyMap(prev => ({ ...prev, [b]: { exchange: 0, full: 0, ...prev[b], [t]: Math.max(0, Math.min(999, v)) } }));
+  const picked = o => qOf(o.brand, 'exchange') + qOf(o.brand, 'full') > 0;
+  const items = options.flatMap(o => ['exchange', 'full'].filter(t => qOf(o.brand, t) > 0).map(t => ({ brand: o.brand, quantity: qOf(o.brand, t), sale_type: t, out_of_catalog: !o.own, price: o.price ?? undefined, price_full: o.price_full ?? undefined })));
+  const totalQty = items.reduce((a, i) => a + i.quantity, 0);
   const priceLabel = b => b.price != null ? `${money(b.price)} somente água${b.price_full ? ` · ${money(b.price_full)} completo` : ''}` : 'preço informado na entrega';
-  const pick = name => { setBrand(name); const s = prefs.find(p => sameName(p.brand, name)) || others.find(b => sameName(b.name, name)); if (!(s && Number(s.price_full) > 0)) setFull(false); };
-  const n = Number(qty) || 1;
-  const [added, setAdded] = useState(initialItems || []);
-  const current = () => ({ brand, quantity: n, sale_type: full && hasFull ? 'full' : 'exchange', out_of_catalog: !pref, price: sel?.price ?? undefined, price_full: sel?.price_full ?? undefined });
-  const items = brand ? mergeItem(added, current()) : added;
-  const totalQty = items.reduce((a, i) => a + Number(i.quantity), 0);
-  // O cliente pode pedir mais de um produto: guarda o atual e libera a escolha do próximo.
-  function addMore() {
-    if (!brand) return;
-    setAdded(items); setBrand(''); setQty(''); setFull(false); setShowOther(prefs.length === 0);
+  function pick(o) {
+    if (!picked(o)) setQ(o.brand, 'exchange', 1);
+    if (!o.own) setShowOther(false);
   }
   function confirm() {
     if (!items.length) return;
     onConfirm({ id: customer.id, name: customer.name, ...items[0], quantity: totalQty, items });
   }
-  return <div className="mob-config" data-testid="mob-viagem-client-config">
+  const typedQty = raw => { const s = String(raw).trim(); return s.startsWith('-') ? 0 : parseInt(onlyDigits(s.split(/[.,]/)[0], 3), 10) || 0; };
+  const boxRef = useRef(null);
+  useEffect(() => { boxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, []);
+  const tag = o => o.own ? <span className="mob-tag warn">Preferência</span> : <span className="mob-tag neutral">Novo p/ cliente</span>;
+  const stepCol = (o, t, label) => <div className="mob-pick-step">
+    <small>{label}</small>
+    <MobileStepper small label={`${o.brand} ${label.toLowerCase()}`} testid={`mob-viagem-client-${t}-${o.brand}`} value={qOf(o.brand, t)} onType={v => setQ(o.brand, t, typedQty(v))} onDec={() => setQ(o.brand, t, qOf(o.brand, t) - 1)} onInc={() => setQ(o.brand, t, qOf(o.brand, t) + 1)} />
+  </div>;
+  const pickedCard = o => <div className="mob-pick-card" key={o.brand} data-testid={`mob-viagem-client-picked-${o.brand}`}>
+    <div className="mob-pick-head"><span><b>{o.brand}</b><small>{priceLabel(o)}</small></span><button type="button" className="mob-x" aria-label={`Tirar ${o.brand} do pedido`} onClick={() => { setQ(o.brand, 'exchange', 0); setQ(o.brand, 'full', 0); }}><X size={18} /></button></div>
+    <div className="mob-pick-steps">
+      {stepCol(o, 'exchange', 'Somente água')}
+      {(Number(o.price_full) > 0 || qOf(o.brand, 'full') > 0) && stepCol(o, 'full', 'Completo')}
+    </div>
+  </div>;
+  const choice = o => <button type="button" key={o.brand} className="mob-prod" data-testid={`mob-viagem-client-${o.own ? 'brand' : 'catalog'}-${o.brand}`} onClick={() => pick(o)}><span><b>{o.brand}</b><small>{priceLabel(o)}</small></span>{tag(o)}<Plus size={18} /></button>;
+  const others = options.filter(o => !o.own);
+  return <div className="mob-config" ref={boxRef} data-testid="mob-viagem-client-config">
     <div className="mob-config-head">
-      <span><span className="mob-eyebrow">{editing ? `Produtos · Parada ${pad2(rotaNumero)}` : `Adicionar à Parada ${pad2(rotaNumero)}`}</span><b>{customer.name}</b></span>
+      <span><span className="mob-eyebrow">{editing ? 'Produtos do pedido' : 'Adicionar à rota'}</span><b>{customer.name}</b></span>
       <button type="button" className="mob-link dark" data-testid="mob-viagem-client-cancel" onClick={onCancel}>Cancelar</button>
     </div>
     <div className="mob-field">
-      <b className="mob-label">Produto</b>
-      {prefs.map(p => <button type="button" key={p.brand} className={`mob-prod${sameName(brand, p.brand) ? ' on' : ''}`} data-testid={`mob-viagem-client-brand-${p.brand}`} onClick={() => pick(p.brand)}><span><b>{p.brand}</b><small>{priceLabel(p)}</small></span><span className="mob-tag warn">Preferência</span></button>)}
-      {prefs.length === 0 && <span className="mob-muted">Cliente sem produto no cadastro — escolha no catálogo.</span>}
-      {others.length > 0 && <button type="button" className="mob-link h48" data-testid="mob-viagem-client-brand-toggle" onClick={() => setShowOther(!showOther)}><RefreshCw size={16} />{showOther ? 'Ocultar outros produtos' : 'Outro produto do cadastro'}</button>}
-      {showOther && others.map(b => <button type="button" key={b.id || b.name} className={`mob-prod${sameName(brand, b.name) ? ' on' : ''}`} data-testid={`mob-viagem-client-catalog-${b.name}`} onClick={() => pick(b.name)}><span><b>{b.name}</b><small>{priceLabel(b)}</small></span><span className="mob-tag neutral">Novo p/ cliente</span></button>)}
+      <b className="mob-label">{items.length ? 'No pedido' : 'Toque no produto para incluir'}</b>
+      {options.filter(picked).map(pickedCard)}
+      {prefs.length === 0 && !items.length && <span className="mob-muted">Cliente sem produto no cadastro — escolha no catálogo abaixo.</span>}
+      {options.filter(o => o.own && !picked(o)).map(choice)}
     </div>
-    <div className="mob-config-row">
-      <label className="mob-field"><b className="mob-label">Qtd</b><input className="mob-qty-input lg" type="number" inputMode="numeric" min="1" placeholder="1" value={qty} data-testid="mob-viagem-client-qty" onChange={e => setQty(onlyDigits(e.target.value, 3))} onFocus={e => e.target.select()} /></label>
-      <div className="mob-field"><b className="mob-label">Tipo</b>
-        <div className="mob-seg">
-          <button type="button" className={!full ? 'on' : ''} data-testid="mob-viagem-client-exchange" onClick={() => setFull(false)}>Somente água</button>
-          {hasFull && <button type="button" className={full ? 'on' : ''} data-testid="mob-viagem-client-full" onClick={() => setFull(true)}>Completo</button>}
-        </div>
-      </div>
-    </div>
-    {added.length > 0 && <div className="mob-field"><b className="mob-label">Já no pedido</b>
-      <div className="mob-chips">{added.map(i => <span className="mob-chip" key={`${i.brand}-${i.sale_type}`} data-testid={`mob-viagem-client-item-${i.brand}`}>{i.quantity} × {i.brand}{i.sale_type === 'full' ? ' · completo' : ''}<button type="button" aria-label="Tirar produto do pedido" onClick={() => setAdded(prev => prev.filter(x => x !== i))}><X size={14} /></button></span>)}</div>
-    </div>}
-    <MobBtn kind="outline" h={52} lead={Plus} disabled={!brand} data-testid="mob-viagem-client-more" onClick={addMore}>{brand ? `Incluir ${n} × ${brand} e adicionar outro produto` : 'Escolha acima o próximo produto'}</MobBtn>
-    <MobBtn h={56} icon={Check} disabled={!items.length || busy} data-testid="mob-viagem-client-confirm" onClick={confirm}>{!items.length ? 'Escolha o produto' : editing ? `Salvar pedido · ${totalQty} un` : items.length === 1 ? `Adicionar ${items[0].quantity} × ${items[0].brand}` : `Adicionar ${items.length} produtos · ${totalQty} un`}</MobBtn>
+    <MobBtn h={56} icon={Check} className="mob-sticky-cta" disabled={!items.length || busy} data-testid="mob-viagem-client-confirm" onClick={confirm}>{!items.length ? 'Escolha o produto' : editing ? `Salvar pedido · ${totalQty} un` : items.length === 1 ? `Adicionar ${items[0].quantity} × ${items[0].brand}` : `Adicionar ${items.length} produtos · ${totalQty} un`}</MobBtn>
+    {others.some(o => !picked(o)) && <button type="button" className="mob-link h48" data-testid="mob-viagem-client-brand-toggle" onClick={() => setShowOther(!showOther)}><RefreshCw size={16} />{showOther ? 'Ocultar outros produtos' : 'Outro produto do cadastro'}</button>}
+    {showOther && <div className="mob-field">{others.filter(o => !picked(o)).map(choice)}</div>}
   </div>
 }
 
-function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed, viagemAtiva, openTripId, setOpenTripId, onBack, onCreate, onIniciar, onFinalizar, onDelete, onAddRota, onAddRotaCliente, onUpdateRotaCliente, onRemoveRotaCliente, onRemoveRota, onScheduleMf, toast }) {
+function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed, viagemAtiva, openTripId, setOpenTripId, onBack, onCreate, onIniciar, onFinalizar, onDelete, onAddRota, onAddRotaCliente, onUpdateRotaCliente, onRemoveRotaCliente, onReorder, onScheduleMf, toast }) {
   const [turno, setTurno] = useState(new Date().getHours() < 12 ? 0 : 1);
   const [carga, setCarga] = useState(0);
   const [cargaItems, setCargaItems] = useState([]);
@@ -2438,14 +2551,17 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
       if (!v.rotas?.length) v = await onAddRota(v.id, { clientes: [] });
       setCargaItems([]); setShowMore(false);
       setOpenTripId(v.id); openPicker(v.id, v.rotas[v.rotas.length - 1].id);
-      toast('Rota criada. Adicione os clientes da Parada 01 e toque em Iniciar.', 4000);
+      toast('Rota criada. Adicione os clientes, arraste para definir a ordem e toque em Iniciar.', 4000);
     }, 'Não foi possível criar a rota.');
   }
-  async function addRota(v) {
-    await run(async () => { const updated = await onAddRota(v.id, { clientes: [] }); openPicker(v.id, updated.rotas[updated.rotas.length - 1].id); }, 'Não foi possível criar a parada.');
+  // Rota antiga sem grupo de clientes: cria o grupo antes de abrir a busca.
+  async function openAdd(v) {
+    const last = (v.rotas || [])[(v.rotas || []).length - 1];
+    if (last) return openPicker(v.id, last.id);
+    await run(async () => { const updated = await onAddRota(v.id, { clientes: [] }); openPicker(v.id, updated.rotas[updated.rotas.length - 1].id); }, 'Não foi possível abrir a rota para incluir clientes.');
   }
   async function addCliente(v, rota, cliente) {
-    await run(async () => { await onAddRotaCliente(v.id, rota.id, cliente); setConfig(null); setPickQ(''); toast(`${cliente.name} adicionado à Parada ${pad2(rota.numero)}.`); }, 'Não foi possível adicionar o cliente.');
+    await run(async () => { await onAddRotaCliente(v.id, rota.id, cliente); setConfig(null); setPickQ(''); toast(`${cliente.name} adicionado à rota.`); }, 'Não foi possível adicionar o cliente.');
   }
   async function scheduleMf(v, m, hit) {
     await run(async () => {
@@ -2496,7 +2612,7 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
             {cargaItems.length > 0 && <div className="mob-chips">{cargaItems.map(i => <span className="mob-chip" key={i.brand} data-testid={`mob-viagem-carga-chip-${i.brand}`}>{i.brand} · {i.quantity}<button type="button" aria-label="Remover item da carga" onClick={() => setCargaItems(prev => prev.filter(x => x.brand !== i.brand))}><X size={14} /></button></span>)}</div>}
           </div>}
         </div>
-        <MobBtn h={64} lead={RouteIcon} icon={ArrowRight} disabled={turnoFull || busy} data-testid="mob-viagem-create" onClick={create}>{turnoFull ? 'Limite de 6 rotas no turno' : 'Criar rota e montar paradas'}</MobBtn>
+        <MobBtn h={64} lead={RouteIcon} icon={ArrowRight} disabled={turnoFull || busy} data-testid="mob-viagem-create" onClick={create}>{turnoFull ? 'Limite de 6 rotas no turno' : 'Criar rota e adicionar clientes'}</MobBtn>
       </section>}
 
     <section className="mob-list">
@@ -2505,7 +2621,7 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
       {viagens.length > 0 && shown.length === 0 && <p className="mob-muted pad">Nenhuma rota em aberto.</p>}
       {shown.map(v => {
         const rotas = v.rotas || [];
-        const allClients = rotas.flatMap(r => (r.clientes || []).map(c => ({ ...c, rota: r, st: statusOf(v, c, r) })));
+        const allClients = doneFirst(orderedClients(v).map(({ c, r }) => ({ ...c, rota: r, st: statusOf(v, c, r) })), c => c.st !== 'pending');
         const editable = v.status !== 'finalizada' && !dayClosed;
         const isOpen = openTripId === v.id;
         const inTrip = new Set(allClients.map(c => c.id));
@@ -2519,7 +2635,7 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
           </div>
 
           {v.status === 'planejada' && !dayClosed && (asking === `del:${v.id}`
-            ? <MobileConfirm testid="mob-viagem-excluir-confirm" title={`Excluir a rota ${v.codigo_viagem}?`} text={allClients.length ? `${allClients.length} cliente(s) saem das paradas.` : undefined} confirmLabel="Excluir" busy={busy} onCancel={() => setAsking(null)} onConfirm={() => run(async () => { await onDelete(v); setAsking(null); }, 'Não foi possível excluir a rota.')} />
+            ? <MobileConfirm testid="mob-viagem-excluir-confirm" title={`Excluir a rota ${v.codigo_viagem}?`} text={allClients.length ? `${allClients.length} cliente(s) saem da rota.` : undefined} confirmLabel="Excluir" busy={busy} onCancel={() => setAsking(null)} onConfirm={() => run(async () => { await onDelete(v); setAsking(null); }, 'Não foi possível excluir a rota.')} />
             : <div className="mob-grid21">
               <MobBtn h={52} icon={Play} kind={viagemAtiva ? 'disabled' : 'primary'} data-testid={`mob-viagem-iniciar-${v.id}`} onClick={() => viagemAtiva ? toast('Conclua a rota em execução primeiro.') : run(() => onIniciar(v), 'Não foi possível iniciar a rota.')}>{viagemAtiva ? 'Aguardando' : 'Iniciar'}</MobBtn>
               <MobBtn h={52} kind="outline" data-testid={`mob-viagem-excluir-${v.id}`} onClick={() => setAsking(`del:${v.id}`)}>Excluir</MobBtn>
@@ -2532,75 +2648,80 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
               <MobBtn h={52} kind="outline" icon={Flag} data-testid={`mob-viagem-finalizar-${v.id}`} onClick={() => setAsking(`fin:${v.id}`)}>Concluir</MobBtn>
             </div>)}
 
-          {!focus && <button type="button" className="mob-link h44" data-testid={`mob-viagem-toggle-${v.id}`} onClick={() => { setOpenTripId(isOpen ? null : v.id); setPicker(null); setConfig(null); }}>{isOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}{isOpen ? 'Ocultar' : 'Ver'} paradas e clientes ({rotas.length} parada{rotas.length === 1 ? '' : 's'} · {allClients.length} cliente{allClients.length === 1 ? '' : 's'})</button>}
+          {!focus && <button type="button" className="mob-link h44" data-testid={`mob-viagem-toggle-${v.id}`} onClick={() => { setOpenTripId(isOpen ? null : v.id); setPicker(null); setConfig(null); }}>{isOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}{isOpen ? 'Ocultar' : 'Ver'} clientes ({allClients.length})</button>}
 
           {isOpen && <div className="mob-editor" data-testid={`mob-viagem-editor-${v.id}`}>
             {editable && mfPending.length > 0 && <div className="mob-mfblock" data-testid="mob-viagem-mf-pendentes">
               <div className="mob-mfblock-head"><TriangleAlert size={18} /><b>Trocas de MF pendentes</b></div>
               {mfPending.map(m => {
                 const hit = allClients.find(c => sameName(c.name, m.customer) && c.st === 'pending');
-                const last = rotas[rotas.length - 1];
                 return <div className="mob-mfitem" key={m.id}>
                   <span><b>{m.customer}</b><small>{m.quantity} × {m.brand}{m.entry_number ? ` · da entrega Nº ${m.entry_number}` : ''}{m.due_date ? ` · prevista ${shortDate(m.due_date)}` : ''}</small></span>
-                  <MobBtn kind="warn" h={48} lead={Plus} disabled={busy} data-testid={`mob-mf-add-${m.id}`} onClick={() => scheduleMf(v, m, hit)}>{hit ? `Somar ao pedido (Parada ${pad2(hit.rota.numero)})` : `Adicionar à Parada ${pad2(last?.numero || 1)}`}</MobBtn>
+                  <MobBtn kind="warn" h={48} lead={Plus} disabled={busy} data-testid={`mob-mf-add-${m.id}`} onClick={() => scheduleMf(v, m, hit)}>{hit ? `Somar ao pedido de ${hit.name}` : 'Adicionar à rota'}</MobBtn>
                 </div>
               })}
             </div>}
 
-            {rotas.map(r => {
-              const cl = allClients.filter(c => c.rota.id === r.id);
-              const picking = picker?.viagemId === v.id && picker?.rotaId === r.id;
-              const cfg = config?.viagemId === v.id && config?.rotaId === r.id ? config : null;
-              const canRemove = editable && cl.every(c => c.st === 'pending');
+            {(() => {
+              const picking = picker?.viagemId === v.id;
+              const cfg = config?.viagemId === v.id ? config : null;
+              const cfgRota = cfg && rotas.find(x => x.id === cfg.rotaId);
               const pickRows = picking && !cfg ? customers.filter(c => !inTrip.has(c.id) && (!pq || c.name.toLowerCase().includes(pq) || (c.code || '').toLowerCase().includes(pq) || (c.address || '').toLowerCase().includes(pq))).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR')).slice(0, 20) : [];
-              return <div className="mob-rota" key={r.id} data-testid={`mob-viagem-rota-${r.id}`}>
+              const editOrder = c => { setPicker(null); setConfig({ viagemId: v.id, rotaId: c.rota.id, customer: customers.find(x => x.id === c.id) || { id: c.id, name: c.name, brands: [] }, cliente: c }); };
+              const inTripHits = pq ? allClients.filter(c => c.st === 'pending' && c.name.toLowerCase().includes(pq)) : [];
+              return <div className="mob-rota" data-testid={`mob-viagem-clientes-${v.id}`}>
                 <div className="mob-rota-head">
-                  <span className="mob-row-main"><b>Parada {pad2(r.numero)}</b><small>{cl.length} cliente{cl.length === 1 ? '' : 's'} · {cl.reduce((a, c) => a + clienteLoad(c), 0)} un</small></span>
-                  {canRemove && <button type="button" className="mob-sq" aria-label="Excluir parada" data-testid={`mob-viagem-rota-excluir-${r.id}`} onClick={() => cl.length ? setAsking(`rota:${r.id}`) : run(() => onRemoveRota(v.id, r.id), 'Não foi possível excluir a parada.')}><Trash2 size={18} /></button>}
+                  <span className="mob-row-main"><b>Clientes da rota</b><small>{allClients.length} cliente{allClients.length === 1 ? '' : 's'} · {allClients.reduce((a, c) => a + clienteLoad(c), 0)} un</small>{editable && allClients.some(c => c.st === 'pending') && allClients.length > 1 && <small>Arraste ⠿ para mudar a ordem</small>}</span>
                 </div>
-                {asking === `rota:${r.id}` && <MobileConfirm testid="mob-viagem-rota-excluir-confirm" title={`Excluir a Parada ${pad2(r.numero)}?`} text={`${cl.length} cliente(s) saem da rota.`} confirmLabel="Excluir parada" busy={busy} onCancel={() => setAsking(null)} onConfirm={() => run(async () => { await onRemoveRota(v.id, r.id); setAsking(null); }, 'Não foi possível excluir a parada.')} />}
-                {cl.map(c => <div className="mob-client" key={c.id} data-testid={`mob-viagem-rota-cliente-${c.id}`}>
-                  <span className="mob-row-main">
-                    {c.mf_swap_quantity > 0 && <span className="mob-tag swap sm"><RefreshCw size={11} />Troca MF · {c.mf_swap_quantity} un</span>}
-                    <b>{c.name}</b>
-                    <small>{pedidoItems(c).length > 1 ? pedidoLabel(c) : `${c.brand || 'sem produto'}${c.sale_type === 'full' ? ' · completo' : ' · somente água'}`}{c.out_of_catalog ? ' · produto novo p/ cliente' : ''}{c.st === 'done' ? ' · entregue' : c.st === 'failed' ? ' · não entregue' : ''}</small>
-                  </span>
-                  {editable && c.st === 'pending' && pedidoItems(c).length > 1
-                    ? <><b className="mob-locked">{Number(c.quantity) || 0} un</b><button type="button" className="mob-sq" aria-label="Editar produtos" data-testid={`mob-viagem-cliente-produtos-${c.id}`} onClick={() => { setPicker(null); setConfig({ viagemId: v.id, rotaId: r.id, customer: customers.find(x => x.id === c.id) || { id: c.id, name: c.name, brands: [] }, cliente: c }); }}><Plus size={18} /></button><button type="button" className="mob-x" aria-label="Remover cliente" data-testid={`mob-viagem-rota-cliente-remover-${c.id}`} onClick={() => run(() => onRemoveRotaCliente(v.id, r.id, c.id), 'Não foi possível remover o cliente.')}><X size={20} /></button></>
-                    : editable && c.st === 'pending'
-                    ? <>
-                      <MobileClientQty value={c.quantity} testid={`mob-viagem-cliente-edit-qty-${c.id}`} onCommit={q => run(() => onUpdateRotaCliente(v.id, r.id, c.id, { quantity: q }), 'Não foi possível salvar a quantidade.')} />
-                      <button type="button" className="mob-sq" aria-label="Editar produtos" data-testid={`mob-viagem-cliente-produtos-${c.id}`} onClick={() => { setPicker(null); setConfig({ viagemId: v.id, rotaId: r.id, customer: customers.find(x => x.id === c.id) || { id: c.id, name: c.name, brands: [] }, cliente: c }); }}><Plus size={18} /></button>
-                      <button type="button" className="mob-x" aria-label="Remover cliente" data-testid={`mob-viagem-rota-cliente-remover-${c.id}`} onClick={() => run(() => onRemoveRotaCliente(v.id, r.id, c.id), 'Não foi possível remover o cliente.')}><X size={20} /></button>
-                    </>
-                    : <b className="mob-locked">{Number(c.quantity) || 0} un</b>}
-                </div>)}
-                {picking && !cfg && <div className="mob-picker" data-testid={`mob-viagem-rota-add-cliente-form-${r.id}`}>
+                <DragList items={allClients} keyOf={c => `${c.rota.id}:${c.id}`} disabled={!editable || busy || allClients.length < 2}
+                  onReorder={keys => run(() => onReorder(v.id, keys), 'Não foi possível salvar a ordem de entrega.')}
+                  isFixed={c => c.st !== 'pending'}
+                  render={(c, i, handle) => <div className="mob-client mob-client-ord" data-testid={`mob-viagem-rota-cliente-${c.id}`}>
+                    <div className="mob-client-top">
+                      {handle || <span className="mob-drag-space" />}
+                      <span className="mob-seq" data-testid={`mob-viagem-seq-${c.id}`}>{pad2(i + 1)}</span>
+                      <b className="mob-client-name">{c.name}</b>
+                      {editable && c.st === 'pending'
+                        ? <button type="button" className="mob-x" aria-label="Remover cliente" data-testid={`mob-viagem-rota-cliente-remover-${c.id}`} onClick={() => setAsking(`rm:${c.rota.id}:${c.id}`)}><X size={20} /></button>
+                        : <b className="mob-locked">{Number(c.quantity) || 0} un</b>}
+                    </div>
+                    <small className="mob-client-sub">
+                      {c.mf_swap_quantity > 0 && <span className="mob-tag swap sm"><RefreshCw size={11} />Troca MF · {c.mf_swap_quantity} un</span>}
+                      {pedidoItems(c).length > 1 ? pedidoLabel(c) : `${c.brand || 'sem produto'}${c.sale_type === 'full' ? ' · completo' : ' · somente água'}`}{c.out_of_catalog ? ' · produto novo p/ cliente' : ''}{c.st === 'done' ? ' · entregue' : c.st === 'failed' ? ' · não entregue' : ''}
+                    </small>
+                    {editable && c.st === 'pending' && <div className="mob-client-actions">
+                      {pedidoItems(c).length > 1
+                        ? <b className="mob-locked">{Number(c.quantity) || 0} un</b>
+                        : <MobileClientQty value={c.quantity} testid={`mob-viagem-cliente-edit-qty-${c.id}`} onCommit={q => run(() => onUpdateRotaCliente(v.id, c.rota.id, c.id, { quantity: q }), 'Não foi possível salvar a quantidade.')} />}
+                      <button type="button" className="mob-link h44" aria-label="Editar produtos" data-testid={`mob-viagem-cliente-produtos-${c.id}`} onClick={() => editOrder(c)}><Plus size={18} />Produtos</button>
+                    </div>}
+                    {asking === `rm:${c.rota.id}:${c.id}` && <div className="mob-client-confirm"><MobileConfirm testid="mob-viagem-cliente-remover-confirm" title={`Tirar ${c.name} da rota?`} confirmLabel="Tirar da rota" busy={busy} onCancel={() => setAsking(null)} onConfirm={() => run(async () => { await onRemoveRotaCliente(v.id, c.rota.id, c.id); setAsking(null); }, 'Não foi possível remover o cliente.')} /></div>}
+                  </div>} />
+                {allClients.length === 0 && !editable && <p className="mob-muted pad">Rota sem clientes.</p>}
+                {picking && !cfg && <div className="mob-picker" data-testid={`mob-viagem-rota-add-cliente-form-${v.id}`}>
                   <div className="mob-picker-search">
                     <Search size={18} />
-                    <input autoFocus placeholder="Buscar cliente cadastrado" value={pickQ} data-testid="mob-viagem-client-search" onChange={e => setPickQ(e.target.value)} />
+                    <input autoFocus aria-label="Buscar cliente cadastrado" placeholder="Buscar cliente cadastrado" value={pickQ} data-testid="mob-viagem-client-search" onChange={e => setPickQ(e.target.value)} />
                     <button type="button" className="mob-link dark" data-testid="mob-viagem-client-done" onClick={() => setPicker(null)}>Pronto</button>
                   </div>
-                  {pickRows.map(c => <button type="button" className="mob-row sm pad" key={c.id} data-testid={`mob-viagem-client-${c.id}`} onClick={() => setConfig({ viagemId: v.id, rotaId: r.id, customer: c })}>
+                  {pickRows.map(c => <button type="button" className="mob-row sm pad" key={c.id} data-testid={`mob-viagem-client-${c.id}`} onClick={() => setConfig({ viagemId: v.id, rotaId: picker.rotaId, customer: c })}>
                     <span className="mob-row-main"><b>{c.name}</b><small>{brandListOf(c).map(b => b.brand).join(', ') || 'sem marca cadastrada'}{c.address ? ` · ${c.address}` : ''}</small></span>
                     <Plus size={20} />
                   </button>)}
                   {/* Quem já está na rota não aparece para adicionar de novo: o caminho é editar os produtos do pedido. */}
-                  {pq && allClients.filter(c => c.st === 'pending' && c.name.toLowerCase().includes(pq)).map(c => <button type="button" className="mob-row sm pad" key={`in-${c.id}`} data-testid={`mob-viagem-client-in-trip-${c.id}`} onClick={() => setConfig({ viagemId: v.id, rotaId: c.rota.id, customer: customers.find(x => x.id === c.id) || { id: c.id, name: c.name, brands: [] }, cliente: c })}>
-                    <span className="mob-row-main"><b>{c.name}</b><small>Já está na Parada {pad2(c.rota.numero)} · {pedidoLabel(c)} — toque para adicionar produtos</small></span>
+                  {inTripHits.map(c => <button type="button" className="mob-row sm pad" key={`in-${c.id}`} data-testid={`mob-viagem-client-in-trip-${c.id}`} onClick={() => editOrder(c)}>
+                    <span className="mob-row-main"><b>{c.name}</b><small>Já está na rota · {pedidoLabel(c)} — toque para adicionar produtos</small></span>
                     <Pencil size={18} />
                   </button>)}
-                  {pickRows.length === 0 && !(pq && allClients.some(c => c.st === 'pending' && c.name.toLowerCase().includes(pq))) && <p className="mob-muted pad">Nenhum cliente encontrado.</p>}
+                  {pickRows.length === 0 && inTripHits.length === 0 && <p className="mob-muted pad">Nenhum cliente encontrado.</p>}
                 </div>}
-                {cfg && <MobileProductConfig key={cfg.cliente ? `edit-${cfg.cliente.id}` : cfg.customer.id} customer={cfg.customer} rotaNumero={r.numero} brandsCatalog={brandsCatalog} busy={busy} initialItems={cfg.cliente ? pedidoItems(cfg.cliente) : undefined} onCancel={() => setConfig(null)}
+                {cfg && cfgRota && <MobileProductConfig key={cfg.cliente ? `edit-${cfg.cliente.id}` : cfg.customer.id} customer={cfg.customer} brandsCatalog={brandsCatalog} busy={busy} initialItems={cfg.cliente ? pedidoItems(cfg.cliente) : undefined} onCancel={() => setConfig(null)}
                   onConfirm={cliente => cfg.cliente
-                    ? run(async () => { await onUpdateRotaCliente(v.id, r.id, cfg.cliente.id, { items: cliente.items }); setConfig(null); toast(`Pedido de ${cfg.cliente.name} atualizado.`); }, 'Não foi possível salvar os produtos.')
-                    : addCliente(v, r, cliente)} />}
-                {editable && !picking && !cfg && <button type="button" className="mob-link dark h52 pad" data-testid={`mob-viagem-rota-add-cliente-${r.id}`} onClick={() => openPicker(v.id, r.id)}><UserPlus size={18} />Adicionar cliente</button>}
-              </div>
-            })}
-            {rotas.length === 0 && !editable && <p className="mob-muted pad">Rota sem paradas.</p>}
-            {editable && <button type="button" className="mob-dashed" disabled={busy} data-testid={`mob-viagem-rota-add-${v.id}`} onClick={() => addRota(v)}><Plus size={18} />Nova parada</button>}
+                    ? run(async () => { await onUpdateRotaCliente(v.id, cfgRota.id, cfg.cliente.id, { items: cliente.items }); setConfig(null); toast(`Pedido de ${cfg.cliente.name} atualizado.`); }, 'Não foi possível salvar os produtos.')
+                    : addCliente(v, cfgRota, cliente)} />}
+                {editable && !picking && !cfg && <button type="button" className="mob-link dark h52 pad" data-testid={`mob-viagem-rota-add-cliente-${v.id}`} onClick={() => openAdd(v)}><UserPlus size={18} />Adicionar cliente</button>}
+              </div>;
+            })()}
           </div>}
           {focus && <MobBtn kind="outline" h={52} icon={Check} data-testid="mob-viagem-focus-done" onClick={closeFocus}>Pronto — ver todas as rotas</MobBtn>}
         </div>
@@ -2618,9 +2739,9 @@ function MobileDiarioTab({ entries, date }) {
   const totals = todays.reduce((s, e) => ({ qty: s.qty + Number(e.billed_quantity || 0), pix: s.pix + Number(e.pix_value || 0), cash: s.cash + Number(e.cash_value || 0), mf: s.mf + Number(e.mf_quantity || 0) }), { qty: 0, pix: 0, cash: 0, mf: 0 });
   const mfDetail = e => e.mf_plan === 'swap' ? 'trocado' : e.mf_plan === 'refused' ? 'cliente não quis' : (e.mf_date || '');
   return <>
-    {rotaOptions.length > 0 && <label className="mob-field"><b className="mob-label">Filtrar por parada</b>
+    {rotaOptions.length > 0 && <label className="mob-field"><b className="mob-label">Filtrar por rota</b>
       <select className="mob-input" value={rotaFilter} data-testid="mob-diario-viagem-filter" onChange={e => setRotaFilter(e.target.value)}>
-        <option value="">Todas as paradas de hoje</option>
+        <option value="">Todas as rotas de hoje</option>
         {rotaOptions.map(e => <option key={e.rota_codigo} value={e.rota_codigo}>{e.rota_codigo}</option>)}
       </select>
     </label>}
@@ -2666,7 +2787,7 @@ function MobileCaixaTab({ entries, expenses, expensesTotal, viagens, date, pendi
   for (const v of (viagens || [])) viagemInfo[v.id] = v;
   const viagemOptions = (viagens || []).filter(v => todaysAll.some(e => e.viagem_id === v.id));
   const porRota = {};
-  for (const e of todays) { const k = e.rota_codigo || 'Sem parada'; porRota[k] = (porRota[k] || 0) + Number(e.pix_value || 0) + Number(e.cash_value || 0); }
+  for (const e of todays) { const k = e.rota_codigo || 'Sem rota'; porRota[k] = (porRota[k] || 0) + Number(e.pix_value || 0) + Number(e.cash_value || 0); }
   const rotaInfo = {};
   for (const v of (viagens || [])) for (const r of (v.rotas || [])) rotaInfo[r.codigo_rota] = { ...r, viagem: v };
   const rotas = Object.keys(porRota).sort((a, b) => (rotaInfo[a]?.numero || 0) - (rotaInfo[b]?.numero || 0));
@@ -2699,10 +2820,10 @@ function MobileCaixaTab({ entries, expenses, expensesTotal, viagens, date, pendi
       <span className="mob-muted">{cashInHand < 0 ? 'As despesas passaram do dinheiro recebido' : 'Dinheiro recebido menos as despesas'} · o Pix já está na conta</span>
     </section>
     {rotas.length > 0 && <section className="mob-list">
-      <div className="mob-sec-head"><b>Resumo por parada</b><b>{rotas.length}</b></div>
+      <div className="mob-sec-head"><b>Resumo por rota</b><b>{rotas.length}</b></div>
       {rotas.map(codigo => { const info = rotaInfo[codigo]; return <div className="mob-cash-row" key={codigo} data-testid={`mob-cash-rota-${codigo}`}>
         <Truck size={22} />
-        <span className="mob-row-main"><b>{info ? `${TURNO_LABELS[info.viagem.turno]} · Rota ${info.viagem.numero} · Parada ${pad2(info.numero)}` : codigo}</b><small>Pix + dinheiro</small></span>
+        <span className="mob-row-main"><b>{info ? `${TURNO_LABELS[info.viagem.turno]} · Rota ${info.viagem.numero}${(info.viagem.rotas || []).length > 1 ? ` · grupo ${pad2(info.numero)}` : ''}` : codigo}</b><small>Pix + dinheiro</small></span>
         <b>{money(porRota[codigo])}</b>
       </div> })}
     </section>}
@@ -2882,11 +3003,12 @@ function DriverMobileApp({ user, customers, onLogout }) {
   const dayClosed = !!dayClosure?.closed;
 
   const entriesDaViagem = entries.filter(e => e.viagem_id === viagemAtiva?.id);
-  const stops = (viagemAtiva?.rotas || []).flatMap(r => (r.clientes || []).map((c, i) => {
+  const stops = orderedClients(viagemAtiva).map(({ c, r }, i) => {
     const entry = entriesDaViagem.find(e => entryOfStop(e, r.id, c.name));
     const customer = customers.find(x => x.id === c.id) || customers.find(x => sameName(x.name, c.name));
     return { ...c, key: `${r.id}:${c.id}`, rota_id: r.id, rota_numero: r.numero, seq: i + 1, customer, entry, address: customer?.address || '', prazo: customer?.payment_type === 'prazo', status: entry ? 'done' : c.status === 'nao_entregue' ? 'failed' : 'pending' };
-  }));
+  });
+  doneFirst(stops, s => s.status !== 'pending').forEach((s, i) => { s.seq = i + 1; });
   const pendingStops = stops.filter(s => s.status === 'pending');
   const launchStop = launchKey ? stops.find(s => s.key === launchKey && s.status !== 'done') : null;
   const q = search.trim().toLowerCase();
@@ -2901,6 +3023,10 @@ function DriverMobileApp({ user, customers, onLogout }) {
   async function addRotaCliente(viagemId, rotaId, cliente) { const { data } = await api.post(`/viagens/${viagemId}/rotas/${rotaId}/clientes`, cliente, auth()); await loadViagens(); return data; }
   async function updateRotaCliente(viagemId, rotaId, clienteId, changes) { const { data } = await api.patch(`/viagens/${viagemId}/rotas/${rotaId}/clientes/${clienteId}`, changes, auth()); await loadViagens(); return data; }
   async function removeRotaCliente(viagemId, rotaId, clienteId) { const { data } = await api.delete(`/viagens/${viagemId}/rotas/${rotaId}/clientes/${clienteId}`, auth()); await Promise.all([loadViagens(), loadMfPending()]); return data; }
+  async function reorderClientes(viagemId, keys) {
+    const clientes = keys.map(k => { const [rota_id, id] = k.split(':'); return { rota_id, id }; });
+    await api.post(`/viagens/${viagemId}/ordem`, { clientes }, auth()); await loadViagens();
+  }
   async function removeRota(viagemId, rotaId) { const { data } = await api.delete(`/viagens/${viagemId}/rotas/${rotaId}`, auth()); await Promise.all([loadViagens(), loadMfPending()]); return data; }
   async function scheduleMf(viagemId, rotaId, movementId) { const { data } = await api.post(`/viagens/${viagemId}/rotas/${rotaId}/mf-troca`, { movement_id: movementId }, auth()); await Promise.all([loadViagens(), loadMfPending()]); return data; }
 
@@ -2965,7 +3091,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
     <div className="mob-body">
       <main className="mob-main"><div className="mob-col">
         {tab === 'rota' && <MobileRotaTab viagemAtiva={viagemAtiva} viagens={viagensComProgresso} stops={stops} entries={entries} date={date} search={search} setSearch={setSearch} mfPending={mfPending} viagensPresas={viagensPresas} onFinalizarPresa={finishTrip} dayClosed={dayClosed} onOpenStop={openStop} onOpenViagens={openViagens} onStartTrip={startTrip} onFinishTrip={finishTrip} offRoute={offRoute} onPickOffRoute={pickOffRoute} onReceipt={setReceiptEntry} onEditEntry={setEditingEntry} onDeleteEntry={deleteEntry} onIncludeMf={includeMf} />}
-        {tab === 'viagens' && <MobileViagensScreen viagens={viagensComProgresso} customers={customers} entries={entries} mfPending={mfPending} dayClosed={dayClosed} viagemAtiva={viagemAtiva} openTripId={openTripId} setOpenTripId={setOpenTripId} onBack={() => setTab('rota')} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} onAddRota={addRota} onAddRotaCliente={addRotaCliente} onUpdateRotaCliente={updateRotaCliente} onRemoveRotaCliente={removeRotaCliente} onRemoveRota={removeRota} onScheduleMf={scheduleMf} toast={showToast} />}
+        {tab === 'viagens' && <MobileViagensScreen viagens={viagensComProgresso} customers={customers} entries={entries} mfPending={mfPending} dayClosed={dayClosed} viagemAtiva={viagemAtiva} openTripId={openTripId} setOpenTripId={setOpenTripId} onBack={() => setTab('rota')} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} onAddRota={addRota} onAddRotaCliente={addRotaCliente} onUpdateRotaCliente={updateRotaCliente} onRemoveRotaCliente={removeRotaCliente} onRemoveRota={removeRota} onReorder={reorderClientes} onScheduleMf={scheduleMf} toast={showToast} />}
         {tab === 'diario' && <MobileDiarioTab entries={entries} date={date} />}
         {tab === 'caixa' && <MobileCaixaTab entries={entries} expenses={todaysExpenses} expensesTotal={expensesTotal} viagens={viagensComProgresso} date={date} pendingStops={pendingStops.length} onCloseDay={closeDay} onOpenViagens={openViagens} dayClosed={dayClosed} closingDay={closingDay} />}
         {tab === 'despesas' && <MobileDespesasTab user={user} date={date} viagens={viagensComProgresso} viagemAtiva={viagemAtiva} onOpenViagens={openViagens} dayClosed={dayClosed} toast={showToast} />}
