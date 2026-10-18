@@ -2341,10 +2341,12 @@ function MobileClientQty({ value, onCommit, testid }) {
   return <input className="mob-qty-input" type="number" inputMode="numeric" min="0" aria-label="Quantidade" value={draft} data-testid={testid} onChange={e => setDraft(onlyDigits(e.target.value, 3))} onFocus={e => e.target.select()} onBlur={commit} />
 }
 
-function MobileProductConfig({ customer, rotaNumero, brandsCatalog, busy, onCancel, onConfirm }) {
+// Pedido do cliente na parada. Com initialItems edita o pedido de quem já está na parada.
+function MobileProductConfig({ customer, rotaNumero, brandsCatalog, busy, initialItems, onCancel, onConfirm }) {
+  const editing = !!initialItems;
   const prefs = brandListOf(customer);
   const others = brandsCatalog.filter(b => !prefs.some(p => sameName(p.brand, b.name)));
-  const [brand, setBrand] = useState(prefs[0]?.brand || '');
+  const [brand, setBrand] = useState(editing ? '' : prefs[0]?.brand || '');
   const [showOther, setShowOther] = useState(prefs.length === 0);
   const [qty, setQty] = useState('');
   const [full, setFull] = useState(false);
@@ -2355,7 +2357,7 @@ function MobileProductConfig({ customer, rotaNumero, brandsCatalog, busy, onCanc
   const priceLabel = b => b.price != null ? `${money(b.price)} somente água${b.price_full ? ` · ${money(b.price_full)} completo` : ''}` : 'preço informado na entrega';
   const pick = name => { setBrand(name); const s = prefs.find(p => sameName(p.brand, name)) || others.find(b => sameName(b.name, name)); if (!(s && Number(s.price_full) > 0)) setFull(false); };
   const n = Number(qty) || 1;
-  const [added, setAdded] = useState([]);
+  const [added, setAdded] = useState(initialItems || []);
   const current = () => ({ brand, quantity: n, sale_type: full && hasFull ? 'full' : 'exchange', out_of_catalog: !pref, price: sel?.price ?? undefined, price_full: sel?.price_full ?? undefined });
   const items = brand ? mergeItem(added, current()) : added;
   const totalQty = items.reduce((a, i) => a + Number(i.quantity), 0);
@@ -2370,7 +2372,7 @@ function MobileProductConfig({ customer, rotaNumero, brandsCatalog, busy, onCanc
   }
   return <div className="mob-config" data-testid="mob-viagem-client-config">
     <div className="mob-config-head">
-      <span><span className="mob-eyebrow">Adicionar à Parada {pad2(rotaNumero)}</span><b>{customer.name}</b></span>
+      <span><span className="mob-eyebrow">{editing ? `Produtos · Parada ${pad2(rotaNumero)}` : `Adicionar à Parada ${pad2(rotaNumero)}`}</span><b>{customer.name}</b></span>
       <button type="button" className="mob-link dark" data-testid="mob-viagem-client-cancel" onClick={onCancel}>Cancelar</button>
     </div>
     <div className="mob-field">
@@ -2392,8 +2394,8 @@ function MobileProductConfig({ customer, rotaNumero, brandsCatalog, busy, onCanc
     {added.length > 0 && <div className="mob-field"><b className="mob-label">Já no pedido</b>
       <div className="mob-chips">{added.map(i => <span className="mob-chip" key={`${i.brand}-${i.sale_type}`} data-testid={`mob-viagem-client-item-${i.brand}`}>{i.quantity} × {i.brand}{i.sale_type === 'full' ? ' · completo' : ''}<button type="button" aria-label="Tirar produto do pedido" onClick={() => setAdded(prev => prev.filter(x => x !== i))}><X size={14} /></button></span>)}</div>
     </div>}
-    <button type="button" className="mob-link h48" disabled={!brand} data-testid="mob-viagem-client-more" onClick={addMore}><Plus size={16} />{brand ? `Incluir ${n} × ${brand} e escolher outro produto` : 'Escolha um produto para incluir outro'}</button>
-    <MobBtn h={56} icon={Check} disabled={!items.length || busy} data-testid="mob-viagem-client-confirm" onClick={confirm}>{!items.length ? 'Escolha o produto' : items.length === 1 ? `Adicionar ${items[0].quantity} × ${items[0].brand}` : `Adicionar ${items.length} produtos · ${totalQty} un`}</MobBtn>
+    <MobBtn kind="outline" h={52} lead={Plus} disabled={!brand} data-testid="mob-viagem-client-more" onClick={addMore}>{brand ? `Incluir ${n} × ${brand} e adicionar outro produto` : 'Escolha acima o próximo produto'}</MobBtn>
+    <MobBtn h={56} icon={Check} disabled={!items.length || busy} data-testid="mob-viagem-client-confirm" onClick={confirm}>{!items.length ? 'Escolha o produto' : editing ? `Salvar pedido · ${totalQty} un` : items.length === 1 ? `Adicionar ${items[0].quantity} × ${items[0].brand}` : `Adicionar ${items.length} produtos · ${totalQty} un`}</MobBtn>
   </div>
 }
 
@@ -2564,10 +2566,11 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
                     <small>{pedidoItems(c).length > 1 ? pedidoLabel(c) : `${c.brand || 'sem produto'}${c.sale_type === 'full' ? ' · completo' : ' · somente água'}`}{c.out_of_catalog ? ' · produto novo p/ cliente' : ''}{c.st === 'done' ? ' · entregue' : c.st === 'failed' ? ' · não entregue' : ''}</small>
                   </span>
                   {editable && c.st === 'pending' && pedidoItems(c).length > 1
-                    ? <><b className="mob-locked">{Number(c.quantity) || 0} un</b><button type="button" className="mob-x" aria-label="Remover cliente" data-testid={`mob-viagem-rota-cliente-remover-${c.id}`} onClick={() => run(() => onRemoveRotaCliente(v.id, r.id, c.id), 'Não foi possível remover o cliente.')}><X size={20} /></button></>
+                    ? <><b className="mob-locked">{Number(c.quantity) || 0} un</b><button type="button" className="mob-sq" aria-label="Editar produtos" data-testid={`mob-viagem-cliente-produtos-${c.id}`} onClick={() => { setPicker(null); setConfig({ viagemId: v.id, rotaId: r.id, customer: customers.find(x => x.id === c.id) || { id: c.id, name: c.name, brands: [] }, cliente: c }); }}><Plus size={18} /></button><button type="button" className="mob-x" aria-label="Remover cliente" data-testid={`mob-viagem-rota-cliente-remover-${c.id}`} onClick={() => run(() => onRemoveRotaCliente(v.id, r.id, c.id), 'Não foi possível remover o cliente.')}><X size={20} /></button></>
                     : editable && c.st === 'pending'
                     ? <>
                       <MobileClientQty value={c.quantity} testid={`mob-viagem-cliente-edit-qty-${c.id}`} onCommit={q => run(() => onUpdateRotaCliente(v.id, r.id, c.id, { quantity: q }), 'Não foi possível salvar a quantidade.')} />
+                      <button type="button" className="mob-sq" aria-label="Editar produtos" data-testid={`mob-viagem-cliente-produtos-${c.id}`} onClick={() => { setPicker(null); setConfig({ viagemId: v.id, rotaId: r.id, customer: customers.find(x => x.id === c.id) || { id: c.id, name: c.name, brands: [] }, cliente: c }); }}><Plus size={18} /></button>
                       <button type="button" className="mob-x" aria-label="Remover cliente" data-testid={`mob-viagem-rota-cliente-remover-${c.id}`} onClick={() => run(() => onRemoveRotaCliente(v.id, r.id, c.id), 'Não foi possível remover o cliente.')}><X size={20} /></button>
                     </>
                     : <b className="mob-locked">{Number(c.quantity) || 0} un</b>}
@@ -2584,7 +2587,10 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
                   </button>)}
                   {pickRows.length === 0 && <p className="mob-muted pad">Nenhum cliente encontrado.</p>}
                 </div>}
-                {cfg && <MobileProductConfig key={cfg.customer.id} customer={cfg.customer} rotaNumero={r.numero} brandsCatalog={brandsCatalog} busy={busy} onCancel={() => setConfig(null)} onConfirm={cliente => addCliente(v, r, cliente)} />}
+                {cfg && <MobileProductConfig key={cfg.cliente ? `edit-${cfg.cliente.id}` : cfg.customer.id} customer={cfg.customer} rotaNumero={r.numero} brandsCatalog={brandsCatalog} busy={busy} initialItems={cfg.cliente ? pedidoItems(cfg.cliente) : undefined} onCancel={() => setConfig(null)}
+                  onConfirm={cliente => cfg.cliente
+                    ? run(async () => { await onUpdateRotaCliente(v.id, r.id, cfg.cliente.id, { items: cliente.items }); setConfig(null); toast(`Pedido de ${cfg.cliente.name} atualizado.`); }, 'Não foi possível salvar os produtos.')
+                    : addCliente(v, r, cliente)} />}
                 {editable && !picking && !cfg && <button type="button" className="mob-link dark h52 pad" data-testid={`mob-viagem-rota-add-cliente-${r.id}`} onClick={() => openPicker(v.id, r.id)}><UserPlus size={18} />Adicionar cliente</button>}
               </div>
             })}
