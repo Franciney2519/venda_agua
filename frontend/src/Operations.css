@@ -681,3 +681,9 @@ body.drag-active, body.drag-active *{user-select:none;-webkit-user-select:none}
 
 /* overflow:hidden faria o cartão da rota virar o contêiner do sticky; clip só recorta os cantos */
 .mob-rota{overflow:clip}
+
+/* rotas concluídas do dia (consulta) */
+.mob-done-head{width:100%;text-align:left;background:none;border:0;color:inherit}
+.mob-done-list{display:flex;flex-direction:column;gap:4px;padding:0 12px 12px}
+.mob-done-sub{padding-left:32px}
+.mob-done-total{display:flex;justify-content:space-between;align-items:center;gap:8px;padding-top:8px;border-top:1px solid var(--divider)}

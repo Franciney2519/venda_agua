@@ -37,7 +37,7 @@ def test_swap_blocked_when_route_uses_whole_load_and_reschedule_reminds(c):
     row = next(p for p in pend if p["customer"] == custs[0]["name"])
     assert row["brand"] == "Agua MF1" and row["quantity"] == 1 and row["due_date"] == e["mf_due_date"]
     assert c.get("/api/mf-pendentes", headers={"Authorization": "Bearer x"}).status_code == 401
-    assert c.post(f"/api/viagens/{v['id']}/finalizar", headers=D).status_code == 200
+    assert c.post(f"/api/viagens/{v['id']}/finalizar", headers=A).status_code == 200
 
 
 def test_swap_allowed_with_spare_and_stock_accounting(c):
