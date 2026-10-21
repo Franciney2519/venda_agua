@@ -1317,7 +1317,7 @@ function AdminPedidoForm({ customer, brandsCatalog, initialItems, busy, confirmL
       <label>Tipo<select value={saleType} data-testid="admin-pedido-type" onChange={e => setSaleType(e.target.value)}><option value="exchange">Somente água</option>{hasFull && <option value="full">Completo</option>}</select></label>
     </div>
     <div className="row-actions"><button type="button" className="ghost-btn" disabled={!opt} data-testid="admin-pedido-add" onClick={add}><Plus size={14} /> Incluir produto</button></div>
-    {items.length > 0 && <div className="row-actions" style={{ flexWrap: 'wrap' }}>{items.map(i => <span className="tag gray" key={`${i.brand}-${i.sale_type}`}>{i.quantity} × {i.brand}{i.sale_type === 'full' ? ' completo' : ''}{i.out_of_catalog ? ' · novo' : ''} <button type="button" aria-label="Tirar produto" style={{ marginLeft: 4 }} onClick={() => setItems(prev => prev.filter(x => x !== i))}><X size={12} /></button></span>)}</div>}
+    {items.length > 0 && <div className="pedido-chips"><small className="muted">Pedido:</small>{items.map(i => <span className="tag blue" key={`${i.brand}-${i.sale_type}`}>{i.quantity} × {i.brand}{i.sale_type === 'full' ? ' completo' : ''}{i.out_of_catalog ? ' · novo' : ''}<button type="button" aria-label="Tirar produto" onClick={() => setItems(prev => prev.filter(x => x !== i))}><X size={12} /></button></span>)}</div>}
     <div className="row-actions">
       <button type="button" className="primary" disabled={!items.length || busy} data-testid="admin-pedido-confirm" onClick={() => onConfirm(items)}><Check size={14} /> {confirmLabel}{items.length ? ` · ${total} un` : ''}</button>
       <button type="button" className="ghost-btn" onClick={onCancel}>Cancelar</button>
@@ -1381,8 +1381,8 @@ function AdminTripEditor({ v, customers, drivers, brandsCatalog, onSaved }) {
           }} />
         {list.length === 0 && <p className="muted" style={{ marginTop: 8 }}>Nenhum cliente ainda.</p>}
         {adding
-          ? <div style={{ marginTop: 10 }}>
-            <label className="muted" style={{ display: 'block', marginBottom: 6 }}>Cliente</label>
+          ? <div className="admin-add-box">
+            <span className="field-label">Cliente</span>
             <CustomerCombobox customers={customers.filter(c => !inTrip.has(c.id))} value={pickName} onPick={setPickName} testId={`admin-cliente-busca-${v.id}`} />
             {picked
               ? <AdminPedidoForm key={picked.id} customer={picked} brandsCatalog={brandsCatalog} busy={busy} confirmLabel="Adicionar cliente" onCancel={() => setAdding(null)} onConfirm={items => run(async () => { const rid = await targetId(); await api.post(`${base}/rotas/${rid}/clientes`, toPayload(picked, items), auth()); }, 'Não foi possível adicionar o cliente.').then(ok => ok && setPickName(''))} />

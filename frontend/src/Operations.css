@@ -687,3 +687,21 @@ body.drag-active, body.drag-active *{user-select:none;-webkit-user-select:none}
 .mob-done-list{display:flex;flex-direction:column;gap:4px;padding:0 12px 12px}
 .mob-done-sub{padding-left:32px}
 .mob-done-total{display:flex;justify-content:space-between;align-items:center;gap:8px;padding-top:8px;border-top:1px solid var(--divider)}
+
+/* editor de rota do admin: busca de cliente e pedido */
+.combobox input{width:100%;padding:11px;border:1px solid var(--line);border-radius:5px;font-size:13px;background:#fff;color:var(--ink)}
+.combobox input::placeholder{color:#8b9cad}
+.combobox input:focus,.os-form input:focus,.os-form select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(8,120,209,.18)}
+.app-shell.dark .combobox input{background:#15293c;border-color:var(--line);color:var(--ink)}
+.app-shell.dark .combobox input::placeholder{color:#7c93aa}
+/* listas suspensas nativas abrem no tema do painel, com seta própria */
+.app-shell.dark{color-scheme:dark}
+.app-shell.dark select option{background:#15293c;color:var(--ink)}
+.os-form select,.app-shell.dark .os-form select{appearance:none;-webkit-appearance:none;cursor:pointer;padding-right:34px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b9cad' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
+.os-form select:disabled{cursor:not-allowed;opacity:.7}
+.admin-add-box{margin-top:12px;padding:14px;border:1px dashed var(--line);border-radius:8px;background:rgba(8,120,209,.04)}
+.admin-add-box>.field-label{display:block;margin-bottom:6px;font-size:11px;font-weight:700;color:#8b9cad}
+.pedido-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pedido-chips .tag{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:6px 6px 6px 10px}
+.pedido-chips .tag button{display:inline-grid;place-items:center;width:18px;height:18px;border:0;border-radius:50%;background:transparent;color:inherit;cursor:pointer}
+.pedido-chips .tag button:hover{background:rgba(213,78,78,.15);color:var(--red)}
