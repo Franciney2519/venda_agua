@@ -13,8 +13,13 @@ import csv, io
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
-client = AsyncIOMotorClient(os.environ["MONGO_URL"])
-db = client[os.environ["DB_NAME"]]
+# Com DATABASE_URL (Postgres/Lakebase) os dados vão para o Postgres; sem ela, continua no MongoDB.
+if os.environ.get("DATABASE_URL"):
+    from pgdoc import PgDatabase
+    client = db = PgDatabase(os.environ["DATABASE_URL"], schema=os.environ.get("PG_SCHEMA", "public"))
+else:
+    client = AsyncIOMotorClient(os.environ["MONGO_URL"])
+    db = client[os.environ["DB_NAME"]]
 app = FastAPI(title="Distribuidora Diane API")
 api = APIRouter(prefix="/api")
 JWT_ALGORITHM = "HS256"
@@ -1915,4 +1920,6 @@ app.include_router(api)
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=[os.environ["FRONTEND_URL"]], allow_methods=["*"], allow_headers=["*"])
 logging.basicConfig(level=logging.INFO)
 @app.on_event("shutdown")
-async def shutdown(): client.close()
+async def shutdown():
+    closing = client.close()  # Motor fecha na hora; o Postgres fecha o pool de forma assíncrona
+    if asyncio.iscoroutine(closing): await closing
