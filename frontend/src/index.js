@@ -21,3 +21,10 @@ root.render(
     </QueryClientProvider>
   </React.StrictMode>,
 );
+
+// Permite instalar o app no celular. Só no build publicado: em desenvolvimento o cache atrapalharia.
+if (process.env.NODE_ENV === "production" && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => { /* sem service worker o site segue funcionando */ });
+  });
+}
