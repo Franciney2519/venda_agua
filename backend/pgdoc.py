@@ -323,7 +323,9 @@ class Collection:
         else:
             cols = ", ".join(f"((doc->>'{f}') COLLATE \"C\")" for f in fields)
         async with self._db.acquire(self.name) as conn:
-            await conn.execute(f"CREATE {'UNIQUE ' if unique else ''}INDEX IF NOT EXISTS {_ident(name)} ON {self._table} ({cols})")
+            # Índice que já existe não passa por DDL, que exige ser dono da tabela.
+            if not await conn.fetchval("SELECT to_regclass($1) IS NOT NULL", f"{_ident(self._db.schema)}.{_ident(name)}"):
+                await conn.execute(f"CREATE {'UNIQUE ' if unique else ''}INDEX IF NOT EXISTS {_ident(name)} ON {self._table} ({cols})")
         return name
 
 
@@ -381,6 +383,10 @@ class PgDatabase:
     async def _ensure_table(self, conn, name):
         if name in self._tables: return
         table = f"{_ident(self.schema)}.{_ident(name)}"
+        # Tabela que já existe não passa por DDL: o usuário do app pode não ser dono dela (ex.: criada na migração).
+        if await conn.fetchval("SELECT to_regclass($1) IS NOT NULL", table):
+            self._tables.add(name)
+            return
         async with conn.transaction():
             # Trava para dois processos não criarem a mesma tabela ao mesmo tempo.
             await conn.execute("SELECT pg_advisory_xact_lock(hashtext('pgdoc-ddl'))")
