@@ -712,3 +712,8 @@ body.drag-active, body.drag-active *{user-select:none;-webkit-user-select:none}
 .mob-stats3.mob-stats4{grid-template-columns:repeat(2,minmax(0,1fr))}.mob-stats4>div:nth-child(2n){border-right:0}.mob-stats4>div:nth-child(-n+2){border-bottom:1px solid var(--divider)}
 /* Botão fixo de confirmar pedido: respiro para o último cartão não ficar escondido atrás dele. */
 .mob-sticky-cta{margin-top:calc(16px * var(--s))}.mob-main{scroll-padding-bottom:calc(88px * var(--s))}
+
+/* Barra de abas em tela baixa (celular deitado): o ícone não pode encolher até sumir. */
+.mob-bottom-nav button svg{flex:none}
+/* Aviso sobe para baixo do cabeçalho: no rodapé cobria o botão "Encerrar rota". */
+.mob-toast{bottom:auto;top:calc(72px * var(--s))}

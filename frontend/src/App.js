@@ -957,9 +957,9 @@ function ActivityPage() {
   async function load() { const { data } = await api.get('/activity', auth()); setItems(data); }
   useEffect(() => { load().catch(() => setItems([])); }, []);
   useAutoRefresh(load);
-  const labels = { signup: 'Cadastro recebido', user_created: 'Usuário criado', user_approved: 'Usuário aprovado', user_rejected: 'Usuário reprovado', user_updated: 'Usuário editado', user_deleted: 'Usuário excluído', password_reset: 'Senha redefinida', expense_approved: 'Despesa aprovada', expense_rejected: 'Despesa reprovada', expense_pending: 'Despesa reaberta', daily_closing_closed: 'Dia fechado', daily_closing_reopened: 'Dia reaberto' };
-  const tones = { user_approved: 'green', expense_approved: 'green', daily_closing_closed: 'green', user_rejected: 'red', expense_rejected: 'red', user_deleted: 'red', user_created: 'blue', signup: 'blue', password_reset: 'orange', daily_closing_reopened: 'orange', user_updated: 'gray', expense_pending: 'gray' };
-  return <><Head eyebrow="AUDITORIA" title="Atividade" subtitle="Todas as ações do administrador em ordem cronológica." />
+  const labels = { signup: 'Cadastro recebido', user_created: 'Usuário criado', user_approved: 'Usuário aprovado', user_rejected: 'Usuário reprovado', user_updated: 'Usuário editado', user_deleted: 'Usuário excluído', password_reset: 'Senha redefinida', expense_approved: 'Despesa aprovada', expense_rejected: 'Despesa reprovada', expense_pending: 'Despesa reaberta', daily_closing_closed: 'Dia fechado', daily_closing_reopened: 'Dia reaberto', viagem_criada: 'Rota criada', viagem_iniciada: 'Rota iniciada', viagem_finalizada: 'Rota encerrada', entrega_lancada: 'Entrega lançada', entrega_excluida: 'Entrega excluída', despesa_lancada: 'Despesa lançada', despesa_excluida: 'Despesa excluída', stock_adjusted: 'Estoque ajustado', lot_created: 'Lote criado', lot_deleted: 'Lote excluído' };
+  const tones = { user_approved: 'green', expense_approved: 'green', daily_closing_closed: 'green', user_rejected: 'red', expense_rejected: 'red', user_deleted: 'red', user_created: 'blue', signup: 'blue', password_reset: 'orange', daily_closing_reopened: 'orange', user_updated: 'gray', expense_pending: 'gray', viagem_criada: 'blue', viagem_iniciada: 'blue', viagem_finalizada: 'green', entrega_lancada: 'green', despesa_lancada: 'orange', entrega_excluida: 'red', despesa_excluida: 'red', lot_deleted: 'red', lot_created: 'blue', stock_adjusted: 'orange' };
+  return <><Head eyebrow="AUDITORIA" title="Atividade" subtitle="Ações do administrador e dos entregadores, em ordem cronológica." />
     <section className="panel activity-panel"><ul className="activity-list" data-testid="activity-list">
       {items.length === 0 && <li className="muted" style={{ padding: 20 }}>Nenhuma atividade registrada ainda.</li>}
       {items.map(a => <li key={a.id} data-testid={`activity-${a.id}`}><span className={`activity-dot tag ${tones[a.action] || 'gray'}`}>●</span>
@@ -1029,7 +1029,7 @@ function DailyClosing() {
     {error && <div className="error" style={{ marginBottom: 16 }} data-testid="closing-error">{error}</div>}
     <div className="stats">
       <Stat label="Receita bruta" value={money(totals.revenue)} detail="Total das entregas, incluindo a prazo" Icon={CircleDollarSign} tone="green" />
-      <Stat label="Despesas aprovadas" value={money(totals.expenses_approved)} detail="Só as já aprovadas pelo admin" Icon={Wallet} tone="orange" />
+      <Stat label="Despesas aprovadas" value={money(totals.expenses_approved)} detail="As do entregador entram aprovadas; ficam de fora as recusadas ou reabertas pelo admin" Icon={Wallet} tone="orange" />
       <Stat label="Saldo líquido" value={money(totals.balance)} detail="Receita bruta − despesas aprovadas" Icon={ArrowUpRight} tone="" />
       <Stat label="Lançamentos" value={totals.deliveries_total || 0} detail="Registrados no Controle Diário" Icon={Truck} />
     </div>
@@ -1352,7 +1352,7 @@ function AdminTripEditor({ v, customers, drivers, brandsCatalog, onSaved }) {
         {!drivers.some(d => d.name === v.driver) && <option value={v.driver}>{v.driver}</option>}
         {drivers.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
       </select></label>
-      <label className="os-field-narrow">Carga total<input type="number" value={carga} data-testid="admin-trip-carga" onChange={e => setCarga(e.target.value)} onBlur={() => { if (String(carga) !== String(v.carga_total ?? '')) run(() => api.patch(base, { carga_total: carga === '' ? null : Number(carga) }, auth()), 'Não foi possível salvar a carga.'); }} /></label>
+      {v.carga_items?.length ? <label className="os-field-narrow">Carga total<input type="number" value={v.carga_total ?? ''} disabled title="Soma da carga por produto" data-testid="admin-trip-carga" /></label> : <label className="os-field-narrow">Carga total<input type="number" value={carga} data-testid="admin-trip-carga" onChange={e => setCarga(e.target.value)} onBlur={() => { if (String(carga) !== String(v.carga_total ?? '')) run(() => api.patch(base, { carga_total: carga === '' ? null : Number(carga) }, auth()), 'Não foi possível salvar a carga.'); }} /></label>}
     </div>
     {error && <div className="error" data-testid="admin-trip-error">{error}</div>}
     {(() => {
@@ -1987,7 +1987,7 @@ const LAUNCH_STEPS = ['Quantidade', 'Pagamento', 'Assinatura'];
 const PAY_MODES = [['pix', 'Pix', QrCode], ['dinheiro', 'Dinheiro', Banknote], ['misto', 'Pix + dinheiro', Split], ['prazo', 'A prazo', Clock3]];
 const MF_PLANS = [['reschedule', 'Entregar no próximo dia útil', CalendarClock], ['swap', 'Trocar agora no caminhão', RefreshCw], ['refused', 'Cliente não quis', CircleX]];
 
-function MobileLaunchPanel({ stop, user, date, viagemId, cargaRestante, othersPending, onClose, onComplete, onFailed, onOpenViagens }) {
+function MobileLaunchPanel({ stop, user, date, viagemId, cargaRestante, cargaBrands, othersPending, onClose, onComplete, onFailed, onOpenViagens }) {
   const customer = stop.customer || { id: stop.id, name: stop.name, brands: [] };
   const draftKey = `hydro_draft_${stop.id || 'novo_' + (stop.name || 'cliente')}`;
   const draft = useMemo(() => { try { const d = JSON.parse(localStorage.getItem(draftKey)); return d?.v === 2 ? d : null; } catch { return null; } }, [draftKey]);
@@ -2041,6 +2041,8 @@ function MobileLaunchPanel({ stop, user, date, viagemId, cargaRestante, othersPe
   const cargaUse = qty + (mfPlan === 'swap' ? 2 * totalMf : 0);
   const overCarga = cargaRestante != null && cargaUse > cargaRestante;
   const tightCarga = !overCarga && cargaRestante != null && othersPending > 0 && cargaUse + othersPending > cargaRestante;
+  const foraDaCarga = cargaBrands ? [...new Set(lines.filter(l => l.qtyExchange + l.qtyFull + (l.mf || 0) > 0 && !cargaBrands.some(b => sameName(b, l.brand))).map(l => l.brand))] : [];
+  const foraLabel = foraDaCarga.length ? `${foraDaCarga.join(', ')} ${foraDaCarga.length === 1 ? 'não está' : 'não estão'} na carga por produto e conta no total.` : '';
   const nothingToPay = total <= 0;
   const splitTyped = parseMoney(splitLead === 'cash' ? cashStr : pixStr);
   const splitOver = payMode === 'misto' && splitTyped > total + 0.005;
@@ -2127,7 +2129,8 @@ function MobileLaunchPanel({ stop, user, date, viagemId, cargaRestante, othersPe
           {mfPlan === 'reschedule' && <span className="mob-muted" data-testid="mob-mf-reschedule-info">Fica como troca de MF pendente para incluir numa rota a partir de {shortDate(nextBusinessDay())}.</span>}
         </section>}
         {tightCarga && <span className="mob-muted" data-testid="mob-tight-carga">Atenção: depois deste lançamento sobram {galoes(Math.max(0, cargaRestante - cargaUse))} no caminhão, e as outras paradas ainda pedem {galoes(othersPending)}.</span>}
-        {overCarga && <div className="mob-error" data-testid="mob-over-carga">Passa da carga da rota: restam {galoes(cargaRestante)} no caminhão e este lançamento usa {galoes(cargaUse)}{mfPlan === 'swap' ? ' (a troca de MF na hora conta 2 por galão)' : ''}. Ajuste a quantidade ou a carga da rota.</div>}
+        {overCarga && <div className="mob-error" data-testid="mob-over-carga">Passa da carga da rota: restam {galoes(cargaRestante)} no caminhão e este lançamento usa {galoes(cargaUse)}{mfPlan === 'swap' ? ' (a troca de MF na hora conta 2 por galão)' : ''}. {foraLabel ? ` ${foraLabel}` : ''} Ajuste a quantidade ou a carga da rota.</div>}
+        {!overCarga && foraLabel && <span className="mob-muted" data-testid="mob-fora-carga">Atenção: {foraLabel} Sai do estoque do depósito.</span>}
         {failAsk
           ? <MobileConfirm testid="mob-fail-confirm" title="Marcar como não entregue?" text="Nada é descontado do estoque." confirmLabel="Não entreguei" onCancel={() => setFailAsk(false)} onConfirm={confirmFail} />
           : <button type="button" className="mob-link h48" data-testid="mob-fail-button" onClick={() => setFailAsk(true)}><CircleX size={18} />Não consegui entregar</button>}
@@ -2201,9 +2204,9 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
   const orderSub = s => pedidoItems(s).length ? pedidoLabel(s) : 'produto a combinar';
   const orderType = s => { const full = new Set(pedidoItems(s).map(i => i.sale_type === 'full')); return full.size > 1 ? 'Água e completo' : full.has(true) ? 'Completo' : 'Somente água'; };
 
+  // Encerrar trava a rota para o entregador: sempre confirma, mesmo com a carga batendo.
   function askFinish() {
-    if (carga && atual !== carga) return setFinishAsk(true);
-    onFinishTrip(viagemAtiva);
+    setFinishAsk(true);
   }
   const diff = (carga || 0) - atual;
   // Carga por produto: somar marcas diferentes num "20/20" escondia o que ainda há de cada uma no caminhão.
@@ -2268,7 +2271,7 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
         <span className="mob-muted">{failed.length > 0 ? `${failed.length} não entregue(s). ` : ''}Conclua para limpar a tela e devolver a sobra da carga.</span>
       </div>
       {finishAsk
-        ? <MobileConfirm testid="mob-finish-confirm" title="Concluir mesmo assim?" text={diff > 0 ? `${diff === 1 ? 'Sobra' : 'Sobram'} ${diff} un no caminhão (${atual}/${carga} entregues) — voltam para o estoque.` : `Foram lançadas ${-diff} unidade(s) a mais que a carga total (${atual}/${carga}).`} confirmLabel="Encerrar rota" onCancel={() => setFinishAsk(false)} onConfirm={() => { setFinishAsk(false); onFinishTrip(viagemAtiva); }} />
+        ? <MobileConfirm testid="mob-finish-confirm" title="Encerrar a rota?" text={`${!carga || diff === 0 ? '' : diff > 0 ? `${diff === 1 ? 'Sobra' : 'Sobram'} ${diff} un no caminhão (${atual}/${carga} entregues) — voltam para o estoque. ` : `Foram lançadas ${-diff} unidade(s) a mais que a carga total (${atual}/${carga}). `}Depois de encerrar, a rota fica só para consulta.`} confirmLabel="Encerrar rota" onCancel={() => setFinishAsk(false)} onConfirm={() => { setFinishAsk(false); onFinishTrip(viagemAtiva); }} />
         : <MobBtn h={64} lead={Flag} icon={ArrowRight} data-testid="mob-finish-trip" onClick={askFinish}>Encerrar rota</MobBtn>}
     </section>}
 
@@ -2279,7 +2282,7 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
 
     {stops.length > 0 && <>
       <section className="mob-progress">
-        <div><b>{finished.length} de {stops.length} paradas</b><b data-testid="mob-received-today">{money(received)}</b></div>
+        <div><b>{finished.length} de {stops.length} {stops.length === 1 ? 'parada' : 'paradas'}</b><b data-testid="mob-received-today">{money(received)}</b></div>
         <div className="mob-cells">{stops.map(s => <i key={s.key} className={s.status} />)}</div>
         <span className="mob-muted">Recebido hoje · Pix + dinheiro</span>
       </section>
@@ -2507,7 +2510,7 @@ function MobileClientQty({ value, onCommit, testid }) {
 
 // Pedido do cliente na parada. Tocar no produto já põe 1 no pedido e abre o contador ali mesmo.
 // Com initialItems edita o pedido de quem já está na parada.
-function MobileProductConfig({ customer, brandsCatalog, busy, initialItems, onCancel, onConfirm }) {
+function MobileProductConfig({ customer, brandsCatalog, busy, initialItems, cargaBrands, onCancel, onConfirm }) {
   const editing = !!initialItems;
   const prefs = brandListOf(customer);
   const options = [
@@ -2539,12 +2542,15 @@ function MobileProductConfig({ customer, brandsCatalog, busy, initialItems, onCa
   const boxRef = useRef(null);
   useEffect(() => { boxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, []);
   const tag = o => o.own ? <span className="mob-tag warn">Preferência</span> : <span className="mob-tag neutral">Novo p/ cliente</span>;
+  // Rota com carga por produto: produto fora dela sai do depósito e ainda conta no total da carga.
+  const foraDaCarga = b => !!cargaBrands && !cargaBrands.some(x => sameName(x, b));
+  const foraItems = [...new Set(items.filter(i => foraDaCarga(i.brand)).map(i => i.brand))];
   const stepCol = (o, t, label) => <div className="mob-pick-step">
     <small>{label}</small>
     <MobileStepper small label={`${o.brand} ${label.toLowerCase()}`} testid={`mob-viagem-client-${t}-${o.brand}`} value={qOf(o.brand, t)} onType={v => setQ(o.brand, t, typedQty(v))} onDec={() => setQ(o.brand, t, qOf(o.brand, t) - 1)} onInc={() => setQ(o.brand, t, qOf(o.brand, t) + 1)} />
   </div>;
   const pickedCard = o => <div className="mob-pick-card" key={o.brand} data-testid={`mob-viagem-client-picked-${o.brand}`}>
-    <div className="mob-pick-head"><span><b>{o.brand}</b><small>{priceLabel(o)}</small></span><button type="button" className="mob-x" aria-label={`Tirar ${o.brand} do pedido`} onClick={() => { setQ(o.brand, 'exchange', 0); setQ(o.brand, 'full', 0); }}><X size={18} /></button></div>
+    <div className="mob-pick-head"><span><b>{o.brand}</b><small>{priceLabel(o)}</small>{foraDaCarga(o.brand) && <span className="mob-chip warn" data-testid={`mob-viagem-client-fora-${o.brand}`}>Fora da carga</span>}</span><button type="button" className="mob-x" aria-label={`Tirar ${o.brand} do pedido`} onClick={() => { setQ(o.brand, 'exchange', 0); setQ(o.brand, 'full', 0); }}><X size={18} /></button></div>
     <div className="mob-pick-steps">
       {stepCol(o, 'exchange', 'Somente água')}
       {(Number(o.price_full) > 0 || qOf(o.brand, 'full') > 0) && stepCol(o, 'full', 'Completo')}
@@ -2563,6 +2569,7 @@ function MobileProductConfig({ customer, brandsCatalog, busy, initialItems, onCa
       {prefs.length === 0 && !items.length && <span className="mob-muted">Cliente sem produto no cadastro — escolha no catálogo abaixo.</span>}
       {options.filter(o => o.own && !picked(o)).map(choice)}
     </div>
+    {foraItems.length > 0 && <span className="mob-muted" data-testid="mob-viagem-client-fora-note">{foraItems.join(', ')} {foraItems.length === 1 ? 'não está' : 'não estão'} na carga por produto: sai do estoque do depósito e conta no total da carga da rota.</span>}
     <MobBtn h={56} icon={Check} className="mob-sticky-cta" disabled={!items.length || busy} data-testid="mob-viagem-client-confirm" onClick={confirm}>{!items.length ? 'Escolha o produto' : editing ? `Salvar pedido · ${totalQty} un` : items.length === 1 ? `Adicionar ${items[0].quantity} × ${items[0].brand}` : `Adicionar ${items.length} produtos · ${totalQty} un`}</MobBtn>
     {others.some(o => !picked(o)) && <button type="button" className="mob-link h48" data-testid="mob-viagem-client-brand-toggle" onClick={() => setShowOther(!showOther)}><RefreshCw size={16} />{showOther ? 'Ocultar outros produtos' : 'Outro produto do cadastro'}</button>}
     {showOther && <div className="mob-field">{others.filter(o => !picked(o)).map(choice)}</div>}
@@ -2584,6 +2591,12 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
   const [busy, setBusy] = useState(false);
   const [showDone, setShowDone] = useState(false);
   useEffect(() => { api.get('/brands', auth()).then(({ data }) => setBrandsCatalog(data.filter(b => b.active !== false))).catch(() => { }); }, []);
+  const [stockProducts, setStockProducts] = useState(null);
+  useEffect(() => { api.get('/products', auth()).then(({ data }) => setStockProducts(data)).catch(() => setStockProducts(null)); }, []);
+  // Carga só com produto que existe no depósito (marca sem estoque só falharia ao iniciar), em ordem alfabética.
+  const cargaOptions = brandsCatalog
+    .filter(b => !stockProducts || stockProducts.some(p => (sameName(p.brand, b.name) || sameName(p.name, b.name)) && Number(p.quantity) > 0))
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
 
   async function run(fn, fallback) {
     setBusy(true);
@@ -2665,7 +2678,7 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
             <div className="mob-carga-add">
               <select className="mob-input" value={newCargaBrand} data-testid="mob-viagem-carga-brand" onChange={e => setNewCargaBrand(e.target.value)}>
                 <option value="">Produto</option>
-                {brandsCatalog.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
+                {cargaOptions.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
               </select>
               <input className="mob-input" type="number" inputMode="numeric" placeholder="Qtd" value={newCargaQty} data-testid="mob-viagem-carga-qty" onChange={e => setNewCargaQty(onlyDigits(e.target.value))} />
               <button type="button" className="mob-sq ink" aria-label="Adicionar produto à carga" data-testid="mob-viagem-carga-add" onClick={addCargaItem}><Plus size={20} /></button>
@@ -2677,7 +2690,7 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
       </section>}
 
     <section className="mob-list">
-      <div className="mob-sec-head"><b>{focus ? 'Montando a rota' : 'Rotas de hoje'}</b><b>{focus ? '' : `${viagens.length}/${VIAGENS_POR_DIA}`}</b></div>
+      <div className="mob-sec-head"><b>{focus ? (focus.status === 'execucao' ? 'Rota em execução' : 'Montando a rota') : 'Rotas de hoje'}</b><b>{focus ? '' : `${viagens.length}/${VIAGENS_POR_DIA}`}</b></div>
       {viagens.length === 0 && <p className="mob-muted pad">Nenhuma rota criada hoje.</p>}
       {viagens.length > 0 && shown.length === 0 && <p className="mob-muted pad">Nenhuma rota em aberto.</p>}
       {shown.map(v => {
@@ -2695,10 +2708,11 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
             <span className={`mob-tag ${v.status === 'execucao' ? 'warn' : 'neutral'}`}>{{ planejada: 'Planejada', execucao: 'Em execução', finalizada: 'Concluída' }[v.status]}</span>
           </div>
 
-          {v.status === 'planejada' && !dayClosed && (asking === `del:${v.id}`
+          {v.status === 'planejada' && !dayClosed && asking === `ini:${v.id}` && <MobileConfirm testid="mob-viagem-iniciar-vazia-confirm" title="Iniciar sem nenhum cliente?" text="A rota ainda não tem clientes. Dá para incluir pela busca durante a rota." confirmLabel="Iniciar assim mesmo" busy={busy} onCancel={() => setAsking(null)} onConfirm={() => run(async () => { setAsking(null); await onIniciar(v); }, 'Não foi possível iniciar a rota.')} />}
+          {v.status === 'planejada' && !dayClosed && asking !== `ini:${v.id}` && (asking === `del:${v.id}`
             ? <MobileConfirm testid="mob-viagem-excluir-confirm" title={`Excluir a rota ${v.codigo_viagem}?`} text={allClients.length ? `${allClients.length} cliente(s) saem da rota.` : undefined} confirmLabel="Excluir" busy={busy} onCancel={() => setAsking(null)} onConfirm={() => run(async () => { await onDelete(v); setAsking(null); }, 'Não foi possível excluir a rota.')} />
             : <div className="mob-grid21">
-              <MobBtn h={52} icon={Play} kind={viagemAtiva ? 'disabled' : 'primary'} data-testid={`mob-viagem-iniciar-${v.id}`} onClick={() => viagemAtiva ? toast('Conclua a rota em execução primeiro.') : run(() => onIniciar(v), 'Não foi possível iniciar a rota.')}>{viagemAtiva ? 'Aguardando' : 'Iniciar'}</MobBtn>
+              <MobBtn h={52} icon={Play} kind={viagemAtiva ? 'disabled' : 'primary'} data-testid={`mob-viagem-iniciar-${v.id}`} onClick={() => viagemAtiva ? toast('Conclua a rota em execução primeiro.') : allClients.length === 0 ? setAsking(`ini:${v.id}`) : run(() => onIniciar(v), 'Não foi possível iniciar a rota.')}>{viagemAtiva ? 'Aguardando' : 'Iniciar'}</MobBtn>
               <MobBtn h={52} kind="outline" data-testid={`mob-viagem-excluir-${v.id}`} onClick={() => setAsking(`del:${v.id}`)}>Excluir</MobBtn>
             </div>)}
 
@@ -2778,7 +2792,7 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
                   </button>)}
                   {pickRows.length === 0 && inTripHits.length === 0 && <p className="mob-muted pad">Nenhum cliente encontrado.</p>}
                 </div>}
-                {cfg && cfgRota && <MobileProductConfig key={cfg.cliente ? `edit-${cfg.cliente.id}` : cfg.customer.id} customer={cfg.customer} brandsCatalog={brandsCatalog} busy={busy} initialItems={cfg.cliente ? pedidoItems(cfg.cliente) : undefined} onCancel={() => setConfig(null)}
+                {cfg && cfgRota && <MobileProductConfig key={cfg.cliente ? `edit-${cfg.cliente.id}` : cfg.customer.id} customer={cfg.customer} brandsCatalog={brandsCatalog} busy={busy} cargaBrands={v.carga_items?.length ? v.carga_items.map(i => i.brand) : null} initialItems={cfg.cliente ? pedidoItems(cfg.cliente) : undefined} onCancel={() => setConfig(null)}
                   onConfirm={cliente => cfg.cliente
                     ? run(async () => { await onUpdateRotaCliente(v.id, cfgRota.id, cfg.cliente.id, { items: cliente.items }); setConfig(null); toast(`Pedido de ${cfg.cliente.name} atualizado.`); }, 'Não foi possível salvar os produtos.')
                     : addCliente(v, cfgRota, cliente)} />}
@@ -3166,7 +3180,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
       </div></main>
       {(wide || launchStop) && <aside className={`mob-panel ${wide ? 'side' : 'cover'}${launchStop ? '' : ' empty'}`} data-testid="mob-launch-panel">
         {launchStop
-          ? <MobileLaunchPanel key={launchStop.key} stop={launchStop} user={user} date={date} viagemId={viagemAtiva?.id} cargaRestante={cargaRestante} othersPending={pendingStops.filter(s => s.key !== launchStop.key).reduce((a, s) => a + clienteLoad(s), 0)} onClose={() => setLaunchKey(null)} onComplete={onEntryComplete} onFailed={() => { setLaunchKey(null); loadViagens(); loadMfPending(); showToast('Marcado como não entregue.'); }} onOpenViagens={() => openViagens(viagemAtiva?.id)} />
+          ? <MobileLaunchPanel key={launchStop.key} stop={launchStop} user={user} date={date} viagemId={viagemAtiva?.id} cargaRestante={cargaRestante} cargaBrands={viagemAtiva?.carga_items?.length ? viagemAtiva.carga_items.map(i => i.brand) : null} othersPending={pendingStops.filter(s => s.key !== launchStop.key).reduce((a, s) => a + clienteLoad(s), 0)} onClose={() => setLaunchKey(null)} onComplete={onEntryComplete} onFailed={() => { setLaunchKey(null); loadViagens(); loadMfPending(); showToast('Marcado como não entregue.'); }} onOpenViagens={() => openViagens(viagemAtiva?.id)} />
           : <div className="mob-panel-empty"><Hand size={32} /><b>Toque numa parada para lançar a entrega.</b><span className="mob-muted">O lançamento abre aqui, sem esconder a rota.</span></div>}
       </aside>}
     </div>

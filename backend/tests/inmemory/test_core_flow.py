@@ -73,9 +73,9 @@ def test_core_flow(c):
     x1 = post(D, "/expenses", {"type": "Combustível", "amount": 15, "viagem_id": v["id"]}).json()
     x2 = post(D, "/expenses", {"type": "Lanche", "amount": 5}).json()
     x3 = post(D, "/expenses", {"type": "Multa", "amount": 100}).json()
-    patch(A, f"/expenses/{x1['id']}", {"status": "approved"})
+    check("despesa do entregador entra aprovada", [x["status"] for x in (x1, x2, x3)], ["approved"] * 3)
+    patch(A, f"/expenses/{x2['id']}", {"status": "pending"})  # admin reabriu: x2 fica pendente
     patch(A, f"/expenses/{x3['id']}", {"status": "rejected"})
-    # x2 remains pending
 
     total_rev = 38 + 20 + 6
     exp_ok = 15 + 5  # approved + pending (rejected excluded)
