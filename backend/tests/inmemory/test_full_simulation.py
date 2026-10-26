@@ -123,8 +123,8 @@ def test_full_simulation(c):
     # ================= DESPESAS =================
     x1 = P(D, "/expenses", {"type": "Combustível", "amount": 40, "viagem_id": T1["id"]}).json(); x2 = P(D, "/expenses", {"type": "Refeição", "amount": 15}).json(); x3 = P(D, "/expenses", {"type": "Multa", "amount": 100}).json()
     y1 = P(Ana, "/expenses", {"type": "Pedágio", "amount": 20, "viagem_id": T2["id"]}).json()
-    check("notificação despesas pendentes (4)", G(A, "/notifications").json()["pending_expenses"], 4)
-    PA(A, f"/expenses/{x1['id']}", {"status": "approved"}); PA(A, f"/expenses/{x3['id']}", {"status": "rejected"}); PA(A, f"/expenses/{y1['id']}", {"status": "approved"})
+    check("despesas do entregador entram aprovadas (0 pendentes)", G(A, "/notifications").json()["pending_expenses"], 0)
+    PA(A, f"/expenses/{x2['id']}", {"status": "pending"}); PA(A, f"/expenses/{x3['id']}", {"status": "rejected"})  # admin reabre x2 e recusa x3
     check("notificação despesas pendentes (1)", G(A, "/notifications").json()["pending_expenses"], 1)
     check("entregador não aprova despesa", PA(D, f"/expenses/{x2['id']}", {"status": "approved"}).status_code, 403)
 
