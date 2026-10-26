@@ -33,7 +33,7 @@ def test_full_simulation(c):
     check("login Bia nova senha", login("bia@t.com", "nova1234").status_code, 200)
     PA(A, f"/users/{bia['id']}", {"active": False}); check("Bia desativada => 403", login("bia@t.com", "nova1234").status_code, 403)
     check("excluir Bia", DEL(A, f"/users/{bia['id']}").status_code, 200)
-    check("admin não exclui a si mesmo", DEL(A, "/users/admin-1").status_code, 400)
+    check("admin não exclui a si mesmo", DEL(A, "/users/" + login("admin@t.com", "admin123").json()["id"]).status_code, 400)
     check("entregador não lista usuários", G(D, "/users").status_code, 403)
 
     # ================= CADASTRO =================

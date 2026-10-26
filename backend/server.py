@@ -1888,7 +1888,7 @@ INDEXES = {
     "lots": [[("product_id", 1), ("purchase_date", 1)]],
     "daily_closings": [[("date", 1), ("driver", 1)]],
 }
-UNIQUE_INDEXES = [(c, "id") for c in ("daily_entries", "viagens", "expenses", "stock_movements", "lots", "customers", "products", "brands")] + [("viagens", "codigo_viagem")]
+UNIQUE_INDEXES = [(c, "id") for c in ("daily_entries", "viagens", "expenses", "stock_movements", "lots", "customers", "products", "brands")] + [("viagens", "codigo_viagem"), ("users", "id")]
 
 async def ensure_indexes():
     """Índices para as consultas do dia a dia e travas contra registro duplicado. Uma falha aqui não derruba o app."""
@@ -1906,11 +1906,12 @@ async def seed():
     # Em segundo plano: são ~20 idas ao banco e o app não precisa esperar por elas para começar a atender.
     app.state.index_task = asyncio.create_task(ensure_indexes())
     if not await db.users.find_one({"email": os.environ["ADMIN_EMAIL"]}):
-        await db.users.insert_one({"id":"admin-1","email":os.environ["ADMIN_EMAIL"],"name":"Marina Costa","role":"admin","status":"approved","active":True,"password_hash":hash_password(os.environ["ADMIN_PASSWORD"]),"created_at":now()})
+        # id sempre novo: trocar ADMIN_EMAIL/DRIVER_EMAIL na hospedagem criava outra conta com o mesmo id fixo.
+        await db.users.insert_one({"id":str(uuid.uuid4()),"email":os.environ["ADMIN_EMAIL"],"name":"Marina Costa","role":"admin","status":"approved","active":True,"password_hash":hash_password(os.environ["ADMIN_PASSWORD"]),"created_at":now()})
     else:
         await db.users.update_many({"role": "admin", "status": {"$exists": False}}, {"$set": {"status": "approved", "active": True}})
     if not await db.users.find_one({"email": os.environ["DRIVER_EMAIL"]}):
-        await db.users.insert_one({"id":"driver-1","email":os.environ["DRIVER_EMAIL"],"name":"Carlos Mendes","role":"driver","status":"approved","active":True,"password_hash":hash_password(os.environ["DRIVER_PASSWORD"]),"created_at":now()})
+        await db.users.insert_one({"id":str(uuid.uuid4()),"email":os.environ["DRIVER_EMAIL"],"name":"Carlos Mendes","role":"driver","status":"approved","active":True,"password_hash":hash_password(os.environ["DRIVER_PASSWORD"]),"created_at":now()})
     else:
         await db.users.update_many({"status": {"$exists": False}}, {"$set": {"status": "approved", "active": True}})
     if await db.products.count_documents({}) == 0:
