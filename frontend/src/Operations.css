@@ -705,3 +705,10 @@ body.drag-active, body.drag-active *{user-select:none;-webkit-user-select:none}
 .pedido-chips .tag{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:6px 6px 6px 10px}
 .pedido-chips .tag button{display:inline-grid;place-items:center;width:18px;height:18px;border:0;border-radius:50%;background:transparent;color:inherit;cursor:pointer}
 .pedido-chips .tag button:hover{background:rgba(213,78,78,.15);color:var(--red)}
+
+/* Finalizadas: a forma de pagamento fica no fim do subtítulo e era cortada com reticências. */
+.mob-done .mob-row-main small{white-space:normal}
+/* Diário com 4 números (inclui A prazo): 2 por linha. */
+.mob-stats3.mob-stats4{grid-template-columns:repeat(2,minmax(0,1fr))}.mob-stats4>div:nth-child(2n){border-right:0}.mob-stats4>div:nth-child(-n+2){border-bottom:1px solid var(--divider)}
+/* Botão fixo de confirmar pedido: respiro para o último cartão não ficar escondido atrás dele. */
+.mob-sticky-cta{margin-top:calc(16px * var(--s))}.mob-main{scroll-padding-bottom:calc(88px * var(--s))}

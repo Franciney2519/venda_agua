@@ -1767,7 +1767,7 @@ function MobileHeader({ user, title, theme, onToggleTheme }) {
   return <header className="mob-header">
     <div className="mob-header-text"><span className="mob-eyebrow">Portal do entregador · {today}</span><b data-testid="mob-title">{title}</b></div>
     <button type="button" className="mob-theme-btn" data-testid="mob-theme-toggle" aria-label={theme === 'dark' ? 'Usar fundo claro' : 'Usar fundo escuro'} onClick={onToggleTheme}>{theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}</button>
-    <span className="mob-avatar">{user.name.split(' ').map(x => x[0]).join('').slice(0, 2)}</span>
+    <span className="mob-avatar" role="img" aria-label={`Entregador: ${user.name}`}>{user.name.split(' ').map(x => x[0]).join('').slice(0, 2)}</span>
   </header>
 }
 
@@ -1996,6 +1996,9 @@ function MobileLaunchPanel({ stop, user, date, viagemId, cargaRestante, othersPe
   const [lines, setLines] = useState(() => draft?.lines || buildLaunchLines(customer, stop));
   const [mfPlan, setMfPlan] = useState(draft?.mfPlan ?? null);
   const [payMode, setPayMode] = useState(draft?.payMode ?? (customer.payment_type === 'prazo' ? 'prazo' : null));
+  // As opções 15/30 dias ficam abaixo da dobra em celular pequeno: rola até elas para o entregador ver qual está marcada.
+  const prazoRef = useRef(null);
+  useEffect(() => { if (payMode === 'prazo') prazoRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }); }, [payMode]);
   const [pixStr, setPixStr] = useState(draft?.pixStr ?? '');
   const [cashStr, setCashStr] = useState(draft?.cashStr ?? '');
   // Pix + dinheiro: o campo digitado por último manda e o outro completa o total.
@@ -2151,7 +2154,7 @@ function MobileLaunchPanel({ stop, user, date, viagemId, cargaRestante, othersPe
             ? <div className="mob-error" data-testid="mob-split-over">O valor digitado ({money(splitTyped)}) passa do total de {money(total)}. Corrija para continuar.</div>
             : <span className="mob-muted">Digite o Pix ou o dinheiro — o outro completa sozinho.</span>}
         </>}
-        {!nothingToPay && payMode === 'prazo' && <div className="mob-field"><b className="mob-label">Prazo</b>
+        {!nothingToPay && payMode === 'prazo' && <div className="mob-field" ref={prazoRef}><b className="mob-label">Prazo</b>
           <div className="mob-seg">{[15, 30].map(d => <button type="button" key={d} className={compDays === d ? 'on' : ''} data-testid={`mob-comp-${d}`} onClick={() => setCompDays(d)}>{d} dias</button>)}</div>
         </div>}
       </>}
@@ -2203,6 +2206,19 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
     onFinishTrip(viagemAtiva);
   }
   const diff = (carga || 0) - atual;
+  // Carga por produto: somar marcas diferentes num "20/20" escondia o que ainda há de cada uma no caminhão.
+  // Produto vendido sem estar na carga aparece à parte (saiu do estoque do depósito).
+  const cargaPorProduto = (() => {
+    if (!viagemAtiva?.carga_items?.length) return [];
+    const key = b => (b || '').trim().toLowerCase();
+    const sold = {};
+    entries.filter(e => e.viagem_id === viagemAtiva.id).forEach(e => entryItemsList(e).forEach(it => {
+      const k = key(it.brand); sold[k] = { brand: it.brand, qty: (sold[k]?.qty || 0) + Number(it.quantity || 0) };
+    }));
+    const rows = viagemAtiva.carga_items.map(c => ({ brand: c.brand, carga: Number(c.quantity || 0), vendido: sold[key(c.brand)]?.qty || 0 }));
+    Object.entries(sold).forEach(([k, s]) => { if (!rows.some(r => key(r.brand) === k)) rows.push({ brand: s.brand, carga: 0, vendido: s.qty }); });
+    return rows;
+  })();
 
   return <>
     <MobileStuckTrips viagens={viagensPresas} onFinalizar={onFinalizarPresa} />
@@ -2231,6 +2247,9 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
         {carga ? <div className="mob-bar"><div className={atual > carga ? 'over' : ''} style={{ width: `${Math.min(100, Math.round(atual / carga * 100))}%` }} /></div> : null}
         <span data-testid="mob-carga-label">Carga {carga ? `${atual}/${carga} un` : `${atual} un entregues`}</span>
       </div>
+      {cargaPorProduto.length > 0 && <div className="mob-chips" data-testid="mob-carga-produtos">{cargaPorProduto.map(p => <span key={p.brand} className={`mob-chip${!p.carga || p.vendido > p.carga ? ' warn' : ''}`} data-testid={`mob-carga-produto-${p.brand}`}>
+        {p.brand} · {p.carga ? `${p.vendido}/${p.carga}` : `${p.vendido} fora da carga`}
+      </span>)}</div>}
       {swapMf > 0 && <span className="mob-muted" data-testid="mob-carga-mf-note">Inclui {2 * swapMf} un de troca de MF: o galão bom entregue e o com defeito que voltou.</span>}
     </section>}
 
@@ -2636,6 +2655,10 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
             <span><b>Carga da rota</b><small>Galões no caminhão</small></span>
             <MobileStepper label="carga" testid="mob-viagem-carga" value={carga} onType={v => { const d = onlyDigits(v); setCarga(d === '' ? '' : Number(d)); }} onDec={() => setCarga(Math.max(0, (Number(carga) || 0) - 5))} onInc={() => setCarga((Number(carga) || 0) + 5)} />
           </div>}
+          {cargaItems.length > 0 && <div className="mob-qrow wrap" data-testid="mob-viagem-carga-total">
+            <span><b>Carga da rota</b><small>Soma da carga por produto{Number(carga) > 0 && Number(carga) !== cargaItemsTotal ? ` · substitui os ${carga} digitados` : ''}</small></span>
+            <b>{cargaItemsTotal} un</b>
+          </div>}
           <button type="button" className="mob-link h44" data-testid="mob-viagem-more" onClick={() => setShowMore(!showMore)}>{showMore ? <ChevronUp size={18} /> : <ChevronDown size={18} />}Carga por produto (opcional){cargaItems.length > 0 ? ` · total ${cargaItemsTotal} un` : ''}</button>
           {showMore && <div className="mob-field">
             <span className="mob-muted">Se preencher, o sistema desconta do estoque ao iniciar e devolve a sobra ao concluir a rota.</span>
@@ -2776,7 +2799,7 @@ function MobileDiarioTab({ entries, date }) {
   const todaysAll = entries.filter(e => e.date === date);
   const rotaOptions = [...new Map(todaysAll.filter(e => e.rota_codigo).map(e => [e.rota_codigo, e])).values()];
   const todays = rotaFilter ? todaysAll.filter(e => e.rota_codigo === rotaFilter) : todaysAll;
-  const totals = todays.reduce((s, e) => ({ qty: s.qty + Number(e.billed_quantity || 0), pix: s.pix + Number(e.pix_value || 0), cash: s.cash + Number(e.cash_value || 0), mf: s.mf + Number(e.mf_quantity || 0) }), { qty: 0, pix: 0, cash: 0, mf: 0 });
+  const totals = todays.reduce((s, e) => ({ qty: s.qty + Number(e.billed_quantity || 0), pix: s.pix + Number(e.pix_value || 0), cash: s.cash + Number(e.cash_value || 0), comp: s.comp + Number(e.comp_value || 0), mf: s.mf + Number(e.mf_quantity || 0) }), { qty: 0, pix: 0, cash: 0, comp: 0, mf: 0 });
   const mfDetail = e => e.mf_plan === 'swap' ? 'trocado' : e.mf_plan === 'refused' ? 'cliente não quis' : (e.mf_date || '');
   return <>
     {rotaOptions.length > 0 && <label className="mob-field"><b className="mob-label">Filtrar por rota</b>
@@ -2785,10 +2808,11 @@ function MobileDiarioTab({ entries, date }) {
         {rotaOptions.map(e => <option key={e.rota_codigo} value={e.rota_codigo}>{e.rota_codigo}</option>)}
       </select>
     </label>}
-    <section className="mob-stats3">
+    <section className="mob-stats3 mob-stats4">
       <div><span className="mob-eyebrow">Galões</span><b className="big">{totals.qty}</b></div>
       <div><span className="mob-eyebrow">Pix</span><b>{money(totals.pix)}</b></div>
       <div><span className="mob-eyebrow">Dinheiro</span><b>{money(totals.cash)}</b></div>
+      <div data-testid="mob-diario-prazo"><span className="mob-eyebrow">A prazo</span><b>{money(totals.comp)}</b></div>
     </section>
     {totals.mf > 0 && <span className="mob-muted" data-testid="mob-diario-mf-note">O total de galões não conta {totals.mf} com microfuro (MF). Veja o detalhe em cada lançamento.</span>}
     <section className="mob-list">
@@ -2976,7 +3000,7 @@ function MobileAjustesTab({ user, theme, setTheme, scale, setTextScale, onLogout
     </section>
     <section className="mob-field">
       <b className="mob-label">Conta</b>
-      <div className="mob-cash-row sm"><span className="mob-avatar">{user.name.split(' ').map(x => x[0]).join('').slice(0, 2)}</span><span className="mob-row-main"><b>{user.name}</b><small>Entregador</small></span></div>
+      <div className="mob-cash-row sm"><span className="mob-avatar" aria-hidden="true">{user.name.split(' ').map(x => x[0]).join('').slice(0, 2)}</span><span className="mob-row-main"><b>{user.name}</b><small>Entregador</small></span></div>
     </section>
     <MobBtn kind="outline" lead={LogOut} data-testid="mob-logout-button" onClick={onLogout}>Sair da conta</MobBtn>
   </>
@@ -3002,6 +3026,9 @@ function DriverMobileApp({ user, customers, onLogout }) {
   const [toast, setToast] = useState('');
   const [wide, setWide] = useState(false);
   const rootRef = useRef(null);
+  // A rolagem é do mesmo contêiner para todas as abas: cada aba abre do topo.
+  const mainRef = useRef(null);
+  useEffect(() => { if (mainRef.current) mainRef.current.scrollTop = 0; }, [tab]);
   const toastTimer = useRef(null);
   const date = todayISO(0);
 
@@ -3129,7 +3156,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
   return <div ref={rootRef} className={`mobile-app${theme === 'dark' ? ' dark' : ''}`} style={{ '--s': scale }} data-testid="mobile-driver-app">
     <MobileHeader user={user} title={MOBILE_TITLES[tab]} theme={theme} onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />
     <div className="mob-body">
-      <main className="mob-main"><div className="mob-col">
+      <main ref={mainRef} className="mob-main"><div className="mob-col">
         {tab === 'rota' && <MobileRotaTab viagemAtiva={viagemAtiva} viagens={viagensComProgresso} stops={stops} entries={entries} date={date} search={search} setSearch={setSearch} mfPending={mfPending} viagensPresas={viagensPresas} onFinalizarPresa={finishTrip} dayClosed={dayClosed} onOpenStop={openStop} onOpenViagens={openViagens} onStartTrip={startTrip} onFinishTrip={finishTrip} offRoute={offRoute} onPickOffRoute={pickOffRoute} onReceipt={setReceiptEntry} onEditEntry={setEditingEntry} onDeleteEntry={deleteEntry} onIncludeMf={includeMf} />}
         {tab === 'viagens' && <MobileViagensScreen viagens={viagensComProgresso} customers={customers} entries={entries} mfPending={mfPending} dayClosed={dayClosed} viagemAtiva={viagemAtiva} openTripId={openTripId} setOpenTripId={setOpenTripId} onBack={() => setTab('rota')} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} onAddRota={addRota} onAddRotaCliente={addRotaCliente} onUpdateRotaCliente={updateRotaCliente} onRemoveRotaCliente={removeRotaCliente} onRemoveRota={removeRota} onReorder={reorderClientes} onScheduleMf={scheduleMf} toast={showToast} />}
         {tab === 'diario' && <MobileDiarioTab entries={entries} date={date} />}
