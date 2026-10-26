@@ -957,13 +957,13 @@ function ActivityPage() {
   async function load() { const { data } = await api.get('/activity', auth()); setItems(data); }
   useEffect(() => { load().catch(() => setItems([])); }, []);
   useAutoRefresh(load);
-  const labels = { signup: 'Cadastro recebido', user_created: 'Usuário criado', user_approved: 'Usuário aprovado', user_rejected: 'Usuário reprovado', user_updated: 'Usuário editado', user_deleted: 'Usuário excluído', password_reset: 'Senha redefinida', expense_approved: 'Despesa aprovada', expense_rejected: 'Despesa reprovada', expense_pending: 'Despesa reaberta', daily_closing_closed: 'Dia fechado', daily_closing_reopened: 'Dia reaberto', viagem_criada: 'Rota criada', viagem_iniciada: 'Rota iniciada', viagem_finalizada: 'Rota encerrada', entrega_lancada: 'Entrega lançada', entrega_excluida: 'Entrega excluída', despesa_lancada: 'Despesa lançada', despesa_excluida: 'Despesa excluída', stock_adjusted: 'Estoque ajustado', lot_created: 'Lote criado', lot_deleted: 'Lote excluído' };
-  const tones = { user_approved: 'green', expense_approved: 'green', daily_closing_closed: 'green', user_rejected: 'red', expense_rejected: 'red', user_deleted: 'red', user_created: 'blue', signup: 'blue', password_reset: 'orange', daily_closing_reopened: 'orange', user_updated: 'gray', expense_pending: 'gray', viagem_criada: 'blue', viagem_iniciada: 'blue', viagem_finalizada: 'green', entrega_lancada: 'green', despesa_lancada: 'orange', entrega_excluida: 'red', despesa_excluida: 'red', lot_deleted: 'red', lot_created: 'blue', stock_adjusted: 'orange' };
+  const labels = { signup: 'Cadastro recebido', user_created: 'Usuário criado', user_approved: 'Usuário aprovado', user_rejected: 'Usuário reprovado', user_updated: 'Usuário editado', user_deleted: 'Usuário excluído', password_reset: 'Senha redefinida', expense_approved: 'Despesa aprovada', expense_rejected: 'Despesa reprovada', expense_pending: 'Despesa reaberta', daily_closing_closed: 'Dia fechado', daily_closing_reopened: 'Dia reaberto', viagem_criada: 'Rota criada', viagem_iniciada: 'Rota iniciada', viagem_finalizada: 'Rota encerrada', viagem_excluida: 'Rota excluída', cliente_nao_entregue: 'Não entregue', entrega_lancada: 'Entrega lançada', entrega_excluida: 'Entrega excluída', despesa_lancada: 'Despesa lançada', despesa_excluida: 'Despesa excluída', stock_adjusted: 'Estoque ajustado', lot_created: 'Lote criado', lot_deleted: 'Lote excluído' };
+  const tones = { user_approved: 'green', expense_approved: 'green', daily_closing_closed: 'green', user_rejected: 'red', expense_rejected: 'red', user_deleted: 'red', user_created: 'blue', signup: 'blue', password_reset: 'orange', daily_closing_reopened: 'orange', user_updated: 'gray', expense_pending: 'gray', viagem_criada: 'blue', viagem_iniciada: 'blue', viagem_finalizada: 'green', viagem_excluida: 'red', cliente_nao_entregue: 'orange', entrega_lancada: 'green', despesa_lancada: 'orange', entrega_excluida: 'red', despesa_excluida: 'red', lot_deleted: 'red', lot_created: 'blue', stock_adjusted: 'orange' };
   return <><Head eyebrow="AUDITORIA" title="Atividade" subtitle="Ações do administrador e dos entregadores, em ordem cronológica." />
     <section className="panel activity-panel"><ul className="activity-list" data-testid="activity-list">
       {items.length === 0 && <li className="muted" style={{ padding: 20 }}>Nenhuma atividade registrada ainda.</li>}
       {items.map(a => <li key={a.id} data-testid={`activity-${a.id}`}><span className={`activity-dot tag ${tones[a.action] || 'gray'}`}>●</span>
-        <div><b>{labels[a.action] || a.action}</b><small>{a.actor_name || 'Sistema'} → {a.target_name || a.target_email || '—'}</small></div>
+        <div><b>{labels[a.action] || a.action}</b><small>{a.actor_name || 'Sistema'} → {a.target_name || a.target_email || '—'}{a.meta?.amount != null ? ` · ${money(a.meta.amount)}` : a.meta?.total != null ? ` · ${money(a.meta.total)}` : ''}</small></div>
         <time>{new Date(a.created_at).toLocaleString('pt-BR')}</time>
       </li>)}
     </ul></section></>
@@ -2129,7 +2129,7 @@ function MobileLaunchPanel({ stop, user, date, viagemId, cargaRestante, cargaBra
           {mfPlan === 'reschedule' && <span className="mob-muted" data-testid="mob-mf-reschedule-info">Fica como troca de MF pendente para incluir numa rota a partir de {shortDate(nextBusinessDay())}.</span>}
         </section>}
         {tightCarga && <span className="mob-muted" data-testid="mob-tight-carga">Atenção: depois deste lançamento sobram {galoes(Math.max(0, cargaRestante - cargaUse))} no caminhão, e as outras paradas ainda pedem {galoes(othersPending)}.</span>}
-        {overCarga && <div className="mob-error" data-testid="mob-over-carga">Passa da carga da rota: restam {galoes(cargaRestante)} no caminhão e este lançamento usa {galoes(cargaUse)}{mfPlan === 'swap' ? ' (a troca de MF na hora conta 2 por galão)' : ''}. {foraLabel ? ` ${foraLabel}` : ''} Ajuste a quantidade ou a carga da rota.</div>}
+        {overCarga && <div className="mob-error" data-testid="mob-over-carga">Passa da carga da rota: restam {galoes(cargaRestante)} no caminhão e este lançamento usa {galoes(cargaUse)}{mfPlan === 'swap' ? ' (a troca de MF na hora conta 2 por galão)' : ''}. {foraLabel ? ` ${foraLabel}` : ''} Ajuste a quantidade ou peça ao admin para aumentar a carga da rota.</div>}
         {!overCarga && foraLabel && <span className="mob-muted" data-testid="mob-fora-carga">Atenção: {foraLabel} Sai do estoque do depósito.</span>}
         {failAsk
           ? <MobileConfirm testid="mob-fail-confirm" title="Marcar como não entregue?" text="Nada é descontado do estoque." confirmLabel="Não entreguei" onCancel={() => setFailAsk(false)} onConfirm={confirmFail} />
@@ -2222,6 +2222,9 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
     Object.entries(sold).forEach(([k, s]) => { if (!rows.some(r => key(r.brand) === k)) rows.push({ brand: s.brand, carga: 0, vendido: s.qty }); });
     return rows;
   })();
+  // Com carga por produto, o que volta é a sobra de cada produto da carga (o vendido fora dela não compensa).
+  const sobraProdutos = cargaPorProduto.filter(p => p.carga > p.vendido).map(p => ({ brand: p.brand, qty: p.carga - p.vendido }));
+  const sobraTotal = sobraProdutos.reduce((a, p) => a + p.qty, 0);
 
   return <>
     <MobileStuckTrips viagens={viagensPresas} onFinalizar={onFinalizarPresa} />
@@ -2268,10 +2271,10 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
       <div className="mob-card-body">
         <span className="mob-eyebrow red"><CircleCheck size={16} />Todas as entregas concluídas</span>
         <b className="mob-h24">{done.length} entrega{done.length === 1 ? '' : 's'} · {money(tripTotal)}</b>
-        <span className="mob-muted">{failed.length > 0 ? `${failed.length} não entregue(s). ` : ''}Conclua para limpar a tela e devolver a sobra da carga.</span>
+        <span className="mob-muted">{failed.length > 0 ? `${failed.length} ${failed.length === 1 ? 'não entregue' : 'não entregues'}. ` : ''}Conclua para limpar a tela e devolver a sobra da carga.</span>
       </div>
       {finishAsk
-        ? <MobileConfirm testid="mob-finish-confirm" title="Encerrar a rota?" text={`${!carga || diff === 0 ? '' : diff > 0 ? `${diff === 1 ? 'Sobra' : 'Sobram'} ${diff} un no caminhão (${atual}/${carga} entregues) — voltam para o estoque. ` : `Foram lançadas ${-diff} unidade(s) a mais que a carga total (${atual}/${carga}). `}Depois de encerrar, a rota fica só para consulta.`} confirmLabel="Encerrar rota" onCancel={() => setFinishAsk(false)} onConfirm={() => { setFinishAsk(false); onFinishTrip(viagemAtiva); }} />
+        ? <MobileConfirm testid="mob-finish-confirm" title="Encerrar a rota?" text={cargaPorProduto.length ? `${sobraTotal > 0 ? `${sobraTotal === 1 ? 'Volta' : 'Voltam'} para o estoque: ${sobraProdutos.map(p => `${p.qty} ${p.brand}`).join(', ')}. ` : 'Toda a carga foi entregue. '}Depois de encerrar, a rota fica só para consulta.` : `${!carga || diff === 0 ? '' : diff > 0 ? `${diff === 1 ? 'Sobra' : 'Sobram'} ${diff} un no caminhão (${atual}/${carga} entregues) — voltam para o estoque. ` : `Foram lançadas ${-diff} unidade(s) a mais que a carga total (${atual}/${carga}). `}Depois de encerrar, a rota fica só para consulta.`} confirmLabel="Encerrar rota" onCancel={() => setFinishAsk(false)} onConfirm={() => { setFinishAsk(false); onFinishTrip(viagemAtiva); }} />
         : <MobBtn h={64} lead={Flag} icon={ArrowRight} data-testid="mob-finish-trip" onClick={askFinish}>Encerrar rota</MobBtn>}
     </section>}
 

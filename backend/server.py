@@ -1182,7 +1182,7 @@ async def _check_delivered_carga_limit(viagem_id, added_quantity, exclude_entry_
     total = delivered + float(added_quantity or 0)
     if total > carga_total:
         restante = max(0, carga_total - delivered)
-        raise HTTPException(400, f"Isso passa da carga da rota ({total:g}/{carga_total:g} un entregues). {_restam(restante)}.{_fora_da_carga(viagem, brands)} Ajuste a carga da rota ou revise as paradas em \"Rotas do dia\" antes de lançar.")
+        raise HTTPException(400, f"Isso passa da carga da rota ({total:g}/{carga_total:g} un entregues). {_restam(restante)}.{_fora_da_carga(viagem, brands)} Ajuste a quantidade ou peça ao admin para aumentar a carga da rota.")
 
 @api.post("/viagens/{item_id}/rotas")
 async def add_rota(item_id: str, data: RotaInput, user=Depends(current_user)):
@@ -1277,6 +1277,7 @@ async def update_rota_cliente(item_id: str, rota_id: str, cliente_id: str, data:
         data = {**data, "quantity": sum(float(it.get("quantity") or 0) for it in (data.get("items") or []) if it.get("brand"))}
     elif "quantity" in data and current and len(current.get("items") or []) > 1:
         raise HTTPException(400, "Este cliente tem mais de um produto no pedido — ajuste a quantidade de cada produto")
+    was_failed = (current or {}).get("status") == "nao_entregue"  # antes do loop abaixo, que já grava o status novo
     if "quantity" in data: _check_carga_limit(v, float(data.get("quantity") or 0) + (_merged_swap_quantity(current) if current else 0), exclude_cliente_id=cliente_id, brands=_brands_of(data))
     for c in clientes:
         if c.get("id") == cliente_id:
@@ -1289,6 +1290,8 @@ async def update_rota_cliente(item_id: str, rota_id: str, cliente_id: str, data:
             if "brand" in data and "items" not in data and not any(f in data for f in ("out_of_catalog", "price", "price_full")):
                 fresh = await _rota_cliente_doc({**c, "price": None, "price_full": None, "items": [{**it, "price": None, "price_full": None} for it in (c.get("items") or [])]})
                 c.update({k: val for k, val in fresh.items() if k in ("out_of_catalog", "price", "price_full", "items")})
+            if data.get("status") == "nao_entregue" and not was_failed:
+                await log_activity("cliente_nao_entregue", user, {"id": cliente_id, "name": c.get("name")}, {"viagem": v.get("codigo_viagem")})
             if data.get("status") == "nao_entregue" and c.get("mf_swap_movement_ids"):
                 # A troca não foi feita: volta para a lista de pendentes.
                 await _unschedule_mf({"id": {"$in": c["mf_swap_movement_ids"]}})
@@ -1403,6 +1406,7 @@ async def delete_viagem(item_id: str, user=Depends(current_user)):
     if v["status"] != "planejada": raise HTTPException(400, f"Só é possível excluir rotas planejadas (esta está {v['status']})")
     await _unschedule_mf({"scheduled_viagem_id": item_id})
     await db.viagens.delete_one({"id": item_id})
+    await log_activity("viagem_excluida", user, {"id": item_id, "name": v["codigo_viagem"]}, {"driver": v.get("driver")})
     return {"message": "Excluída", "codigo_viagem": v["codigo_viagem"]}
 
 @api.get("/finance/summary")

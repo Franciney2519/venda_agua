@@ -717,3 +717,5 @@ body.drag-active, body.drag-active *{user-select:none;-webkit-user-select:none}
 .mob-bottom-nav button svg{flex:none}
 /* Aviso sobe para baixo do cabeçalho: no rodapé cobria o botão "Encerrar rota". */
 .mob-toast{bottom:auto;top:calc(72px * var(--s))}
+/* Tela baixa e estreita: ícone em cima do rótulo, senão "Despesas" invade as abas vizinhas. */
+@media(max-height:520px) and (max-width:400px){.mob-bottom-nav button{flex-direction:column;gap:2px;padding:4px 2px}.mob-bottom-nav button svg{width:18px;height:18px}.mob-bottom-nav button span{font-size:calc(10px * var(--s))}}

@@ -58,3 +58,18 @@ def test_driver_expense_enters_approved_and_activity_log(c):
     actions = [a["action"] for a in c.get("/api/activity", headers=A).json() if a.get("target_id") in (v["id"], e.json()["id"], x["id"])]
     for expected in ("viagem_criada", "viagem_iniciada", "entrega_lancada", "despesa_lancada", "entrega_excluida", "despesa_excluida", "viagem_finalizada"):
         assert expected in actions, (expected, actions)
+
+
+def test_activity_logs_deleted_route_and_failed_delivery(c):
+    A, D = _auth(c)
+    _, _, cust = _setup(c, A, "Agua NE")
+    v = c.post("/api/viagens", json={"turno": 0, "date": _day(203), "carga_total": 5, "create_first_rota": True}, headers=D).json()
+    rota = v["rotas"][0]
+    c.post(f"/api/viagens/{v['id']}/rotas/{rota['id']}/clientes", json={"id": cust["id"], "name": cust["name"], "brand": "Agua NE", "quantity": 1}, headers=D)
+    assert c.post(f"/api/viagens/{v['id']}/iniciar", headers=D).status_code == 200
+    assert c.patch(f"/api/viagens/{v['id']}/rotas/{rota['id']}/clientes/{cust['id']}", json={"status": "nao_entregue"}, headers=D).status_code == 200
+    vazia = c.post("/api/viagens", json={"turno": 1, "date": _day(203), "create_first_rota": True}, headers=D).json()
+    assert c.delete(f"/api/viagens/{vazia['id']}", headers=D).status_code == 200
+    log = c.get("/api/activity", headers=A).json()
+    assert any(a["action"] == "cliente_nao_entregue" and a["target_name"] == cust["name"] for a in log)
+    assert any(a["action"] == "viagem_excluida" and a["target_id"] == vazia["id"] for a in log)
