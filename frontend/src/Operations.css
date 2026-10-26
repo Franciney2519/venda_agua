@@ -552,7 +552,7 @@
 }
 
 /* Tela larga (tablet deitado, computador): a coluna fica centralizada no espaço ao lado do lançamento. */
-@media(min-width:1025px){.mob-col{margin:0 auto}}
+.mob-col{margin:0 auto;width:100%}
 
 /* ===================== Tema escuro do painel admin ===================== */
 .theme-toggle{width:36px;height:36px;border-radius:9px;background:#eef4fa;color:#5e748a;display:grid;place-items:center}
