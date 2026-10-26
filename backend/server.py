@@ -655,6 +655,8 @@ async def add_expense(data: ResourceInput, user=Depends(current_user)):
         # Despesa do entregador entra aprovada; o admin pode recusar depois. O status enviado pelo app é ignorado.
         data.driver, data.status = user["name"], "approved"
     viagem = await db.viagens.find_one({"id": data.viagem_id}, {"_id": 0}) if data.viagem_id else None
+    if viagem and viagem.get("status") == "finalizada" and user.get("role") != "admin":
+        raise HTTPException(400, "Esta rota já foi concluída — lance a despesa numa rota aberta ou peça ao admin")
     expense_day = viagem.get("date") if viagem else today_local()
     await ensure_day_open(expense_day, data.driver or user["name"], user)
     doc = await create_resource("expenses", data, user)
@@ -679,6 +681,10 @@ async def delete_expense(item_id: str, user=Depends(current_user)):
     target = await db.expenses.find_one({"id": item_id}, {"_id": 0})
     if not target: raise HTTPException(404, "Lançamento não encontrado")
     if user.get("role") != "admin" and target.get("created_by") != user["id"]: raise HTTPException(403, "Sem permissão")
+    if target.get("viagem_id") and user.get("role") != "admin":
+        viagem = await db.viagens.find_one({"id": target["viagem_id"]}, {"_id": 0, "status": 1})
+        if viagem and viagem.get("status") == "finalizada":
+            raise HTTPException(400, "Esta rota já foi concluída — peça ao admin para corrigir essa despesa")
     await db.expenses.delete_one({"id": item_id})
     await log_activity("despesa_excluida", user, {"id": item_id, "name": target.get("type"), "email": target.get("driver")}, {"amount": target.get("amount")})
     if target.get("viagem_id"): await recompute_viagem_finance(target["viagem_id"])
@@ -967,10 +973,17 @@ async def create_viagem(data: ViagemInput, user=Depends(current_user)):
         raise HTTPException(400, f"Máximo de {VIAGENS_POR_TURNO} rotas no turno da {TURNO_LABELS[data.turno].lower()} ({date_str}) — já existem {count_turno}.")
 
     numero = await db.viagens.count_documents({"driver": driver_name, "date": date_str}) + 1
-    seq_global = await db.viagens.count_documents({"date": date_str, "turno": data.turno}) + 1
+    # Sequência do código pelo maior já usado no dia/turno (guardado em counters): contar as rotas
+    # reaproveitava o código de uma rota excluída, e o histórico mostrava duas rotas com o mesmo código.
+    counter_key = f"viagem:{date_str}:{data.turno}"
+    existentes = await db.viagens.find({"date": date_str, "turno": data.turno}, {"_id": 0, "codigo_viagem": 1}).to_list(None)
+    usados = [int(x["codigo_viagem"][-3:]) for x in existentes if str(x.get("codigo_viagem") or "")[-3:].isdigit()]
+    contador = await db.counters.find_one({"_id": counter_key}) or {}
+    seq_global = max(usados + [int(contador.get("seq") or 0)]) + 1
     codigo = gerar_codigo_viagem(data.turno, date_str, seq_global)
     if await db.viagens.find_one({"codigo_viagem": codigo}):
         raise HTTPException(409, f"Já existe uma rota com o código {codigo}")
+    await db.counters.update_one({"_id": counter_key}, {"$set": {"seq": seq_global}}, upsert=True)
 
     carga_items = [{"brand": (it.get("brand") or "").strip(), "quantity": float(it.get("quantity") or 0)} for it in (data.carga_items or []) if (it.get("brand") or "").strip() and float(it.get("quantity") or 0) > 0]
     if carga_items:
