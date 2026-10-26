@@ -9,3 +9,11 @@
 .stats{grid-template-columns:repeat(4,minmax(0,1fr))}.dashboard-grid{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr)}.customer-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.stat,.stat>div,.panel,.customer-card,.dashboard-grid>*{min-width:0}.stat strong{overflow-wrap:anywhere}.filter-row{flex-wrap:wrap}
 /* Até 1000px o menu lateral ainda ocupa 254px: sobra pouco para 2 colunas de clientes. */
 @media(max-width:1000px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.dashboard-grid,.customer-grid{grid-template-columns:minmax(0,1fr)}}
+/* Perfis da conta (admin e/ou entregador) como caixas de marcar. */
+.role-checks{display:flex;gap:12px;flex-wrap:wrap;align-items:center}.role-checks label,.quick-modal .role-checks label{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--ink)}.role-checks.form span{width:100%;font-size:12px;font-weight:700;color:#526a82}.role-checks input{width:16px;height:16px}
+/* Sair pelo cabeçalho, ao lado da foto de perfil. */
+.header-logout{display:inline-flex;align-items:center;gap:6px;background:none;border:1px solid var(--line);color:var(--muted);padding:8px 12px;border-radius:8px;font-size:12px;font-weight:700}.header-logout:hover{color:var(--blue);border-color:#b9ddfa}@media(max-width:700px){.header-logout span{display:none}.header-logout{padding:8px}}
+/* Tela de despedida ao sair. */
+.farewell{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:32px 24px;text-align:center;background:linear-gradient(180deg,#0878d1 0,#f7fafc 62%);animation:farewell-in .5s ease-out}.farewell img{width:min(190px,52vw);height:auto;background:#fff;border-radius:24px;padding:14px;box-shadow:0 12px 32px #10253f2e}.farewell h2{font:600 26px/1.2 'Space Grotesk';color:#10253f;margin:8px 0 0}.farewell p{color:#526a82;font-size:15px;max-width:340px;margin:0}.farewell .primary{margin-top:10px;padding:12px 22px;border-radius:12px}@keyframes farewell-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+/* 3) Alvo de toque mínimo de 44px no botão Sair só com ícone. */
+@media(max-width:700px){.header-logout{min-width:44px;min-height:44px;justify-content:center}}
