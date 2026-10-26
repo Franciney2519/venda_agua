@@ -43,6 +43,7 @@ class UserInput(BaseModel):
     email: Optional[str] = None
     password: Optional[str] = None
     role: Optional[str] = None
+    roles: Optional[List[str]] = None  # perfis da conta (uma pessoa pode ser admin e entregador)
     active: Optional[bool] = None
     status: Optional[str] = None
     phone: Optional[str] = None
@@ -140,7 +141,16 @@ async def next_sequence(name):
     return doc["seq"]
 def hash_password(password): return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 def check_password(password, hashed): return bcrypt.checkpw(password.encode(), hashed.encode())
-def token_for(user): return jwt.encode({"sub": user["id"], "email": user["email"], "role": user["role"], "exp": datetime.now(timezone.utc)+timedelta(hours=12)}, os.environ["JWT_SECRET"], algorithm=JWT_ALGORITHM)
+ROLES = ("admin", "driver")
+
+def user_roles(u):
+    """Perfis da conta. Contas antigas só têm `role`; `roles` lista todos quando a pessoa tem mais de um."""
+    roles = [r for r in (u.get("roles") or []) if r in ROLES]
+    return roles or [u.get("role") or "driver"]
+
+def token_for(user, role=None):
+    # O token guarda o perfil em uso; trocar de perfil é emitir outro token (POST /auth/switch-role).
+    return jwt.encode({"sub": user["id"], "email": user["email"], "role": role or user["role"], "exp": datetime.now(timezone.utc)+timedelta(hours=12)}, os.environ["JWT_SECRET"], algorithm=JWT_ALGORITHM)
 
 async def current_user(request: Request):
     token = request.headers.get("Authorization", "").replace("Bearer ", "") or request.cookies.get("access_token")
@@ -149,6 +159,11 @@ async def current_user(request: Request):
         payload = jwt.decode(token, os.environ["JWT_SECRET"], algorithms=[JWT_ALGORITHM])
         user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0})
         if not user: raise HTTPException(401, "Usuário não encontrado")
+        # Todas as regras olham user["role"]: vale o perfil escolhido no token, se a conta ainda o tiver.
+        # Perfil retirado pelo admin cai no perfil principal da conta.
+        roles = user_roles(user)
+        user["roles"] = roles
+        user["role"] = payload.get("role") if payload.get("role") in roles else (user.get("role") if user.get("role") in roles else roles[0])
         return user
     except jwt.PyJWTError: raise HTTPException(401, "Sessão expirada")
 
@@ -200,12 +215,21 @@ async def login(data: LoginInput, response: Response, request: Request):
     if user.get("status") == "pending": raise HTTPException(403, "Seu cadastro está aguardando aprovação do administrador")
     if user.get("status") == "rejected": raise HTTPException(403, "Cadastro não aprovado. Entre em contato com o administrador")
     if user.get("active") is False: raise HTTPException(403, "Conta desativada. Entre em contato com o administrador")
-    user.pop("password_hash", None); access_token = token_for(user)
+    user.pop("password_hash", None); user["roles"] = user_roles(user); access_token = token_for(user)
     response.set_cookie("access_token", access_token, httponly=True, secure=True, samesite="lax", max_age=43200)
     return {**user, "token": access_token}
 
 @api.get("/auth/me")
 async def me(user=Depends(current_user)): return sanitize_user(user)
+
+@api.post("/auth/switch-role")
+async def switch_role(data: dict, response: Response, user=Depends(current_user)):
+    role = data.get("role")
+    if role not in user["roles"]: raise HTTPException(403, "Esta conta não tem esse perfil")
+    access_token = token_for(user, role)
+    response.set_cookie("access_token", access_token, httponly=True, secure=True, samesite="lax", max_age=43200)
+    await log_activity("perfil_trocado", user, user, {"role": role})
+    return {**sanitize_user({**user, "role": role}), "token": access_token}
 
 @api.get("/dashboard")
 async def dashboard(user=Depends(current_user)):
@@ -1689,7 +1713,8 @@ async def create_user(data: UserInput, user=Depends(admin_user)):
     email = data.email.lower().strip()
     if await db.users.find_one({"email": email}): raise HTTPException(409, "Este e-mail já está cadastrado")
     await ensure_unique_name("users", data.name, "um usuário")
-    doc = {"id": str(uuid.uuid4()), "email": email, "name": data.name.strip(), "phone": data.phone, "role": data.role or "driver", "status": "approved", "active": True, "password_hash": hash_password(data.password), "created_at": now()}
+    roles = [r for r in (data.roles or []) if r in ROLES] or [data.role if data.role in ROLES else "driver"]
+    doc = {"id": str(uuid.uuid4()), "email": email, "name": data.name.strip(), "phone": data.phone, "role": data.role if data.role in roles else roles[0], "roles": roles, "status": "approved", "active": True, "password_hash": hash_password(data.password), "created_at": now()}
     await db.users.insert_one(doc)
     await log_activity("user_created", user, doc, {"role": doc["role"]})
     return sanitize_user(doc)
@@ -1706,7 +1731,21 @@ async def update_user(user_id: str, data: UserInput, user=Depends(admin_user)):
         email = data.email.lower().strip()
         if email != target["email"] and await db.users.find_one({"email": email}): raise HTTPException(409, "E-mail já usado por outro usuário")
         updates["email"] = email
-    if data.role is not None and data.role in ("admin", "driver"): updates["role"] = data.role
+    if data.roles is not None:
+        roles = [r for r in ROLES if r in data.roles]
+        if not roles: raise HTTPException(400, "Escolha pelo menos um perfil")
+        if user_id == user["id"] and "admin" not in roles: raise HTTPException(400, "Você não pode tirar o seu próprio perfil de administrador")
+        if "driver" in user_roles(target) and "driver" not in roles:
+            # Sem o perfil de entregador a pessoa não abre mais o app para encerrar a rota.
+            aberta = await db.viagens.find_one({"driver": target.get("name"), "status": {"$in": ["execucao", "planejada"]}}, {"_id": 0, "codigo_viagem": 1, "status": 1})
+            if aberta:
+                estado = "em execução" if aberta["status"] == "execucao" else "planejada"
+                raise HTTPException(400, f"{target.get('name')} tem a rota {aberta['codigo_viagem']} {estado}. Encerre ou exclua a rota antes de tirar o perfil de entregador.")
+        updates["roles"] = roles
+        updates["role"] = target.get("role") if target.get("role") in roles else roles[0]
+    elif data.role is not None and data.role in ROLES:
+        if user_id == user["id"] and data.role != "admin": raise HTTPException(400, "Você não pode tirar o seu próprio perfil de administrador")
+        updates["role"], updates["roles"] = data.role, [data.role]
     if data.phone is not None: updates["phone"] = data.phone.strip()
     if data.active is not None: updates["active"] = bool(data.active)
     if data.status is not None and data.status in ("pending", "approved", "rejected"): updates["status"] = data.status

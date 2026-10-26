@@ -137,7 +137,11 @@ const nav = [
 ];
 const driverNav = [['/', 'Visão geral', LayoutDashboard], ['/viagens', 'Rotas', Truck], ['/financeiro', 'Financeiro', WalletCards]];
 
-function Shell({ user, onLogout, notifications, children }) {
+// Perfis da conta: contas antigas só têm `role`; quem é admin e entregador tem os dois em `roles`.
+const rolesOf = u => (u?.roles?.length ? u.roles : [u?.role]).filter(Boolean);
+const ROLE_LABELS = [['admin', 'Administrador'], ['driver', 'Entregador']];
+
+function Shell({ user, onLogout, onSwitchRole, notifications, children }) {
   const [open, setOpen] = useState(false);
   const [theme, setTheme] = useDraft('hydro_theme', 'light');
   const links = user.role === 'driver' ? driverNav : nav;
@@ -148,12 +152,13 @@ function Shell({ user, onLogout, notifications, children }) {
       <Icon size={18} />{label}
       {badges[to] > 0 && <span className="nav-badge" data-testid={`badge-${to.replace('/', '')}`}>{badges[to]}</span>}
     </NavLink>)}</nav>
-    <div className="sidebar-bottom"><div className="support"><span className="live-dot" /> Operação normal</div><button className="logout" data-testid="logout-button" onClick={onLogout}><LogOut size={17} /> Sair da conta</button></div></aside>
+    <div className="sidebar-bottom"><div className="support"><span className="live-dot" /> Operação normal</div>{user.role === 'admin' && rolesOf(user).includes('driver') && <button className="logout" data-testid="switch-to-driver" onClick={() => onSwitchRole('driver')}><Truck size={17} /> Abrir app do entregador</button>}<button className="logout" data-testid="logout-button" onClick={onLogout}><LogOut size={17} /> Sair da conta</button></div></aside>
     <main className="main"><header><button className="mobile-menu" data-testid="mobile-menu-button" onClick={() => setOpen(!open)}>{open ? <X /> : <Menu />}</button><div><p className="eyebrow">{user.role === 'driver' ? 'PORTAL DO ENTREGADOR' : 'PAINEL ADMINISTRATIVO'}</p><h1>Olá, {user.name.split(' ')[0]} <span className="wave">✦</span></h1></div>
       <div className="header-actions">
         <button type="button" className="theme-toggle" data-testid="admin-theme-toggle" aria-label="Alternar tema" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Moon size={17} /> : <Sun size={17} />}</button>
         <div className="notification" data-testid="notification-indicator" title={total ? `${total} pendências` : 'Sem pendências'}>{total > 0 && <span data-testid="notification-count">{total}</span>}◌</div>
         <div className="avatar">{user.name.split(' ').map(x => x[0]).join('').slice(0, 2)}</div>
+        <button type="button" className="header-logout" data-testid="header-logout-button" aria-label="Sair da conta" title="Sair da conta" onClick={onLogout}><LogOut size={17} /><span>Sair</span></button>
       </div></header>{children}</main></div>
 }
 
@@ -881,10 +886,11 @@ function Customers({ items, create, onEdit }) {
     </div></> }
 
 
-function UsersPage({ me }) {
+function UsersPage({ me, onMeChanged }) {
   const [items, setItems] = useState([]);
   const [modal, setModal] = useState(null);
   const [filter, setFilter] = useState('all');
+  const [roleError, setRoleError] = useState('');
   async function load() { const { data } = await api.get('/users', auth()); setItems(data); window.hydroRefreshNotifications?.(); }
   useEffect(() => { load(); }, []);
   useAutoRefresh(load);
@@ -892,9 +898,19 @@ function UsersPage({ me }) {
   async function approve(u) { await api.post(`/users/${u.id}/approve`, {}, auth()); load(); }
   async function reject(u) { await api.post(`/users/${u.id}/reject`, {}, auth()); load(); }
   async function toggleActive(u) { await api.patch(`/users/${u.id}`, { active: !u.active }, auth()); load(); }
-  async function changeRole(u, role) { await api.patch(`/users/${u.id}`, { role }, auth()); load(); }
+  async function changeRoles(u, role, on) {
+    const roles = on ? [...new Set([...rolesOf(u), role])] : rolesOf(u).filter(r => r !== role);
+    if (!roles.length) return;  // a conta precisa de pelo menos um perfil
+    setRoleError('');
+    try { await api.patch(`/users/${u.id}`, { roles }, auth()); }
+    catch (e) { setRoleError(apiError(e, 'Não foi possível alterar o perfil.')); return; }
+    // Na própria conta, o menu já mostra (ou esconde) a troca de perfil sem precisar recarregar.
+    if (u.id === me.id) onMeChanged?.();
+    load();
+  }
   async function del(u) { if (!window.confirm(`Excluir ${u.name}?`)) return; await api.delete(`/users/${u.id}`, auth()); load(); }
   return <><Head eyebrow="ACESSOS" title="Cadastro de Usuário" subtitle="Aprove cadastros, gerencie perfis e reset de senhas." action="Novo usuário" onAction={() => setModal({ mode: 'create' })} />
+    {roleError && <div className="stock-alert" role="alert" data-testid="user-role-error"><AlertTriangle size={18} /><span>{roleError}</span><button type="button" className="ghost-btn" onClick={() => setRoleError('')}>Ok</button></div>}
     <div className="filter-row"><button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')} data-testid="users-filter-all">Todos</button><button className={filter === 'pending' ? 'active' : ''} onClick={() => setFilter('pending')} data-testid="users-filter-pending">Pendentes ({items.filter(x => x.status === 'pending').length})</button><button className={filter === 'active' ? 'active' : ''} onClick={() => setFilter('active')} data-testid="users-filter-active">Ativos</button><button className={filter === 'inactive' ? 'active' : ''} onClick={() => setFilter('inactive')} data-testid="users-filter-inactive">Inativos</button></div>
     <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>USUÁRIO</th><th>E-MAIL</th><th>PERFIL</th><th>STATUS</th><th>AÇÕES</th></tr></thead><tbody>
       {filtered.map(u => {
@@ -905,7 +921,7 @@ function UsersPage({ me }) {
         return <tr key={u.id} data-testid={`user-row-${u.id}`}>
           <td><b>{u.name}</b><small>Cadastro: {new Date(u.created_at || Date.now()).toLocaleDateString('pt-BR')}</small></td>
           <td>{u.email}</td>
-          <td><select value={u.role} data-testid={`user-role-${u.id}`} onChange={e => changeRole(u, e.target.value)} disabled={u.id === me.id}><option value="admin">Administrador</option><option value="driver">Entregador</option></select></td>
+          <td><div className="role-checks" data-testid={`user-role-${u.id}`}>{ROLE_LABELS.map(([r, l]) => <label key={r}><input type="checkbox" data-testid={`user-role-${r}-${u.id}`} checked={rolesOf(u).includes(r)} disabled={(u.id === me.id && r === 'admin') || (rolesOf(u).length === 1 && rolesOf(u).includes(r))} onChange={e => changeRoles(u, r, e.target.checked)} />{l}</label>)}</div></td>
           <td><span className={`tag ${tag}`}>{label}</span></td>
           <td><div className="row-actions">
             {st === 'pending' && <><button className="action-btn approve" data-testid={`approve-user-${u.id}`} onClick={() => approve(u)}><Check size={13} /> Aprovar</button><button className="action-btn reject" data-testid={`reject-user-${u.id}`} onClick={() => reject(u)}><XCircle size={13} /> Reprovar</button></>}
@@ -923,13 +939,15 @@ function UsersPage({ me }) {
 }
 
 function UserModal({ modal, onClose, onDone }) {
-  const [form, setForm] = useState(modal.user ? { name: modal.user.name, email: modal.user.email, role: modal.user.role, phone: modal.user.phone || '' } : { role: 'driver', phone: '' });
+  const [form, setForm] = useState(modal.user ? { name: modal.user.name, email: modal.user.email, roles: rolesOf(modal.user), phone: modal.user.phone || '' } : { roles: ['driver'], phone: '' });
+  const toggleRole = (r, on) => setForm(f => ({ ...f, roles: on ? [...new Set([...(f.roles || []), r])] : (f.roles || []).filter(x => x !== r) }));
   const [error, setError] = useState('');
   async function submit(e) {
     e.preventDefault(); setError('');
+    if (modal.mode !== 'reset' && !(form.roles || []).length) return setError('Marque pelo menos um perfil.');
     try {
       if (modal.mode === 'create') { await api.post('/users', form, auth()); }
-      else if (modal.mode === 'edit') { await api.patch(`/users/${modal.user.id}`, { name: form.name, email: form.email, role: form.role, phone: form.phone }, auth()); }
+      else if (modal.mode === 'edit') { await api.patch(`/users/${modal.user.id}`, { name: form.name, email: form.email, roles: form.roles, phone: form.phone }, auth()); }
       else if (modal.mode === 'reset') {
         if (!form.password || form.password.length < 6) return setError('Nova senha precisa ter ao menos 6 caracteres.');
         await api.post(`/users/${modal.user.id}/reset-password`, { password: form.password }, auth());
@@ -944,7 +962,7 @@ function UserModal({ modal, onClose, onDone }) {
     <h3>{isReset ? modal.user.name : modal.mode === 'edit' ? 'Atualizar dados' : 'Cadastrar novo usuário'}</h3>
     {!isReset && <><label>Nome<input required value={form.name || ''} data-testid="user-form-name" onChange={e => setForm({ ...form, name: e.target.value })} /></label>
       <label>E-mail<input required type="email" value={form.email || ''} data-testid="user-form-email" onChange={e => setForm({ ...form, email: e.target.value })} /></label>
-      <label>Perfil<select value={form.role} data-testid="user-form-role" onChange={e => setForm({ ...form, role: e.target.value })}><option value="driver">Entregador</option><option value="admin">Administrador</option></select></label>
+      <div className="role-checks form" data-testid="user-form-role"><span>Perfis (pode marcar os dois)</span>{ROLE_LABELS.map(([r, l]) => <label key={r}><input type="checkbox" data-testid={`user-form-role-${r}`} checked={(form.roles || []).includes(r)} onChange={e => toggleRole(r, e.target.checked)} />{l}</label>)}</div>
       <label>WhatsApp / Telefone<input value={form.phone || ''} placeholder="ex: 5592999999999" data-testid="user-form-phone" onChange={e => setForm({ ...form, phone: e.target.value })} /></label></>}
     {(modal.mode === 'create' || isReset) && <label>{isReset ? 'Nova senha' : 'Senha inicial'}<input required type="password" data-testid="user-form-password" onChange={e => setForm({ ...form, password: e.target.value })} /></label>}
     {error && <div className="error" data-testid="user-form-error">{error}</div>}
@@ -1415,7 +1433,7 @@ function Viagens({ customers, user }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [date]);
   useAutoRefresh(load);
-  useEffect(() => { if (isAdmin) api.get('/users', auth()).then(({ data }) => setDrivers(data.filter(u => u.role === 'driver' && u.active !== false))); }, [isAdmin]);
+  useEffect(() => { if (isAdmin) api.get('/users', auth()).then(({ data }) => setDrivers(data.filter(u => rolesOf(u).includes('driver') && u.active !== false))); }, [isAdmin]);
   useEffect(() => { if (isAdmin) api.get('/brands', auth()).then(({ data }) => setBrandsCatalog(data.filter(b => b.active !== false))).catch(() => { }); }, [isAdmin]);
 
   async function submit(e) {
@@ -1762,12 +1780,13 @@ function MobileConfirm({ title, text, cancelLabel = 'Voltar', confirmLabel, onCa
   </section>
 }
 
-function MobileHeader({ user, title, theme, onToggleTheme }) {
+function MobileHeader({ user, title, theme, onToggleTheme, onLogout }) {
   const today = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Manaus', weekday: 'short', day: '2-digit', month: '2-digit' }).replace('.', '');
   return <header className="mob-header">
     <div className="mob-header-text"><span className="mob-eyebrow">Portal do entregador · {today}</span><b data-testid="mob-title">{title}</b></div>
     <button type="button" className="mob-theme-btn" data-testid="mob-theme-toggle" aria-label={theme === 'dark' ? 'Usar fundo claro' : 'Usar fundo escuro'} onClick={onToggleTheme}>{theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}</button>
     <span className="mob-avatar" role="img" aria-label={`Entregador: ${user.name}`}>{user.name.split(' ').map(x => x[0]).join('').slice(0, 2)}</span>
+    <button type="button" className="mob-theme-btn" data-testid="mob-header-logout" aria-label="Sair da conta" onClick={onLogout}><LogOut size={20} /></button>
   </header>
 }
 
@@ -3005,7 +3024,7 @@ function MobileDespesasTab({ user, date, viagens, viagemAtiva, onOpenViagens, da
   </>
 }
 
-function MobileAjustesTab({ user, theme, setTheme, scale, setTextScale, onLogout }) {
+function MobileAjustesTab({ user, theme, setTheme, scale, setTextScale, onLogout, onSwitchRole }) {
   return <>
     <section className="mob-field">
       <b className="mob-label">Tamanho do texto</b>
@@ -3022,11 +3041,12 @@ function MobileAjustesTab({ user, theme, setTheme, scale, setTextScale, onLogout
       <b className="mob-label">Conta</b>
       <div className="mob-cash-row sm"><span className="mob-avatar" aria-hidden="true">{user.name.split(' ').map(x => x[0]).join('').slice(0, 2)}</span><span className="mob-row-main"><b>{user.name}</b><small>Entregador</small></span></div>
     </section>
+    {rolesOf(user).includes('admin') && <MobBtn kind="outline" lead={LayoutDashboard} data-testid="mob-switch-to-admin" onClick={() => onSwitchRole('admin')}>Abrir painel do admin</MobBtn>}
     <MobBtn kind="outline" lead={LogOut} data-testid="mob-logout-button" onClick={onLogout}>Sair da conta</MobBtn>
   </>
 }
 
-function DriverMobileApp({ user, customers, onLogout }) {
+function DriverMobileApp({ user, customers, onLogout, onSwitchRole }) {
   const [theme, setTheme] = useDraft('hydro_theme', 'light');
   const [textScale, setTextScale] = useDraft('hydro_text_scale', 1);
   const scale = MOBILE_SCALES.map(x => x[0]).reduce((best, v) => Math.abs(v - textScale) < Math.abs(best - textScale) ? v : best, 1);
@@ -3174,7 +3194,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
   const expensesTotal = todaysExpenses.reduce((s, x) => s + Number(x.amount || 0), 0);
 
   return <div ref={rootRef} className={`mobile-app${theme === 'dark' ? ' dark' : ''}`} style={{ '--s': scale }} data-testid="mobile-driver-app">
-    <MobileHeader user={user} title={MOBILE_TITLES[tab]} theme={theme} onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />
+    <MobileHeader user={user} title={MOBILE_TITLES[tab]} theme={theme} onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} onLogout={onLogout} />
     <div className="mob-body">
       <main ref={mainRef} className="mob-main"><div className="mob-col">
         {tab === 'rota' && <MobileRotaTab viagemAtiva={viagemAtiva} viagens={viagensComProgresso} stops={stops} entries={entries} date={date} search={search} setSearch={setSearch} mfPending={mfPending} viagensPresas={viagensPresas} onFinalizarPresa={finishTrip} dayClosed={dayClosed} onOpenStop={openStop} onOpenViagens={openViagens} onStartTrip={startTrip} onFinishTrip={finishTrip} offRoute={offRoute} onPickOffRoute={pickOffRoute} onReceipt={setReceiptEntry} onEditEntry={setEditingEntry} onDeleteEntry={deleteEntry} onIncludeMf={includeMf} />}
@@ -3182,7 +3202,7 @@ function DriverMobileApp({ user, customers, onLogout }) {
         {tab === 'diario' && <MobileDiarioTab entries={entries} date={date} />}
         {tab === 'caixa' && <MobileCaixaTab entries={entries} expenses={todaysExpenses} expensesTotal={expensesTotal} viagens={viagensComProgresso} date={date} pendingStops={pendingStops.length} onCloseDay={closeDay} onOpenViagens={openViagens} dayClosed={dayClosed} closingDay={closingDay} />}
         {tab === 'despesas' && <MobileDespesasTab user={user} date={date} viagens={viagensComProgresso} viagemAtiva={viagemAtiva} onOpenViagens={openViagens} dayClosed={dayClosed} toast={showToast} />}
-        {tab === 'mais' && <MobileAjustesTab user={user} theme={theme} setTheme={setTheme} scale={scale} setTextScale={setTextScale} onLogout={onLogout} />}
+        {tab === 'mais' && <MobileAjustesTab user={user} theme={theme} setTheme={setTheme} scale={scale} setTextScale={setTextScale} onLogout={onLogout} onSwitchRole={onSwitchRole} />}
       </div></main>
       {(wide || launchStop) && <aside className={`mob-panel ${wide ? 'side' : 'cover'}${launchStop ? '' : ' empty'}`} data-testid="mob-launch-panel">
         {launchStop
@@ -3199,7 +3219,20 @@ function DriverMobileApp({ user, customers, onLogout }) {
 
 /* =================== fim app mobile do entregador ==================== */
 
+// Ao sair: agradece o acesso com a marca e, em seguida, volta para o login.
+function Farewell({ name, onDone }) {
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { const t = setTimeout(onDone, 3500); return () => clearTimeout(t); }, []);
+  return <div className="farewell" role="status" data-testid="farewell-screen">
+    <img src={logoImg} alt="Distribuidora Diane" />
+    <h2>Obrigado pelo acesso{name ? `, ${name}` : ''}!</h2>
+    <p>Volte sempre. A Distribuidora Diane agradece a sua parceria.</p>
+    <button type="button" className="primary" data-testid="farewell-login" onClick={onDone}>Entrar novamente</button>
+  </div>;
+}
+
 function App() {
+  const [farewell, setFarewell] = useState(null);
   const [user, setUser] = useState(null), [data, setData] = useState(null), [customers, setCustomers] = useState([]), [checking, setChecking] = useState(true), [modal, setModal] = useState(null), [editCustomer, setEditCustomer] = useState(null), [notifications, setNotifications] = useState({ pending_users: 0, pending_expenses: 0, total: 0 }), [refreshing, setRefreshing] = useState(false), [lastUpdated, setLastUpdated] = useState(null);
   useEffect(() => { const t = localStorage.getItem('hydro_token'); if (t) api.get('/auth/me', auth()).then(x => setUser(x.data)).catch(() => localStorage.removeItem('hydro_token')).finally(() => setChecking(false)); else setChecking(false) }, []);
   async function loadDashboard({ silent = false } = {}) {
@@ -3218,15 +3251,22 @@ function App() {
     return () => clearInterval(id);
   }, [user, data]);
   if (checking) return <div className="loading">Carregando operação...</div>;
-  if (!user) return <Login onLogin={setUser} />;
-  const logout = () => { localStorage.removeItem('hydro_token'); setUser(null) };
+  if (!user) return farewell ? <Farewell name={farewell.name} onDone={() => setFarewell(null)} /> : <Login onLogin={setUser} />;
+  const logout = () => { const first = user.name?.split(' ')[0]; localStorage.removeItem('hydro_token'); setUser(null); setFarewell({ name: first }); };
+  // Mesma conta, outro perfil: o servidor emite um token novo e a tela muda sozinha (painel ou app).
+  async function switchRole(role) {
+    const { data: next } = await api.post('/auth/switch-role', { role }, auth());
+    localStorage.setItem('hydro_token', next.token);
+    window.history.replaceState(null, '', '/');  // o outro perfil começa na tela inicial, não na página em que estava
+    setUser(next);
+  }
   // O entregador usa o mesmo app em qualquer tela; o painel de escritório é só do admin.
-  if (user.role === 'driver') return <DriverMobileApp user={user} customers={customers} onLogout={logout} />;
+  if (user.role === 'driver') return <DriverMobileApp user={user} customers={customers} onLogout={logout} onSwitchRole={switchRole} />;
   async function save(kind, form) { const endpoints = { product: '/products', expense: '/expenses', customer: '/customers' }; const payload = { ...form };['quantity', 'minimum', 'value', 'amount'].forEach(k => { if (payload[k] !== undefined) payload[k] = Number(payload[k]) }); if (kind === 'expense') { payload.status = 'approved'; if (!payload.driver) payload.driver = user.name; } const { data: x } = await api.post(endpoints[kind], payload, auth()); if (kind === 'customer') setCustomers([...customers, x]); else { const key = kind === 'product' ? 'products' : 'expenses_list'; setData({ ...data, [key]: [...(data?.[key] || []), x] }) } setModal(null) }
   async function updateCustomer(id, form) { const { data: x } = await api.patch(`/customers/${id}`, form, auth()); setCustomers(customers.map(c => c.id === id ? x : c)); setEditCustomer(null); }
   const modalFields = fields[modal];
   const adminOnly = el => user.role === 'admin' ? el : <Navigate to="/" replace />;
-  return <Shell user={user} onLogout={logout} notifications={notifications}>
+  return <Shell user={user} onLogout={logout} onSwitchRole={switchRole} notifications={notifications}>
     <Routes>
       <Route path="/" element={<Dashboard data={data} onRefresh={loadDashboard} refreshing={refreshing} lastUpdated={lastUpdated} isDriver={user.role === 'driver'} />} />
       <Route path="/estoque" element={<Stock data={data} setData={setData} create={setModal} />} />
@@ -3238,7 +3278,7 @@ function App() {
       <Route path="/marcas" element={adminOnly(<BrandsCatalog />)} />
       <Route path="/marcas-extras" element={adminOnly(<OutOfCatalogBrands />)} />
       <Route path="/clientes" element={<Customers items={customers} create={setModal} onEdit={setEditCustomer} />} />
-      <Route path="/usuarios" element={adminOnly(<UsersPage me={user} />)} />
+      <Route path="/usuarios" element={adminOnly(<UsersPage me={user} onMeChanged={() => api.get('/auth/me', auth()).then(x => setUser(x.data)).catch(() => { })} />)} />
       <Route path="/fechamento" element={adminOnly(<DailyClosing />)} />
       <Route path="/atividade" element={adminOnly(<ActivityPage />)} />
       <Route path="/relatorios" element={adminOnly(<Reports />)} />
