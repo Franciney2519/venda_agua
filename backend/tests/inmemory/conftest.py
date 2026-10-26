@@ -34,6 +34,20 @@ class Checker:
 @pytest.fixture(scope="module")
 def c():
     import server
-    server.db = AsyncMongoMockClient()["test"]
+    pg_url = os.environ.get("PG_TEST_URL")
+    if pg_url:
+        # Mesmos testes contra um Postgres de verdade (camada pgdoc). Cada módulo usa um esquema próprio e limpo.
+        import uuid, asyncio, asyncpg
+        from pgdoc import PgDatabase
+        schema = "t_" + uuid.uuid4().hex[:12]
+        server.client = server.db = PgDatabase(pg_url, schema=schema)
+    else:
+        server.db = AsyncMongoMockClient()["test"]
     with TestClient(server.app) as client:
         yield client
+    if pg_url:
+        async def drop():
+            conn = await asyncpg.connect(pg_url)
+            try: await conn.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+            finally: await conn.close()
+        asyncio.run(drop())

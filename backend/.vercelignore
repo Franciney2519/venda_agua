@@ -1,0 +1,6 @@
+.venv
+.env
+backups
+tests
+__pycache__
+*.ps1
