@@ -4,3 +4,8 @@
 .bar-group{cursor:pointer;outline:none}.chart-tooltip{position:absolute;bottom:calc(100% + 12px);left:50%;transform:translateX(-50%);background:#10253f;color:#fff;padding:10px 13px;border-radius:8px;font-size:11px;white-space:nowrap;box-shadow:0 10px 24px #10253f33;z-index:5;text-align:left}.chart-tooltip::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:6px solid transparent;border-top-color:#10253f}.chart-tooltip b{display:block;font:600 12px 'Space Grotesk';margin-bottom:6px;color:#fff}.chart-tooltip small{display:flex;align-items:center;gap:6px;color:#c3d2e0;margin-top:3px;font-size:10.5px}.chart-tooltip small:last-child{margin-top:7px;color:#8fa5b8}
 
 .brand-logo{width:34px;height:34px;object-fit:contain;flex-shrink:0}.login-brand img.login-logo{width:34px;height:34px;object-fit:contain;flex-shrink:0}
+
+/* Telas estreitas: 1fr = minmax(auto,1fr) cresce com o conteúdo e empurra a página para o lado; minmax(0,1fr) deixa os cartões encolherem. */
+.stats{grid-template-columns:repeat(4,minmax(0,1fr))}.dashboard-grid{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr)}.customer-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.stat,.stat>div,.panel,.customer-card,.dashboard-grid>*{min-width:0}.stat strong{overflow-wrap:anywhere}.filter-row{flex-wrap:wrap}
+/* Até 1000px o menu lateral ainda ocupa 254px: sobra pouco para 2 colunas de clientes. */
+@media(max-width:1000px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.dashboard-grid,.customer-grid{grid-template-columns:minmax(0,1fr)}}
