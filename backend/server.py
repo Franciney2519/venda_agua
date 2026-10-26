@@ -1315,7 +1315,7 @@ async def iniciar_viagem(item_id: str, user=Depends(current_user)):
             if disponivel < item["quantity"]:
                 faltando.append(f"{item['brand']} (precisa {item['quantity']:g}, tem {disponivel:g})")
         if faltando:
-            raise HTTPException(400, "Estoque insuficiente para carregar: " + "; ".join(faltando) + ". Ajuste a carga da viagem ou reponha o estoque antes de iniciar.")
+            raise HTTPException(400, "Estoque insuficiente para carregar: " + "; ".join(faltando) + ". Ajuste a carga da rota ou reponha o estoque antes de iniciar.")
         ref = viagem_ref(v)
         for item in carga_items:
             await apply_stock_delta(products_cache, item["brand"], -item["quantity"], "carregamento", ref, user)
