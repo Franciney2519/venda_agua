@@ -2194,7 +2194,9 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
   const next = showNext ? pending[0] : null;
   const pendingRows = pending.filter(s => s !== next).filter(match);
   const doneRows = finished.filter(match);
-  const orderSub = s => `${Number(s.quantity) || 0} × ${s.brand || 'produto a combinar'}${s.sale_type === 'full' ? ' completo' : ''}`;
+  // Pedido com vários produtos: mostra todos (antes só o 1º item, com a quantidade somada).
+  const orderSub = s => pedidoItems(s).length ? pedidoLabel(s) : 'produto a combinar';
+  const orderType = s => { const full = new Set(pedidoItems(s).map(i => i.sale_type === 'full')); return full.size > 1 ? 'Água e completo' : full.has(true) ? 'Completo' : 'Somente água'; };
 
   function askFinish() {
     if (carga && atual !== carga) return setFinishAsk(true);
@@ -2271,8 +2273,8 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
           {next.address && <span className="mob-muted">{next.address}</span>}
         </div>
         <div className="mob-next-grid">
-          <div><span className="mob-eyebrow">Pedido</span><b>{Number(next.quantity) || 0} × {next.brand || 'a combinar'}</b></div>
-          <div><span className="mob-eyebrow">Tipo</span><b>{next.sale_type === 'full' ? 'Completo' : 'Somente água'}</b></div>
+          <div><span className="mob-eyebrow">Pedido</span><b>{pedidoItems(next).length ? pedidoLabel(next) : 'a combinar'}</b></div>
+          <div><span className="mob-eyebrow">Tipo</span><b>{orderType(next)}</b></div>
         </div>
         {next.notes && <div className="mob-next-notes"><MessageSquareText size={18} /><span>{next.notes}</span></div>}
         <MobBtn h={64} icon={ArrowRight} data-testid={`mob-order-launch-${next.id}`} onClick={() => onOpenStop(next)}>Lançar entrega</MobBtn>
