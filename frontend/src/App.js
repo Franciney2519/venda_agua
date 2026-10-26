@@ -3204,7 +3204,8 @@ function DriverMobileApp({ user, customers, onLogout, onSwitchRole }) {
         {tab === 'despesas' && <MobileDespesasTab user={user} date={date} viagens={viagensComProgresso} viagemAtiva={viagemAtiva} onOpenViagens={openViagens} dayClosed={dayClosed} toast={showToast} />}
         {tab === 'mais' && <MobileAjustesTab user={user} theme={theme} setTheme={setTheme} scale={scale} setTextScale={setTextScale} onLogout={onLogout} onSwitchRole={onSwitchRole} />}
       </div></main>
-      {(wide || launchStop) && <aside className={`mob-panel ${wide ? 'side' : 'cover'}${launchStop ? '' : ' empty'}`} data-testid="mob-launch-panel">
+      {/* No tablet, o painel lateral só aparece quando há parada para lançar; fora disso a tela usa a largura toda. */}
+      {(launchStop || (wide && tab === 'rota' && viagemAtiva && pendingStops.length > 0)) && <aside className={`mob-panel ${wide ? 'side' : 'cover'}${launchStop ? '' : ' empty'}`} data-testid="mob-launch-panel">
         {launchStop
           ? <MobileLaunchPanel key={launchStop.key} stop={launchStop} user={user} date={date} viagemId={viagemAtiva?.id} cargaRestante={cargaRestante} cargaBrands={viagemAtiva?.carga_items?.length ? viagemAtiva.carga_items.map(i => i.brand) : null} othersPending={pendingStops.filter(s => s.key !== launchStop.key).reduce((a, s) => a + clienteLoad(s), 0)} onClose={() => setLaunchKey(null)} onComplete={onEntryComplete} onFailed={() => { setLaunchKey(null); loadViagens(); loadMfPending(); showToast('Marcado como não entregue.'); }} onOpenViagens={() => openViagens(viagemAtiva?.id)} />
           : <div className="mob-panel-empty"><Hand size={32} /><b>Toque numa parada para lançar a entrega.</b><span className="mob-muted">O lançamento abre aqui, sem esconder a rota.</span></div>}
