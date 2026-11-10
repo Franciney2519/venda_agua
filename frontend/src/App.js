@@ -108,8 +108,8 @@ function useDeposito() {
   useEffect(() => { load(); }, []);
   return [dep, load];
 }
-async function saveDeposito({ cep, lat, lng, found }) {
-  await api.put('/settings/deposito', { cep, lat, lng, address: found ? cepAddress(found) : undefined }, auth());
+async function saveDeposito({ cep, lat, lng, found, label }) {
+  await api.put('/settings/deposito', { cep, lat, lng, address: label || (found ? cepAddress(found) : undefined) }, auth());
 }
 // Local de entrega do cliente (entregador e admin): CEP e/ou pino no mapa.
 async function saveCustomerLocation(customerId, { cep, lat, lng }) {
@@ -232,7 +232,7 @@ function CustomerModal({ onClose, onSave, customer }) {
   const [form, setForm] = useState(isEdit
     ? { name: customer.name || '', address: customer.address || '', phone: customer.phone || '', code: customer.code || '', payment_type: customer.payment_type || 'normal', cep: fmtCep(customer.cep || ''), lat: customer.lat ?? null, lng: customer.lng ?? null }
     : { name: '', address: '', phone: '', code: '', payment_type: 'normal', cep: '', lat: null, lng: null });
-  const [cepBusy, setCepBusy] = useState(false), [cepMsg, setCepMsg] = useState(''), [showMap, setShowMap] = useState(false);
+  const [cepBusy, setCepBusy] = useState(false), [cepMsg, setCepMsg] = useState(''), [showMap, setShowMap] = useState(false), [searching, setSearching] = useState(false);
   // CEP preenche o endereço (se ainda vazio) e a posição no mapa; o número da casa entra no endereço.
   async function buscarCep() {
     setCepBusy(true); setCepMsg('');
@@ -276,8 +276,13 @@ function CustomerModal({ onClose, onSave, customer }) {
     <label>Endereço (com número)<input required value={form.address} data-testid="modal-address-input" onChange={e => setForm({ ...form, address: e.target.value })} /></label>
     <div className="row-actions" style={{ justifyContent: 'space-between' }}>
       <small className="muted" data-testid="modal-location-status">{hasPos(form) ? 'Local de entrega marcado no mapa.' : 'Sem local no mapa — informe o CEP ou marque no mapa.'}</small>
-      <button type="button" className="ghost-btn" data-testid="modal-map-toggle" onClick={() => setShowMap(!showMap)}><RouteIcon size={14} /> {showMap ? 'Ocultar mapa' : 'Marcar no mapa'}</button>
+      <span className="row-actions">
+        <button type="button" className="ghost-btn" data-testid="modal-address-search" onClick={() => setSearching(true)}><Search size={14} /> Buscar endereço</button>
+        <button type="button" className="ghost-btn" data-testid="modal-map-toggle" onClick={() => setShowMap(!showMap)}><RouteIcon size={14} /> {showMap ? 'Ocultar mapa' : 'Marcar no mapa'}</button>
+      </span>
     </div>
+    {searching && <LocationModal title="Localizar o endereço do cliente" subtitle="Busque pelo endereço ou pelo CEP e confira o pino." address={form.address} initial={{ cep: form.cep, lat: form.lat, lng: form.lng }} testid="modal-address-modal" onClose={() => setSearching(false)}
+      onSave={async loc => { setForm(f => ({ ...f, lat: loc.lat, lng: loc.lng, cep: loc.cep ? fmtCep(loc.cep) : f.cep, address: f.address.trim() ? f.address : (loc.label || (loc.found ? cepAddress(loc.found) : '')) })); setSearching(false); setShowMap(true); }} />}
     {showMap && <><LeafletMap pick={hasPos(form) ? { lat: form.lat, lng: form.lng } : null} onPick={p => setForm(f => ({ ...f, ...p }))} height={240} testid="modal-location-map" /><small className="muted">Toque no mapa ou arraste o pino até a porta do cliente.</small></>}
     <label>Telefone<input value={form.phone} data-testid="modal-phone-input" onChange={e => setForm({ ...form, phone: e.target.value })} /></label>
     <label>Forma de pagamento<select value={form.payment_type} data-testid="modal-payment-type-input" onChange={e => setForm({ ...form, payment_type: e.target.value })}>
