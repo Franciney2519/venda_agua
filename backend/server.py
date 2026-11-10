@@ -93,6 +93,9 @@ class ResourceInput(BaseModel):
     rota_id: Optional[str] = None
     photo: Optional[str] = None
     target_margin: Optional[float] = None
+    cep: Optional[str] = None  # cliente: CEP do endereço (só dígitos)
+    lat: Optional[float] = None  # cliente: posição no mapa (vem do CEP/endereço ou do pino ajustado)
+    lng: Optional[float] = None
 
 class LotInput(BaseModel):
     quantity: float
@@ -732,6 +735,24 @@ async def update_customer(item_id: str, data: ResourceInput, user=Depends(admin_
     if renamed and before.get("name"): await rename_customer(before["name"], values["name"])
     doc = await db.customers.find_one({"id": item_id}, {"_id": 0}); return doc
 
+class DepositoInput(BaseModel):
+    cep: Optional[str] = None
+    address: Optional[str] = None
+    lat: float
+    lng: float
+
+# Ponto de saída das rotas (a distribuidora): começo do traçado no mapa e da navegação.
+@api.get("/settings/deposito")
+async def get_deposito(user=Depends(current_user)):
+    return await db.settings.find_one({"key": "deposito"}, {"_id": 0}) or {}
+@api.put("/settings/deposito")
+async def set_deposito(data: DepositoInput, user=Depends(admin_user)):
+    if not (-90 <= data.lat <= 90 and -180 <= data.lng <= 180): raise HTTPException(400, "Localização do depósito inválida")
+    doc = {**data.model_dump(), "key": "deposito", "updated_at": now(), "updated_by": user["name"]}
+    await db.settings.update_one({"key": "deposito"}, {"$set": doc}, upsert=True)
+    await log_activity("deposito_atualizado", user, {"id": "deposito", "name": data.address or data.cep or ""})
+    return await db.settings.find_one({"key": "deposito"}, {"_id": 0})
+
 @api.get("/brands")
 async def brands(user=Depends(current_user)): return await list_resource("brands")
 @api.post("/brands")
@@ -760,6 +781,27 @@ async def brands_cost_history(brand_id: Optional[str] = None, user=Depends(admin
 async def delete_brand(item_id: str, user=Depends(admin_user)):
     await db.brands.delete_one({"id": item_id})
     return {"message": "Excluída"}
+
+class LocalizacaoInput(BaseModel):
+    cep: Optional[str] = None
+    lat: float
+    lng: float
+
+# Local de entrega do cliente: o entregador também pode informar (CEP ou pino no mapa) quando o cadastro não tem.
+# Só mexe na posição — o resto do cadastro continua com o admin.
+@api.patch("/customers/{item_id}/localizacao")
+async def set_customer_location(item_id: str, data: LocalizacaoInput, user=Depends(current_user)):
+    target = await db.customers.find_one({"id": item_id}, {"_id": 0})
+    if not target: raise HTTPException(404, "Cliente não encontrado")
+    if not (-90 <= data.lat <= 90 and -180 <= data.lng <= 180): raise HTTPException(400, "Localização inválida")
+    values = {"lat": data.lat, "lng": data.lng, "location_by": user["name"], "location_at": now()}
+    cep = "".join(ch for ch in (data.cep or "") if ch.isdigit())
+    if cep:
+        if len(cep) != 8: raise HTTPException(400, "CEP inválido — use 8 dígitos")
+        values["cep"] = cep
+    await db.customers.update_one({"id": item_id}, {"$set": values})
+    await log_activity("cliente_localizacao", user, {"id": item_id, "name": target.get("name")})
+    return await db.customers.find_one({"id": item_id}, {"_id": 0})
 
 @api.get("/customers/out-of-catalog-brands")
 async def out_of_catalog_brands(user=Depends(admin_user)):

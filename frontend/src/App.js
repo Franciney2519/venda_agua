@@ -8,6 +8,7 @@ import logoImg from "./assets/logo.png";
 import { LOGO_PNG_BASE64 } from "./logoBase64";
 import "@/App.css";
 import "@/Operations.css";
+import { RoutePanel, LocationModal, LeafletMap, lookupCep, cepAddress, fmtCep, onlyDigits as cepDigits, hasPos } from "./RouteMap";
 
 const api = axios.create({ baseURL: `${process.env.REACT_APP_BACKEND_URL}/api` });
 const auth = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem("hydro_token")}` } });
@@ -98,6 +99,22 @@ function useDraft(key, initial) {
   useEffect(() => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { } }, [key, value]);
   function clear() { try { localStorage.removeItem(key); } catch { } setValue(initial); }
   return [value, setValue, clear];
+}
+
+// Ponto de saída das rotas (depósito), usado no mapa do painel e do app.
+function useDeposito() {
+  const [dep, setDep] = useState(null);
+  const load = () => api.get('/settings/deposito', auth()).then(r => setDep(r.data || {})).catch(() => { });
+  useEffect(() => { load(); }, []);
+  return [dep, load];
+}
+async function saveDeposito({ cep, lat, lng, found }) {
+  await api.put('/settings/deposito', { cep, lat, lng, address: found ? cepAddress(found) : undefined }, auth());
+}
+// Local de entrega do cliente (entregador e admin): CEP e/ou pino no mapa.
+async function saveCustomerLocation(customerId, { cep, lat, lng }) {
+  const { data } = await api.patch(`/customers/${customerId}/localizacao`, { cep, lat, lng }, auth());
+  return data;
 }
 
 function useAutoRefresh(refresh, intervalMs = 15000) {
@@ -213,8 +230,20 @@ const fields = { expense: [{ key: 'type', label: 'Categoria', options: ['Combust
 function CustomerModal({ onClose, onSave, customer }) {
   const isEdit = !!customer;
   const [form, setForm] = useState(isEdit
-    ? { name: customer.name || '', address: customer.address || '', phone: customer.phone || '', code: customer.code || '', payment_type: customer.payment_type || 'normal' }
-    : { name: '', address: '', phone: '', code: '', payment_type: 'normal' });
+    ? { name: customer.name || '', address: customer.address || '', phone: customer.phone || '', code: customer.code || '', payment_type: customer.payment_type || 'normal', cep: fmtCep(customer.cep || ''), lat: customer.lat ?? null, lng: customer.lng ?? null }
+    : { name: '', address: '', phone: '', code: '', payment_type: 'normal', cep: '', lat: null, lng: null });
+  const [cepBusy, setCepBusy] = useState(false), [cepMsg, setCepMsg] = useState(''), [showMap, setShowMap] = useState(false);
+  // CEP preenche o endereço (se ainda vazio) e a posição no mapa; o número da casa entra no endereço.
+  async function buscarCep() {
+    setCepBusy(true); setCepMsg('');
+    try {
+      const r = await lookupCep(form.cep);
+      setForm(f => ({ ...f, address: f.address.trim() ? f.address : cepAddress(r), ...(hasPos(r) ? { lat: r.lat, lng: r.lng } : {}) }));
+      setCepMsg(hasPos(r) ? `${cepAddress(r)} — local marcado no mapa. Confira o pino.` : `${cepAddress(r)} — sem posição: marque no mapa.`);
+      setShowMap(true);
+    } catch (e) { setCepMsg(e.message || 'Não foi possível consultar o CEP.'); }
+    finally { setCepBusy(false); }
+  }
   const [brands, setBrands] = useState(
     isEdit && brandListOf(customer).length
       ? brandListOf(customer).map(b => ({ brand: b.brand || '', price: b.price ?? '', price_full: b.price_full ?? '' }))
@@ -230,7 +259,9 @@ function CustomerModal({ onClose, onSave, customer }) {
     e.preventDefault(); setError('');
     if (!form.name.trim() || !form.address.trim()) return setError('Preencha os campos obrigatórios.');
     const cleanBrands = brands.filter(b => b.brand.trim()).map(b => ({ brand: b.brand.trim(), price: Number(b.price) || 0, price_full: b.price_full !== '' ? Number(b.price_full) || 0 : undefined }));
-    try { await onSave({ ...form, brands: cleanBrands, brand: cleanBrands[0]?.brand, price: cleanBrands[0]?.price }); }
+    const { lat, lng, ...rest } = form;
+    const pos = hasPos({ lat, lng }) ? { lat, lng } : {};
+    try { await onSave({ ...rest, cep: cepDigits(form.cep) || undefined, ...pos, brands: cleanBrands, brand: cleanBrands[0]?.brand, price: cleanBrands[0]?.price }); }
     catch (e) { setError(e.response?.data?.detail || 'Não foi possível salvar.'); }
   }
 
@@ -240,7 +271,14 @@ function CustomerModal({ onClose, onSave, customer }) {
     <h3>{isEdit ? `Editar ${customer.name}` : 'Cadastrar cliente'}</h3>
     <label>Código do cliente<input value={form.code} placeholder="ex: 0047" data-testid="modal-code-input" onChange={e => setForm({ ...form, code: e.target.value })} /></label>
     <label>Nome / empresa<input required value={form.name} data-testid="modal-name-input" onChange={e => setForm({ ...form, name: e.target.value })} /></label>
-    <label>Endereço<input required value={form.address} data-testid="modal-address-input" onChange={e => setForm({ ...form, address: e.target.value })} /></label>
+    <label>CEP<span className="row-actions"><input inputMode="numeric" placeholder="00000-000" value={form.cep} data-testid="modal-cep-input" style={{ flex: 1 }} onChange={e => setForm({ ...form, cep: fmtCep(e.target.value) })} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); buscarCep(); } }} /><button type="button" className="ghost-btn" disabled={cepBusy || cepDigits(form.cep).length !== 8} data-testid="modal-cep-search" onClick={buscarCep}>{cepBusy ? <Loader2 size={14} className="spin" /> : <Search size={14} />} Buscar</button></span></label>
+    {cepMsg && <small className="muted" data-testid="modal-cep-result">{cepMsg}</small>}
+    <label>Endereço (com número)<input required value={form.address} data-testid="modal-address-input" onChange={e => setForm({ ...form, address: e.target.value })} /></label>
+    <div className="row-actions" style={{ justifyContent: 'space-between' }}>
+      <small className="muted" data-testid="modal-location-status">{hasPos(form) ? 'Local de entrega marcado no mapa.' : 'Sem local no mapa — informe o CEP ou marque no mapa.'}</small>
+      <button type="button" className="ghost-btn" data-testid="modal-map-toggle" onClick={() => setShowMap(!showMap)}><RouteIcon size={14} /> {showMap ? 'Ocultar mapa' : 'Marcar no mapa'}</button>
+    </div>
+    {showMap && <><LeafletMap pick={hasPos(form) ? { lat: form.lat, lng: form.lng } : null} onPick={p => setForm(f => ({ ...f, ...p }))} height={240} testid="modal-location-map" /><small className="muted">Toque no mapa ou arraste o pino até a porta do cliente.</small></>}
     <label>Telefone<input value={form.phone} data-testid="modal-phone-input" onChange={e => setForm({ ...form, phone: e.target.value })} /></label>
     <label>Forma de pagamento<select value={form.payment_type} data-testid="modal-payment-type-input" onChange={e => setForm({ ...form, payment_type: e.target.value })}>
       <option value="normal">Normal — paga à vista na entrega</option>
@@ -975,8 +1013,8 @@ function ActivityPage() {
   async function load() { const { data } = await api.get('/activity', auth()); setItems(data); }
   useEffect(() => { load().catch(() => setItems([])); }, []);
   useAutoRefresh(load);
-  const labels = { signup: 'Cadastro recebido', user_created: 'Usuário criado', user_approved: 'Usuário aprovado', user_rejected: 'Usuário reprovado', user_updated: 'Usuário editado', user_deleted: 'Usuário excluído', password_reset: 'Senha redefinida', expense_approved: 'Despesa aprovada', expense_rejected: 'Despesa reprovada', expense_pending: 'Despesa reaberta', daily_closing_closed: 'Dia fechado', daily_closing_reopened: 'Dia reaberto', viagem_criada: 'Rota criada', viagem_iniciada: 'Rota iniciada', viagem_finalizada: 'Rota encerrada', viagem_excluida: 'Rota excluída', cliente_nao_entregue: 'Não entregue', entrega_lancada: 'Entrega lançada', entrega_excluida: 'Entrega excluída', despesa_lancada: 'Despesa lançada', despesa_excluida: 'Despesa excluída', stock_adjusted: 'Estoque ajustado', lot_created: 'Lote criado', lot_deleted: 'Lote excluído' };
-  const tones = { user_approved: 'green', expense_approved: 'green', daily_closing_closed: 'green', user_rejected: 'red', expense_rejected: 'red', user_deleted: 'red', user_created: 'blue', signup: 'blue', password_reset: 'orange', daily_closing_reopened: 'orange', user_updated: 'gray', expense_pending: 'gray', viagem_criada: 'blue', viagem_iniciada: 'blue', viagem_finalizada: 'green', viagem_excluida: 'red', cliente_nao_entregue: 'orange', entrega_lancada: 'green', despesa_lancada: 'orange', entrega_excluida: 'red', despesa_excluida: 'red', lot_deleted: 'red', lot_created: 'blue', stock_adjusted: 'orange' };
+  const labels = { signup: 'Cadastro recebido', user_created: 'Usuário criado', user_approved: 'Usuário aprovado', user_rejected: 'Usuário reprovado', user_updated: 'Usuário editado', user_deleted: 'Usuário excluído', password_reset: 'Senha redefinida', expense_approved: 'Despesa aprovada', expense_rejected: 'Despesa reprovada', expense_pending: 'Despesa reaberta', daily_closing_closed: 'Dia fechado', daily_closing_reopened: 'Dia reaberto', viagem_criada: 'Rota criada', viagem_iniciada: 'Rota iniciada', viagem_finalizada: 'Rota encerrada', viagem_excluida: 'Rota excluída', cliente_nao_entregue: 'Não entregue', entrega_lancada: 'Entrega lançada', entrega_excluida: 'Entrega excluída', despesa_lancada: 'Despesa lançada', despesa_excluida: 'Despesa excluída', stock_adjusted: 'Estoque ajustado', lot_created: 'Lote criado', lot_deleted: 'Lote excluído', deposito_atualizado: 'Ponto de saída alterado', cliente_localizacao: 'Local do cliente marcado' };
+  const tones = { user_approved: 'green', expense_approved: 'green', daily_closing_closed: 'green', user_rejected: 'red', expense_rejected: 'red', user_deleted: 'red', user_created: 'blue', signup: 'blue', password_reset: 'orange', daily_closing_reopened: 'orange', user_updated: 'gray', expense_pending: 'gray', viagem_criada: 'blue', viagem_iniciada: 'blue', viagem_finalizada: 'green', viagem_excluida: 'red', cliente_nao_entregue: 'orange', entrega_lancada: 'green', despesa_lancada: 'orange', entrega_excluida: 'red', despesa_excluida: 'red', lot_deleted: 'red', lot_created: 'blue', stock_adjusted: 'orange', deposito_atualizado: 'gray', cliente_localizacao: 'gray' };
   return <><Head eyebrow="AUDITORIA" title="Atividade" subtitle="Ações do administrador e dos entregadores, em ordem cronológica." />
     <section className="panel activity-panel"><ul className="activity-list" data-testid="activity-list">
       {items.length === 0 && <li className="muted" style={{ padding: 20 }}>Nenhuma atividade registrada ainda.</li>}
@@ -1343,7 +1381,8 @@ function AdminPedidoForm({ customer, brandsCatalog, initialItems, busy, confirmL
   </div>
 }
 
-function AdminTripEditor({ v, customers, drivers, brandsCatalog, onSaved }) {
+function AdminTripEditor({ v, customers, drivers, brandsCatalog, onSaved, deposito, onSetOrigin, onCustomerUpdated }) {
+  const [locating, setLocating] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [adding, setAdding] = useState(null);
@@ -1379,7 +1418,9 @@ function AdminTripEditor({ v, customers, drivers, brandsCatalog, onSaved }) {
       // Rota antiga sem grupo de clientes: cria o grupo e devolve o id.
       const targetId = async () => target ? target.id : (await api.post(`${base}/rotas`, { clientes: [] }, auth())).data.rotas.slice(-1)[0].id;
       const saveOrder = keys => run(() => api.post(`${base}/ordem`, { clientes: keys.map(k => { const [rota_id, id] = k.split(':'); return { rota_id, id }; }) }, auth()), 'Não foi possível salvar a ordem de entrega.');
-      return <div style={{ border: '1px solid var(--line, #dfe5ec)', borderRadius: 10, padding: '12px 14px' }} data-testid={`admin-clientes-${v.id}`}>
+      const mapStops = list.map((c, i) => { const cu = customerOf(c); return { key: `${c.rota.id}:${c.id}`, id: c.id, seq: i + 1, name: c.name, address: cu.address || '', cep: cu.cep, lat: cu.lat, lng: cu.lng, status: c.status === 'nao_entregue' ? 'failed' : 'pending' }; });
+      return <div className="admin-trip-grid" style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', alignItems: 'start' }}>
+      <div style={{ border: '1px solid var(--line, #dfe5ec)', borderRadius: 10, padding: '12px 14px' }} data-testid={`admin-clientes-${v.id}`}>
         <div className="row-actions" style={{ justifyContent: 'space-between' }}>
           <span><b>Clientes da rota</b> <small className="muted">{list.length} cliente{list.length === 1 ? '' : 's'} · {list.reduce((a, c) => a + clienteLoad(c), 0)} un{list.length > 1 ? ' · arraste ⠿ para mudar a ordem de entrega' : ''}</small></span>
         </div>
@@ -1407,13 +1448,21 @@ function AdminTripEditor({ v, customers, drivers, brandsCatalog, onSaved }) {
               : <div className="row-actions" style={{ marginTop: 8 }}><button type="button" className="ghost-btn" onClick={() => setAdding(null)}>Fechar</button></div>}
           </div>
           : <button type="button" className="ghost-btn" style={{ marginTop: 10 }} disabled={busy} data-testid={`admin-add-cliente-${v.id}`} onClick={() => { setAdding(true); setPickName(''); setEditing(null); }}><UserPlus size={14} /> Adicionar cliente</button>}
+      </div>
+      {list.length > 0 && <div style={{ border: '1px solid var(--line, #dfe5ec)', borderRadius: 10, padding: '12px 14px' }}>
+        <RoutePanel origin={deposito} stops={mapStops} onReorder={busy ? undefined : saveOrder} onLocate={s => setLocating(s)} onSetOrigin={onSetOrigin} testid={`admin-route-map-${v.id}`} />
+      </div>}
+      {locating && <LocationModal title={`Local de entrega · ${locating.name}`} subtitle={locating.address} address={locating.address} initial={locating} testid="admin-location-modal" onClose={() => setLocating(null)}
+        onSave={async loc => { const x = await saveCustomerLocation(locating.id, loc); onCustomerUpdated?.(x); setLocating(null); }} />}
       </div>;
     })()}
   </div>
 }
 
-function Viagens({ customers, user }) {
+function Viagens({ customers, user, onCustomerUpdated }) {
   const isAdmin = user?.role === 'admin';
+  const [deposito, loadDeposito] = useDeposito();
+  const [editDeposito, setEditDeposito] = useState(false);
   const [viagens, setViagens] = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [date, setDate] = useState(todayISO(0));
@@ -1478,6 +1527,7 @@ function Viagens({ customers, user }) {
       <div className="report-filters">
         <label>Data<input type="date" value={date} data-testid="viagens-date-input" onChange={e => setDate(e.target.value)} /></label>
       </div>
+      {isAdmin && <button type="button" className="ghost-btn" data-testid="viagens-deposito-button" title={deposito?.address || ''} onClick={() => setEditDeposito(true)}><Flag size={14} /> {hasPos(deposito) ? `Saída: ${deposito.address || 'marcada no mapa'}` : 'Definir ponto de saída'}</button>}
       {loading && <Loader2 size={16} className="spin blue-text" />}
     </div>
     <div className="stats">
@@ -1514,8 +1564,10 @@ function Viagens({ customers, user }) {
         <div><h3>Rota {openTrip.codigo_viagem} · {openTrip.driver}</h3><p className="muted">{TURNO_LABELS[openTrip.turno]} · {VIAGEM_STATUS_LABEL[openTrip.status]}</p></div>
         <button className="ghost-btn" data-testid="admin-trip-detail-close" onClick={() => setOpenId(null)}><X size={14} /> Fechar</button>
       </div>
-      <AdminTripEditor key={openTrip.id} v={openTrip} customers={customers} drivers={drivers} brandsCatalog={brandsCatalog} onSaved={load} />
+      <AdminTripEditor key={openTrip.id} v={openTrip} customers={customers} drivers={drivers} brandsCatalog={brandsCatalog} onSaved={load} deposito={deposito} onSetOrigin={() => setEditDeposito(true)} onCustomerUpdated={onCustomerUpdated} />
     </section>}
+    {editDeposito && <LocationModal title="Ponto de saída (sua distribuidora)" subtitle={deposito?.address ? `Atual: ${deposito.address}` : 'Onde as rotas começam: informe o CEP ou marque no mapa.'} initial={deposito} testid="deposito-modal" onClose={() => setEditDeposito(false)}
+      onSave={async loc => { await saveDeposito(loc); await loadDeposito(); setEditDeposito(false); }} />}
   </>
 }
 
@@ -2197,7 +2249,7 @@ function MobileLaunchPanel({ stop, user, date, viagemId, cargaRestante, cargaBra
   </>
 }
 
-function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, setSearch, mfPending, viagensPresas, onFinalizarPresa, dayClosed, onOpenStop, onOpenViagens, onStartTrip, onFinishTrip, offRoute, onPickOffRoute, onReceipt, onEditEntry, onDeleteEntry, onIncludeMf }) {
+function MobileRotaTab({ deposito, onLocate, onReorder, viagemAtiva, viagens, stops, entries, date, search, setSearch, mfPending, viagensPresas, onFinalizarPresa, dayClosed, onOpenStop, onOpenViagens, onStartTrip, onFinishTrip, offRoute, onPickOffRoute, onReceipt, onEditEntry, onDeleteEntry, onIncludeMf }) {
   const [finishAsk, setFinishAsk] = useState(false);
   const [openDone, setOpenDone] = useState(null);
   const [deleteAsk, setDeleteAsk] = useState(null);
@@ -2321,7 +2373,15 @@ function MobileRotaTab({ viagemAtiva, viagens, stops, entries, date, search, set
           <div><span className="mob-eyebrow">Tipo</span><b>{orderType(next)}</b></div>
         </div>
         {next.notes && <div className="mob-next-notes"><MessageSquareText size={18} /><span>{next.notes}</span></div>}
+        {(hasPos(next) || next.address) && <a className="mob-link" data-testid="mob-next-navigate" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${encodeURIComponent(hasPos(next) ? `${next.lat},${next.lng}` : next.address)}`}>Ir até este cliente no Google Maps<ChevronRight size={16} /></a>}
+        {!hasPos(next) && !dayClosed && <button type="button" className="mob-link" data-testid="mob-next-locate" onClick={() => onLocate(next)}>Sem local no mapa · informar CEP ou marcar<ChevronRight size={16} /></button>}
         <MobBtn h={64} icon={ArrowRight} data-testid={`mob-order-launch-${next.id}`} onClick={() => onOpenStop(next)}>Lançar entrega</MobBtn>
+      </section>}
+
+      {viagemAtiva && <section className="mob-card plain" data-testid="mob-route-map-card">
+        <div className="mob-card-body">
+          <RoutePanel compact origin={deposito} stops={stops} mapHeight={260} onReorder={dayClosed ? undefined : onReorder} onLocate={dayClosed ? undefined : onLocate} onEditOrder={() => onOpenViagens(viagemAtiva.id)} testid="mob-route-map" />
+        </div>
       </section>}
     </>}
 
@@ -3046,7 +3106,9 @@ function MobileAjustesTab({ user, theme, setTheme, scale, setTextScale, onLogout
   </>
 }
 
-function DriverMobileApp({ user, customers, onLogout, onSwitchRole }) {
+function DriverMobileApp({ user, customers, onLogout, onSwitchRole, onCustomerUpdated }) {
+  const [deposito] = useDeposito();
+  const [locating, setLocating] = useState(null);
   const [theme, setTheme] = useDraft('hydro_theme', 'light');
   const [textScale, setTextScale] = useDraft('hydro_text_scale', 1);
   const scale = MOBILE_SCALES.map(x => x[0]).reduce((best, v) => Math.abs(v - textScale) < Math.abs(best - textScale) ? v : best, 1);
@@ -3113,7 +3175,7 @@ function DriverMobileApp({ user, customers, onLogout, onSwitchRole }) {
   const stops = orderedClients(viagemAtiva).map(({ c, r }, i) => {
     const entry = entriesDaViagem.find(e => entryOfStop(e, r.id, c.name));
     const customer = customers.find(x => x.id === c.id) || customers.find(x => sameName(x.name, c.name));
-    return { ...c, key: `${r.id}:${c.id}`, rota_id: r.id, rota_numero: r.numero, seq: i + 1, customer, entry, address: customer?.address || '', prazo: customer?.payment_type === 'prazo', status: entry ? 'done' : c.status === 'nao_entregue' ? 'failed' : 'pending' };
+    return { ...c, key: `${r.id}:${c.id}`, rota_id: r.id, rota_numero: r.numero, seq: i + 1, customer, entry, address: customer?.address || '', cep: customer?.cep, lat: customer?.lat, lng: customer?.lng, prazo: customer?.payment_type === 'prazo', status: entry ? 'done' : c.status === 'nao_entregue' ? 'failed' : 'pending' };
   });
   doneFirst(stops, s => s.status !== 'pending').forEach((s, i) => { s.seq = i + 1; });
   const pendingStops = stops.filter(s => s.status === 'pending');
@@ -3197,7 +3259,7 @@ function DriverMobileApp({ user, customers, onLogout, onSwitchRole }) {
     <MobileHeader user={user} title={MOBILE_TITLES[tab]} theme={theme} onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} onLogout={onLogout} />
     <div className="mob-body">
       <main ref={mainRef} className="mob-main"><div className="mob-col">
-        {tab === 'rota' && <MobileRotaTab viagemAtiva={viagemAtiva} viagens={viagensComProgresso} stops={stops} entries={entries} date={date} search={search} setSearch={setSearch} mfPending={mfPending} viagensPresas={viagensPresas} onFinalizarPresa={finishTrip} dayClosed={dayClosed} onOpenStop={openStop} onOpenViagens={openViagens} onStartTrip={startTrip} onFinishTrip={finishTrip} offRoute={offRoute} onPickOffRoute={pickOffRoute} onReceipt={setReceiptEntry} onEditEntry={setEditingEntry} onDeleteEntry={deleteEntry} onIncludeMf={includeMf} />}
+        {tab === 'rota' && <MobileRotaTab deposito={deposito} onLocate={s => s.customer ? setLocating(s) : showToast('Cliente fora do cadastro: peça ao admin para cadastrar o endereço.')} onReorder={guard(async keys => { await reorderClientes(viagemAtiva.id, keys); showToast('Sequência de entrega atualizada.'); }, 'Não foi possível salvar a ordem de entrega.')} viagemAtiva={viagemAtiva} viagens={viagensComProgresso} stops={stops} entries={entries} date={date} search={search} setSearch={setSearch} mfPending={mfPending} viagensPresas={viagensPresas} onFinalizarPresa={finishTrip} dayClosed={dayClosed} onOpenStop={openStop} onOpenViagens={openViagens} onStartTrip={startTrip} onFinishTrip={finishTrip} offRoute={offRoute} onPickOffRoute={pickOffRoute} onReceipt={setReceiptEntry} onEditEntry={setEditingEntry} onDeleteEntry={deleteEntry} onIncludeMf={includeMf} />}
         {tab === 'viagens' && <MobileViagensScreen viagens={viagensComProgresso} customers={customers} entries={entries} mfPending={mfPending} dayClosed={dayClosed} viagemAtiva={viagemAtiva} openTripId={openTripId} setOpenTripId={setOpenTripId} onBack={() => setTab('rota')} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} onAddRota={addRota} onAddRotaCliente={addRotaCliente} onUpdateRotaCliente={updateRotaCliente} onRemoveRotaCliente={removeRotaCliente} onRemoveRota={removeRota} onReorder={reorderClientes} onScheduleMf={scheduleMf} toast={showToast} />}
         {tab === 'diario' && <MobileDiarioTab entries={entries} date={date} />}
         {tab === 'caixa' && <MobileCaixaTab entries={entries} expenses={todaysExpenses} expensesTotal={expensesTotal} viagens={viagensComProgresso} date={date} pendingStops={pendingStops.length} onCloseDay={closeDay} onOpenViagens={openViagens} dayClosed={dayClosed} closingDay={closingDay} />}
@@ -3212,6 +3274,8 @@ function DriverMobileApp({ user, customers, onLogout, onSwitchRole }) {
       </aside>}
     </div>
     <MobileBottomNav tab={tab} setTab={t => { setTab(t); if (!wide) setLaunchKey(null); }} />
+    {locating && <LocationModal title={`Local de entrega · ${locating.name}`} subtitle={locating.address || 'Cliente sem endereço no cadastro'} address={locating.address} initial={locating.customer} testid="mob-location-modal" onClose={() => setLocating(null)}
+      onSave={async loc => { const x = await saveCustomerLocation(locating.customer.id, loc); onCustomerUpdated?.(x); setLocating(null); showToast('Local de entrega salvo.'); }} />}
     {editingEntry && <MobileEditEntregaModal entry={editingEntry} onClose={() => setEditingEntry(null)} onSaved={() => { setEditingEntry(null); loadEntries(); loadViagens(); loadMfPending(); showToast('Revisão salva.'); }} />}
     {receiptEntry && <MobileReceiptPrompt entry={receiptEntry} customer={customers.find(c => c.name === receiptEntry.customer)} onSavePhone={p => savePhoneForCustomerName(receiptEntry.customer, p)} onClose={() => setReceiptEntry(null)} />}
     <MobileToast text={toast} />
@@ -3262,7 +3326,8 @@ function App() {
     setUser(next);
   }
   // O entregador usa o mesmo app em qualquer tela; o painel de escritório é só do admin.
-  if (user.role === 'driver') return <DriverMobileApp user={user} customers={customers} onLogout={logout} onSwitchRole={switchRole} />;
+  const customerUpdated = x => setCustomers(cs => cs.map(c => c.id === x.id ? x : c));
+  if (user.role === 'driver') return <DriverMobileApp user={user} customers={customers} onLogout={logout} onSwitchRole={switchRole} onCustomerUpdated={customerUpdated} />;
   async function save(kind, form) { const endpoints = { product: '/products', expense: '/expenses', customer: '/customers' }; const payload = { ...form };['quantity', 'minimum', 'value', 'amount'].forEach(k => { if (payload[k] !== undefined) payload[k] = Number(payload[k]) }); if (kind === 'expense') { payload.status = 'approved'; if (!payload.driver) payload.driver = user.name; } const { data: x } = await api.post(endpoints[kind], payload, auth()); if (kind === 'customer') setCustomers([...customers, x]); else { const key = kind === 'product' ? 'products' : 'expenses_list'; setData({ ...data, [key]: [...(data?.[key] || []), x] }) } setModal(null) }
   async function updateCustomer(id, form) { const { data: x } = await api.patch(`/customers/${id}`, form, auth()); setCustomers(customers.map(c => c.id === id ? x : c)); setEditCustomer(null); }
   const modalFields = fields[modal];
@@ -3274,7 +3339,7 @@ function App() {
       <Route path="/financeiro" element={<Finance data={data} setData={setData} create={setModal} user={user} />} />
       <Route path="/margem" element={adminOnly(<MarginReport />)} />
       <Route path="/provisao" element={adminOnly(<Receivables />)} />
-      <Route path="/viagens" element={<Viagens customers={customers} user={user} />} />
+      <Route path="/viagens" element={<Viagens customers={customers} user={user} onCustomerUpdated={customerUpdated} />} />
       <Route path="/comprovantes" element={adminOnly(<Receipts customers={customers} />)} />
       <Route path="/marcas" element={adminOnly(<BrandsCatalog />)} />
       <Route path="/marcas-extras" element={adminOnly(<OutOfCatalogBrands />)} />

@@ -1,0 +1,38 @@
+/* Mapa da rota: serve ao painel web e ao app do entregador. Usa as cores do app (--text, --line...) quando existem. */
+.rmap-panel{display:grid;gap:10px;color:var(--text,#10243b);font-size:calc(14px * var(--s,1))}
+.rmap-panel small,.rmap-modal small{display:block;color:var(--neutral-700,#5b6b7d);font-size:calc(12.5px * var(--s,1))}
+.rmap-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.rmap-head b{display:block}
+.rmap-map{width:100%;border-radius:10px;border:1px solid var(--line,#dfe5ec);overflow:hidden;z-index:0}
+.rmap-nav{display:flex;align-items:center;justify-content:center;min-height:calc(48px * var(--s,1));border-radius:10px;background:#0f9a63;color:#fff !important;font-weight:700;text-decoration:none;font-size:calc(15px * var(--s,1))}
+.rmap-nav:hover{background:#0c8455}
+.rmap-nav.off{background:var(--neutral-200,#eef1f5);color:var(--neutral-700,#5b6b7d) !important;font-weight:600}
+.rmap-note.warn{color:var(--warn-800,#7a4d0b)}
+.rmap-actions{display:flex;flex-wrap:wrap;gap:8px}
+.rmap-actions.end{justify-content:flex-end}
+.rmap-panel button.rmap-btn,.rmap-modal button.rmap-btn{min-height:calc(40px * var(--s,1));padding:0 14px;border-radius:8px;border:1px solid var(--line,#cfd8e3);background:var(--neutral-100,#fff);color:var(--text,#10243b);font-weight:600;font-size:calc(13.5px * var(--s,1));cursor:pointer;text-align:center}
+.rmap-panel button.rmap-btn.primary,.rmap-modal button.rmap-btn.primary{background:var(--accent,#0b6bcb);border-color:var(--accent,#0b6bcb);color:#fff}
+.rmap-panel button.rmap-btn:disabled,.rmap-modal button.rmap-btn:disabled{opacity:.55;cursor:default}
+.rmap-panel button.rmap-link{background:none;border:0;padding:0;color:var(--link,#0b6bcb);font-weight:600;cursor:pointer;font-size:calc(13px * var(--s,1));white-space:nowrap}
+.rmap-missing,.rmap-proposal{border:1px solid var(--warn-300,#f1dcae);background:var(--warn-100,#fff8eb);border-radius:10px;padding:10px 12px;display:grid;gap:6px}
+.rmap-proposal{border-color:var(--accent,#0b6bcb);background:var(--accent-soft,#e8f1fc)}
+.rmap-missing-row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.rmap-legs{list-style:none;margin:0;padding:0;display:grid;border-top:1px solid var(--line,#dfe5ec)}
+.rmap-legs li{display:grid;grid-template-columns:34px 1fr auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line,#dfe5ec)}
+.rmap-legs li.done{opacity:.6}
+.rmap-legs li.total b{font-weight:800}
+.rmap-legs li span{min-width:0}
+.rmap-legs li small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rmap-seq{font-weight:800;color:var(--accent,#0b6bcb)}
+.rmap-leg{font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--neutral-700,#5b6b7d);font-size:calc(12.5px * var(--s,1))}
+.rmap-pin{display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:#0a7cc4;color:#fff;font:700 12px/1 system-ui,sans-serif;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.rmap-pin.depot{background:#10243b}
+.rmap-pin.done{background:#8492a3}
+.rmap-pin.pick{background:#c73e3e;font-size:10px}
+.rmap-backdrop{position:fixed;inset:0;background:rgba(10,20,35,.55);display:flex;align-items:center;justify-content:center;padding:16px;z-index:2000}
+.rmap-modal{position:relative;width:min(560px,100%);max-height:calc(100vh - 32px);overflow:auto;background:var(--neutral-100,#fff);color:var(--text,#10243b);border-radius:14px;padding:18px;display:grid;gap:10px;font-size:calc(14px * var(--s,1));box-shadow:0 12px 32px rgba(0,0,0,.3)}
+.rmap-modal button.rmap-close{position:absolute;top:8px;right:10px;width:36px;height:36px;border:0;background:none;color:inherit;font-size:24px;cursor:pointer;text-align:center}
+.rmap-title{font-size:calc(17px * var(--s,1));padding-right:36px}
+.rmap-cep{display:flex;gap:8px}
+.rmap-cep input{flex:1;min-width:0;min-height:calc(40px * var(--s,1));border:1px solid var(--line,#cfd8e3);border-radius:8px;padding:0 12px;background:var(--field,#fff);color:var(--text,#10243b);font-size:calc(15px * var(--s,1))}
+.rmap-panel.compact .rmap-head small{margin-top:2px}
