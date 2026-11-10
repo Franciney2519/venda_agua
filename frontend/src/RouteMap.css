@@ -36,3 +36,6 @@
 .rmap-cep{display:flex;gap:8px}
 .rmap-cep input{flex:1;min-width:0;min-height:calc(40px * var(--s,1));border:1px solid var(--line,#cfd8e3);border-radius:8px;padding:0 12px;background:var(--field,#fff);color:var(--text,#10243b);font-size:calc(15px * var(--s,1))}
 .rmap-panel.compact .rmap-head small{margin-top:2px}
+.rmap-results{display:grid;gap:4px;border:1px solid var(--line,#dfe5ec);border-radius:10px;padding:8px}
+.rmap-modal button.rmap-result{display:block;width:100%;text-align:left;border:0;border-radius:6px;padding:8px 10px;background:var(--neutral-200,#eef1f5);color:var(--text,#10243b);font-size:calc(13px * var(--s,1));cursor:pointer;line-height:1.3}
+.rmap-modal button.rmap-result:hover{background:var(--accent-soft,#e8f1fc)}

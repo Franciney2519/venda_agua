@@ -21,6 +21,14 @@ export async function geocode(q) {
   return rows?.[0] ? { lat: Number(rows[0].lat), lng: Number(rows[0].lon) } : null;
 }
 
+// Busca livre por endereço (rua, número, bairro, ponto de referência), com preferência para Manaus.
+// Devolve até 5 opções para o usuário escolher a certa.
+export async function searchAddress(q) {
+  const params = new URLSearchParams({ format: 'json', limit: '5', countrycodes: 'br', addressdetails: '0', viewbox: '-60.35,-2.85,-59.80,-3.25', q });
+  const rows = await getJson(`https://nominatim.openstreetmap.org/search?${params.toString()}`);
+  return (rows || []).map(r => ({ lat: Number(r.lat), lng: Number(r.lon), label: r.display_name }));
+}
+
 // CEP → endereço e posição. A AwesomeAPI já devolve lat/lng; sem ela, ViaCEP + busca do endereço.
 export async function lookupCep(cep) {
   const d = onlyDigits(cep);
@@ -194,27 +202,35 @@ export function LocationModal({ title, subtitle, initial, address, onClose, onSa
   const [cep, setCep] = useState(fmtCep(initial?.cep || ''));
   const [pos, setPos] = useState(hasPos(initial) ? { lat: Number(initial.lat), lng: Number(initial.lng) } : null);
   const [found, setFound] = useState(null), [busy, setBusy] = useState(false), [err, setErr] = useState('');
+  const [q, setQ] = useState(address || ''), [results, setResults] = useState(null), [label, setLabel] = useState('');
   async function buscar() {
     setErr(''); setBusy(true);
-    try { const r = await lookupCep(cep); setFound(r); if (hasPos(r)) setPos({ lat: r.lat, lng: r.lng }); else setErr('CEP encontrado, mas sem posição. Toque no mapa para marcar o local.'); }
+    try { const r = await lookupCep(cep); setFound(r); setLabel(''); if (hasPos(r)) setPos({ lat: r.lat, lng: r.lng }); else setErr('CEP encontrado, mas sem posição. Toque no mapa para marcar o local.'); }
     catch (e) { setErr(e.message || 'Não foi possível consultar o CEP.'); }
     finally { setBusy(false); }
   }
   async function porEndereco() {
-    setErr(''); setBusy(true);
-    try { const r = await geocode(address); if (r) setPos(r); else setErr('Endereço não encontrado no mapa. Use o CEP ou toque no mapa.'); }
+    if (q.trim().length < 3) return setErr('Digite o endereço (rua, número e bairro) para buscar.');
+    setErr(''); setBusy(true); setResults(null);
+    try {
+      const rows = await searchAddress(q.trim());
+      if (!rows.length) setErr('Endereço não encontrado. Tente só a rua e o bairro, use o CEP ou toque no mapa.');
+      else if (rows.length === 1) escolher(rows[0]);
+      else setResults(rows);
+    }
     catch { setErr('Não foi possível buscar o endereço agora.'); }
     finally { setBusy(false); }
   }
+  function escolher(r) { setPos({ lat: r.lat, lng: r.lng }); setLabel(r.label); setResults(null); }
   function aqui() {
     if (!navigator.geolocation) return setErr('Este aparelho não informa a localização.');
     setErr(''); setBusy(true);
     navigator.geolocation.getCurrentPosition(p => { setPos({ lat: p.coords.latitude, lng: p.coords.longitude }); setBusy(false); }, () => { setErr('Não foi possível pegar a localização. Verifique a permissão de localização do navegador.'); setBusy(false); }, { enableHighAccuracy: true, timeout: 15000 });
   }
   async function salvar() {
-    if (!hasPos(pos)) return setErr('Informe o CEP ou toque no mapa para marcar o local.');
+    if (!hasPos(pos)) return setErr('Informe o CEP, busque o endereço ou toque no mapa para marcar o local.');
     setErr(''); setBusy(true);
-    try { await onSave({ cep: onlyDigits(cep) || undefined, lat: pos.lat, lng: pos.lng, found }); }
+    try { await onSave({ cep: onlyDigits(cep) || undefined, lat: pos.lat, lng: pos.lng, found, label }); }
     catch (e) { setErr(e?.response?.data?.detail || e.message || 'Não foi possível salvar o local.'); setBusy(false); }
   }
   return <div className="rmap-backdrop" data-testid={testid}><div className="rmap-modal" role="dialog" aria-label={title}>
@@ -226,9 +242,17 @@ export function LocationModal({ title, subtitle, initial, address, onClose, onSa
       <button type="button" className="rmap-btn primary" disabled={busy || onlyDigits(cep).length !== 8} data-testid={`${testid}-cep-search`} onClick={buscar}>Buscar CEP</button>
     </div>
     {found && <small className="rmap-sub" data-testid={`${testid}-cep-result`}>{cepAddress(found)}</small>}
+    <div className="rmap-cep">
+      <input placeholder="Ou digite o endereço: rua, número, bairro" aria-label="Endereço" value={q} data-testid={`${testid}-address`} onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); porEndereco(); } }} />
+      <button type="button" className="rmap-btn primary" disabled={busy || q.trim().length < 3} data-testid={`${testid}-by-address`} onClick={porEndereco}>Buscar endereço</button>
+    </div>
+    {results && <div className="rmap-results" data-testid={`${testid}-address-results`}>
+      <small>Escolha o endereço certo:</small>
+      {results.map((r, i) => <button type="button" key={i} className="rmap-result" data-testid={`${testid}-address-result-${i}`} onClick={() => escolher(r)}>{r.label}</button>)}
+    </div>}
+    {label && <small className="rmap-sub" data-testid={`${testid}-address-chosen`}>{label}</small>}
     <div className="rmap-actions">
       <button type="button" className="rmap-btn" disabled={busy} data-testid={`${testid}-here`} onClick={aqui}>Usar minha localização</button>
-      {address && <button type="button" className="rmap-btn" disabled={busy} data-testid={`${testid}-by-address`} onClick={porEndereco}>Buscar pelo endereço</button>}
     </div>
     <LeafletMap pick={pos} onPick={setPos} height={300} testid={`${testid}-map`} />
     <small className="rmap-sub">Toque no mapa ou arraste o pino até a porta do cliente.</small>
