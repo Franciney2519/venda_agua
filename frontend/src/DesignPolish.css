@@ -346,6 +346,44 @@
   color: var(--muted);
 }
 
+.app-shell .trip-start-guide {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #c9dfef;
+  border-radius: 10px;
+  background: var(--pale);
+}
+
+.app-shell .trip-start-guide-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 10px;
+  background: #dceefb;
+  color: var(--blue);
+}
+
+.app-shell .trip-start-guide-copy {
+  display: grid;
+  gap: 3px;
+}
+
+.app-shell .trip-start-guide-copy b {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.app-shell .trip-start-guide-copy span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .app-shell .primary,
 .app-shell .ghost-btn,
 .app-shell .secondary-btn,
@@ -522,6 +560,14 @@
 .app-shell.dark .filter-row button.active {
   border-color: #315d7e;
   background: var(--pale);
+}
+
+.app-shell.dark .trip-start-guide {
+  border-color: #315d7e;
+}
+
+.app-shell.dark .trip-start-guide-icon {
+  background: #1b3851;
 }
 
 .app-shell.dark .quick-modal {
@@ -711,6 +757,23 @@
 
   .app-shell .dashboard-refresh {
     justify-items: start;
+  }
+
+  .app-shell .trip-start-guide {
+    grid-template-columns: 36px minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .app-shell .trip-start-guide-icon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .app-shell .trip-start-guide .primary {
+    grid-column: 1 / -1;
+    width: 100%;
+    justify-content: center;
   }
 
   .login-page {

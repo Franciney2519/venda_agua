@@ -1387,7 +1387,7 @@ function AdminPedidoForm({ customer, brandsCatalog, initialItems, busy, confirmL
   </div>
 }
 
-function AdminTripEditor({ v, customers, drivers, brandsCatalog, onSaved, deposito, onSetOrigin, onCustomerUpdated }) {
+function AdminTripEditor({ v, customers, drivers, brandsCatalog, onSaved, onStart, deposito, onSetOrigin, onCustomerUpdated }) {
   const [locating, setLocating] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -1400,6 +1400,11 @@ function AdminTripEditor({ v, customers, drivers, brandsCatalog, onSaved, deposi
     setBusy(true); setError('');
     try { await fn(); await onSaved(); return true; }
     catch (e) { setError(apiError(e, fallback)); return false; }
+    finally { setBusy(false); }
+  }
+  async function startTrip() {
+    setBusy(true);
+    try { await onStart(v); }
     finally { setBusy(false); }
   }
   const base = `/viagens/${v.id}`;
@@ -1450,10 +1455,18 @@ function AdminTripEditor({ v, customers, drivers, brandsCatalog, onSaved, deposi
             <span className="field-label">Cliente</span>
             <CustomerCombobox customers={customers.filter(c => !inTrip.has(c.id))} value={pickName} onPick={setPickName} testId={`admin-cliente-busca-${v.id}`} />
             {picked
-              ? <AdminPedidoForm key={picked.id} customer={picked} brandsCatalog={brandsCatalog} busy={busy} confirmLabel="Adicionar cliente" onCancel={() => setAdding(null)} onConfirm={items => run(async () => { const rid = await targetId(); await api.post(`${base}/rotas/${rid}/clientes`, toPayload(picked, items), auth()); }, 'Não foi possível adicionar o cliente.').then(ok => ok && setPickName(''))} />
+              ? <AdminPedidoForm key={picked.id} customer={picked} brandsCatalog={brandsCatalog} busy={busy} confirmLabel="Adicionar cliente" onCancel={() => setAdding(null)} onConfirm={items => run(async () => { const rid = await targetId(); await api.post(`${base}/rotas/${rid}/clientes`, toPayload(picked, items), auth()); }, 'Não foi possível adicionar o cliente.').then(ok => { if (ok) { setPickName(''); setAdding(false); } })} />
               : <div className="row-actions" style={{ marginTop: 8 }}><button type="button" className="ghost-btn" onClick={() => setAdding(null)}>Fechar</button></div>}
           </div>
           : <button type="button" className="ghost-btn" style={{ marginTop: 10 }} disabled={busy} data-testid={`admin-add-cliente-${v.id}`} onClick={() => { setAdding(true); setPickName(''); setEditing(null); }}><UserPlus size={14} /> Adicionar cliente</button>}
+        {v.status === 'planejada' && list.length > 0 && !adding && !editing && <div className="trip-start-guide" data-testid={`admin-trip-start-guide-${v.id}`}>
+          <div className="trip-start-guide-icon"><Play size={18} /></div>
+          <div className="trip-start-guide-copy">
+            <b>Próximo passo: iniciar viagem</b>
+            <span>{list.length} cliente{list.length === 1 ? '' : 's'} na rota. Confira produtos, carga e ordem antes de iniciar.</span>
+          </div>
+          <button type="button" className="primary" disabled={busy} data-testid={`admin-trip-start-${v.id}`} onClick={startTrip}><Play size={15} /> Iniciar viagem</button>
+        </div>}
       </div>
       {list.length > 0 && <div style={{ border: '1px solid var(--line, #dfe5ec)', borderRadius: 10, padding: '12px 14px' }}>
         <RoutePanel origin={deposito} stops={mapStops} onReorder={busy ? undefined : saveOrder} onLocate={s => setLocating(s)} onSetOrigin={onSetOrigin} testid={`admin-route-map-${v.id}`} />
@@ -1570,7 +1583,7 @@ function Viagens({ customers, user, onCustomerUpdated }) {
         <div><h3>Rota {openTrip.codigo_viagem} · {openTrip.driver}</h3><p className="muted">{TURNO_LABELS[openTrip.turno]} · {VIAGEM_STATUS_LABEL[openTrip.status]}</p></div>
         <button className="ghost-btn" data-testid="admin-trip-detail-close" onClick={() => setOpenId(null)}><X size={14} /> Fechar</button>
       </div>
-      <AdminTripEditor key={openTrip.id} v={openTrip} customers={customers} drivers={drivers} brandsCatalog={brandsCatalog} onSaved={load} deposito={deposito} onSetOrigin={() => setEditDeposito(true)} onCustomerUpdated={onCustomerUpdated} />
+      <AdminTripEditor key={openTrip.id} v={openTrip} customers={customers} drivers={drivers} brandsCatalog={brandsCatalog} onSaved={load} onStart={iniciar} deposito={deposito} onSetOrigin={() => setEditDeposito(true)} onCustomerUpdated={onCustomerUpdated} />
     </section>}
     {editDeposito && <LocationModal title="Ponto de saída (sua distribuidora)" subtitle={deposito?.address ? `Atual: ${deposito.address}` : 'Onde as rotas começam: informe o CEP ou marque no mapa.'} initial={deposito} testid="deposito-modal" onClose={() => setEditDeposito(false)}
       onSave={async loc => { await saveDeposito(loc); await loadDeposito(); setEditDeposito(false); }} />}
@@ -2800,7 +2813,7 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
           {v.status === 'planejada' && !dayClosed && asking !== `ini:${v.id}` && (asking === `del:${v.id}`
             ? <MobileConfirm testid="mob-viagem-excluir-confirm" title={`Excluir a rota ${v.codigo_viagem}?`} text={allClients.length ? (allClients.length === 1 ? '1 cliente sai da rota.' : `${allClients.length} clientes saem da rota.`) : undefined} confirmLabel="Excluir" busy={busy} onCancel={() => setAsking(null)} onConfirm={() => run(async () => { await onDelete(v); setAsking(null); }, 'Não foi possível excluir a rota.')} />
             : <div className="mob-grid21">
-              <MobBtn h={52} icon={Play} kind={viagemAtiva ? 'disabled' : 'primary'} data-testid={`mob-viagem-iniciar-${v.id}`} onClick={() => viagemAtiva ? toast('Conclua a rota em execução primeiro.') : allClients.length === 0 ? setAsking(`ini:${v.id}`) : run(() => onIniciar(v), 'Não foi possível iniciar a rota.')}>{viagemAtiva ? 'Aguardando' : 'Iniciar'}</MobBtn>
+              <MobBtn h={52} icon={Play} kind={viagemAtiva ? 'disabled' : 'primary'} data-testid={`mob-viagem-iniciar-${v.id}`} onClick={() => viagemAtiva ? toast('Conclua a rota em execução primeiro.') : allClients.length === 0 ? setAsking(`ini:${v.id}`) : run(() => onIniciar(v), 'Não foi possível iniciar a rota.')}>{viagemAtiva ? 'Aguardando' : 'Iniciar viagem'}</MobBtn>
               <MobBtn h={52} kind="outline" data-testid={`mob-viagem-excluir-${v.id}`} onClick={() => setAsking(`del:${v.id}`)}>Excluir</MobBtn>
             </div>)}
 
