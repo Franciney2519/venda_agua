@@ -3189,7 +3189,7 @@ function MobileDespesasTab({ user, date, viagens, viagemAtiva, onOpenViagens, da
   </>
 }
 
-function MobileAjustesTab({ user, theme, setTheme, scale, setTextScale, routeAlertsEnabled, routeAlertMessage, onEnableRouteAlerts, onDisableRouteAlerts, onTestRouteAlert, onLogout, onSwitchRole }) {
+function MobileAjustesTab({ user, theme, setTheme, scale, setTextScale, routeAlertsEnabled, routeAlertMessage, speechVoices, speechVoiceURI, onSpeechVoiceChange, onTestSpeechVoice, onEnableRouteAlerts, onDisableRouteAlerts, onTestRouteAlert, onLogout, onSwitchRole }) {
   return <>
     <section className="mob-field">
       <b className="mob-label">Alertas de novas rotas</b>
@@ -3201,6 +3201,17 @@ function MobileAjustesTab({ user, theme, setTheme, scale, setTextScale, routeAle
           <MobBtn kind="outline" lead={X} data-testid="mob-route-alert-disable" onClick={onDisableRouteAlerts}>Desativar</MobBtn>
         </div>
         : <MobBtn kind="outline" lead={BellRing} data-testid="mob-route-alert-enable" onClick={onEnableRouteAlerts}>Ativar alertas</MobBtn>}
+    </section>
+    <section className="mob-field">
+      <b className="mob-label">Voz dos avisos</b>
+      <p className="mob-muted">Escolha uma voz em português disponibilizada pelo celular. Para instalar outras vozes, use as configurações de voz do aparelho.</p>
+      {speechVoices.length > 0
+        ? <select className="mob-input" value={speechVoiceURI} data-testid="mob-speech-voice" onChange={event => onSpeechVoiceChange(event.target.value)}>
+          <option value="">Voz padrão do aparelho</option>
+          {speechVoices.map(voice => <option key={voice.voiceURI} value={voice.voiceURI}>{voice.name} · {voice.lang}</option>)}
+        </select>
+        : <p className="mob-muted">Nenhuma voz em português foi disponibilizada pelo navegador.</p>}
+      <MobBtn kind="outline" lead={Volume2} data-testid="mob-speech-test" onClick={onTestSpeechVoice}>Testar voz</MobBtn>
     </section>
     <section className="mob-field">
       <b className="mob-label">Tamanho do texto</b>
@@ -3247,6 +3258,9 @@ function DriverMobileApp({ user, customers, onLogout, onSwitchRole, onCustomerUp
   const routeAlertsKey = `hydro_route_alerts:${user.id || user.name}`;
   const [routeAlertsEnabled, setRouteAlertsEnabled] = useState(() => localStorage.getItem(routeAlertsKey) === 'true');
   const [routeAlertMessage, setRouteAlertMessage] = useState('');
+  const speechVoiceKey = `hydro_speech_voice:${user.id || user.name}`;
+  const [speechVoices, setSpeechVoices] = useState([]);
+  const [speechVoiceURI, setSpeechVoiceURI] = useState(() => localStorage.getItem(speechVoiceKey) || '');
   const routeAlertAudioRef = useRef(null);
   const observedTripIdsRef = useRef(null);
   // A rolagem é do mesmo contêiner para todas as abas: cada aba abre do topo.
@@ -3263,6 +3277,15 @@ function DriverMobileApp({ user, customers, onLogout, onSwitchRole, onCustomerUp
     }
   }, [routeAlertsEnabled, routeAlertsKey]);
 
+  useEffect(() => {
+    const synthesis = window.speechSynthesis;
+    if (!synthesis) return undefined;
+    const updateVoices = () => setSpeechVoices(synthesis.getVoices().filter(voice => voice.lang.toLowerCase().startsWith('pt')));
+    updateVoices();
+    synthesis.addEventListener('voiceschanged', updateVoices);
+    return () => synthesis.removeEventListener('voiceschanged', updateVoices);
+  }, []);
+
   function playRouteAlertSound() {
     const AudioContextType = window.AudioContext || window.webkitAudioContext;
     const context = routeAlertAudioRef.current;
@@ -3278,7 +3301,7 @@ function DriverMobileApp({ user, customers, onLogout, onSwitchRole, onCustomerUp
         const start = now + offset;
         oscillator.frequency.value = frequency;
         gain.gain.setValueAtTime(0.0001, start);
-        gain.gain.exponentialRampToValueAtTime(0.14, start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.8, start + 0.02);
         gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.17);
         oscillator.connect(gain);
         gain.connect(context.destination);
@@ -3314,6 +3337,27 @@ function DriverMobileApp({ user, customers, onLogout, onSwitchRole, onCustomerUp
     playRouteAlertSound();
     showToast(test ? 'Teste de alerta enviado.' : `${label} atribuída para você.`, 5000);
     showRouteNotification(title, body, test ? `route-alert-test-${Date.now()}` : `route-${trip.id}`);
+  }
+
+  function speakRouteMessage(message, test = false) {
+    if (!routeAlertsEnabled && !test) return;
+    if (window.speechSynthesis && window.SpeechSynthesisUtterance) {
+      window.speechSynthesis.cancel();
+      const utterance = new window.SpeechSynthesisUtterance(message);
+      utterance.lang = 'pt-BR';
+      utterance.rate = 0.95;
+      utterance.volume = 1;
+      utterance.voice = speechVoices.find(voice => voice.voiceURI === speechVoiceURI) || null;
+      window.speechSynthesis.speak(utterance);
+    } else {
+      playRouteAlertSound();
+    }
+  }
+
+  function selectSpeechVoice(voiceURI) {
+    setSpeechVoiceURI(voiceURI);
+    if (voiceURI) localStorage.setItem(speechVoiceKey, voiceURI);
+    else localStorage.removeItem(speechVoiceKey);
   }
 
   async function enableRouteAlerts() {
@@ -3430,18 +3474,9 @@ function DriverMobileApp({ user, customers, onLogout, onSwitchRole, onCustomerUp
     const proximaRota = viagensAtualizadas.find(x => x.status === 'planejada');
     showToast(proximaRota ? `Rota ${v.numero} concluída. Próxima: Rota ${proximaRota.numero}.` : `Rota ${v.numero} concluída.`);
     if (routeAlertsEnabled) {
-      const message = proximaRota
+      speakRouteMessage(proximaRota
         ? `Rota concluída. Vamos seguir para a próxima, rota ${proximaRota.numero}.`
-        : 'Viagens encerradas, até a próxima.';
-      if (window.speechSynthesis && window.SpeechSynthesisUtterance) {
-        window.speechSynthesis.cancel();
-        const utterance = new window.SpeechSynthesisUtterance(message);
-        utterance.lang = 'pt-BR';
-        utterance.rate = 0.95;
-        window.speechSynthesis.speak(utterance);
-      } else {
-        playRouteAlertSound();
-      }
+        : 'Viagens encerradas, até a próxima.');
       if (navigator.vibrate) navigator.vibrate([120, 80, 120]);
     }
   }
@@ -3496,10 +3531,14 @@ function DriverMobileApp({ user, customers, onLogout, onSwitchRole, onCustomerUp
     setEntries([entry, ...entries]);
     setLaunchKey(null); setTab('rota'); setSearch('');
     loadMfPending(); loadViagens();
-    const restam = pendingStops.some(s => !sameName(s.name, entry.customer));
+    const nextStop = pendingStops.find(s => !sameName(s.name, entry.customer));
+    const restam = Boolean(nextStop);
     const base = `Entrega Nº ${entry.entry_number} registrada · ${entry.customer}. ${restam ? 'Escolha a próxima na lista.' : 'Era o último cliente: conclua a rota.'}`;
     if (entry.warnings?.length) showToast(`${base} Atenção: ${entry.warnings.join(' ')}`, 9000);
     else showToast(base, 4000);
+    speakRouteMessage(nextStop
+      ? 'Entrega concluída. Vamos para a próxima parada.'
+      : 'Entrega concluída. Esta era a última parada. Finalize a rota para iniciar a próxima viagem.');
   }
   async function savePhoneForCustomerName(name, phone) {
     const c = customers.find(x => x.name === name);
@@ -3522,7 +3561,7 @@ function DriverMobileApp({ user, customers, onLogout, onSwitchRole, onCustomerUp
         {tab === 'diario' && <MobileDiarioTab entries={entries} date={date} viagens={viagensComProgresso} />}
         {tab === 'caixa' && <MobileCaixaTab entries={entries} expenses={todaysExpenses} expensesTotal={expensesTotal} viagens={viagensComProgresso} date={date} pendingStops={pendingStops.length} onCloseDay={closeDay} onOpenViagens={openViagens} dayClosed={dayClosed} closingDay={closingDay} />}
         {tab === 'despesas' && <MobileDespesasTab user={user} date={date} viagens={viagensComProgresso} viagemAtiva={viagemAtiva} onOpenViagens={openViagens} dayClosed={dayClosed} toast={showToast} />}
-        {tab === 'mais' && <MobileAjustesTab user={user} theme={theme} setTheme={setTheme} scale={scale} setTextScale={setTextScale} routeAlertsEnabled={routeAlertsEnabled} routeAlertMessage={routeAlertMessage} onEnableRouteAlerts={enableRouteAlerts} onDisableRouteAlerts={disableRouteAlerts} onTestRouteAlert={() => alertForNewRoute({}, true)} onLogout={onLogout} onSwitchRole={onSwitchRole} />}
+        {tab === 'mais' && <MobileAjustesTab user={user} theme={theme} setTheme={setTheme} scale={scale} setTextScale={setTextScale} routeAlertsEnabled={routeAlertsEnabled} routeAlertMessage={routeAlertMessage} speechVoices={speechVoices} speechVoiceURI={speechVoiceURI} onSpeechVoiceChange={selectSpeechVoice} onTestSpeechVoice={() => speakRouteMessage('Este é um teste da voz dos avisos.', true)} onEnableRouteAlerts={enableRouteAlerts} onDisableRouteAlerts={disableRouteAlerts} onTestRouteAlert={() => alertForNewRoute({}, true)} onLogout={onLogout} onSwitchRole={onSwitchRole} />}
       </div></main>
       {/* No tablet, o painel lateral só aparece quando há parada para lançar; fora disso a tela usa a largura toda. */}
       {(launchStop || (wide && tab === 'rota' && viagemAtiva && pendingStops.length > 0)) && <aside className={`mob-panel ${wide ? 'side' : 'cover'}${launchStop ? '' : ' empty'}`} data-testid="mob-launch-panel">
