@@ -15,6 +15,17 @@
   background: var(--app-bg);
   color: var(--ink);
   isolation: isolate;
+  position: relative;
+}
+
+.app-shell::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: url("./assets/logo.png") center 56% / min(36vw, 420px) no-repeat;
+  opacity: 0.035;
 }
 
 .app-shell.dark {
@@ -30,6 +41,10 @@
   --surface: #111f2e;
   --surface-soft: #152638;
   background: var(--app-bg);
+}
+
+.app-shell.dark::before {
+  opacity: 0.045;
 }
 
 .app-shell .sidebar {
@@ -611,6 +626,17 @@
   --link: #0876c9;
   --ok: #14805e;
   --ok-soft: #e9f6f0;
+  isolation: isolate;
+}
+
+.mobile-app::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: url("./assets/logo.png") center 52% / min(74vw, 320px) no-repeat;
+  opacity: 0.035;
 }
 
 .mobile-app.dark {
@@ -625,6 +651,10 @@
   --link: #82c1f3;
   --ok: #54c99a;
   --ok-soft: #12352c;
+}
+
+.mobile-app.dark::before {
+  opacity: 0.045;
 }
 
 .mobile-app :is(button, a, input, select, canvas):focus-visible {

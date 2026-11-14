@@ -2969,6 +2969,10 @@ function MobileDiarioTab({ entries, date }) {
   const [rotaFilter, setRotaFilter] = useState('');
   const todaysAll = entries.filter(e => e.date === date);
   const rotaOptions = [...new Map(todaysAll.filter(e => e.rota_codigo).map(e => [e.rota_codigo, e])).values()];
+  const rotaToneByCode = new Map(rotaOptions.map(entry => [
+    entry.rota_codigo,
+    [...String(entry.rota_codigo)].reduce((sum, char) => sum + char.charCodeAt(0), 0) % 2,
+  ]));
   const todays = rotaFilter ? todaysAll.filter(e => e.rota_codigo === rotaFilter) : todaysAll;
   const totals = todays.reduce((s, e) => ({ qty: s.qty + Number(e.billed_quantity || 0), pix: s.pix + Number(e.pix_value || 0), cash: s.cash + Number(e.cash_value || 0), comp: s.comp + Number(e.comp_value || 0), mf: s.mf + Number(e.mf_quantity || 0) }), { qty: 0, pix: 0, cash: 0, comp: 0, mf: 0 });
   const mfDetail = e => e.mf_plan === 'swap' ? 'trocado' : e.mf_plan === 'refused' ? 'cliente não quis' : (e.mf_date || '');
@@ -2989,12 +2993,12 @@ function MobileDiarioTab({ entries, date }) {
     <section className="mob-list">
       <div className="mob-sec-head"><b>Lançamentos de hoje</b><b>{todays.length}</b></div>
       {todays.length === 0 && <p className="mob-muted pad">Nada lançado ainda. Conclua uma entrega na aba Rota.</p>}
-      {todays.map(e => <div className="mob-entry" key={e.id} data-testid={`mob-entry-${e.id}`}>
+      {todays.map(e => <div className="mob-entry" key={e.id} data-route-tone={rotaToneByCode.get(e.rota_codigo)} data-testid={`mob-entry-${e.id}`}>
         <div><b>{e.customer}{e.entry_number ? <small> Nº {e.entry_number}</small> : null}</b><b>{money(e.total)}</b></div>
         <div className="mob-chips">
           <span className="mob-chip">{entryItemsLabel(e)}</span>
           <span className="mob-chip">{entryPayLabel(e)}</span>
-          {e.rota_codigo && <span className="mob-chip">{e.rota_codigo}</span>}
+          {e.rota_codigo && <span className="mob-chip mob-route-chip" data-route-tone={rotaToneByCode.get(e.rota_codigo)}>{e.rota_codigo}</span>}
           {e.mf_quantity > 0 && <span className="mob-chip warn">{e.mf_quantity} MF · {mfDetail(e)}</span>}
         </div>
       </div>)}
@@ -3010,7 +3014,8 @@ function MobileCaixaTab({ entries, expenses, expensesTotal, viagens, date, pendi
   const todaysAll = entries.filter(e => e.date === date);
   const todays = viagemFilter ? todaysAll.filter(e => e.viagem_id === viagemFilter) : todaysAll;
   const expensesToday = (expenses || []).filter(x => manausDate(x.created_at) === date && x.status !== 'rejected');
-  const filteredExpensesTotal = viagemFilter ? expensesToday.filter(x => x.viagem_id === viagemFilter).reduce((s, x) => s + Number(x.amount || 0), 0) : Number(expensesTotal || 0);
+  const expensesInView = viagemFilter ? expensesToday.filter(x => x.viagem_id === viagemFilter) : expensesToday;
+  const filteredExpensesTotal = viagemFilter ? expensesInView.reduce((s, x) => s + Number(x.amount || 0), 0) : Number(expensesTotal || 0);
   const pix = todays.reduce((s, e) => s + Number(e.pix_value || 0), 0);
   const cash = todays.reduce((s, e) => s + Number(e.cash_value || 0), 0);
   const comp = todays.reduce((s, e) => s + Number(e.comp_value || 0), 0);
@@ -3020,7 +3025,7 @@ function MobileCaixaTab({ entries, expenses, expensesTotal, viagens, date, pendi
 
   const viagemInfo = {};
   for (const v of (viagens || [])) viagemInfo[v.id] = v;
-  const viagemOptions = (viagens || []).filter(v => todaysAll.some(e => e.viagem_id === v.id));
+  const viagemOptions = (viagens || []).filter(v => todaysAll.some(e => e.viagem_id === v.id) || expensesToday.some(x => x.viagem_id === v.id));
   const porRota = {};
   for (const e of todays) { const k = e.rota_codigo || 'Sem rota'; porRota[k] = (porRota[k] || 0) + Number(e.pix_value || 0) + Number(e.cash_value || 0); }
   const rotaInfo = {};
@@ -3061,6 +3066,18 @@ function MobileCaixaTab({ entries, expenses, expensesTotal, viagens, date, pendi
         <span className="mob-row-main"><b>{info ? `${TURNO_LABELS[info.viagem.turno]} · Rota ${info.viagem.numero}${(info.viagem.rotas || []).length > 1 ? ` · grupo ${pad2(info.numero)}` : ''}` : codigo}</b><small>Pix + dinheiro</small></span>
         <b>{money(porRota[codigo])}</b>
       </div> })}
+    </section>}
+    {expensesInView.length > 0 && <section className="mob-list" data-testid="mob-caixa-expenses">
+      <div className="mob-sec-head"><b>Despesas lançadas</b><b>{money(expensesInView.reduce((sum, expense) => sum + Number(expense.amount || 0), 0))}</b></div>
+      {expensesInView.map(expense => {
+        const trip = viagemInfo[expense.viagem_id];
+        const routeLabel = trip ? viagemOptionLabel(trip) : expense.viagem_codigo || 'Sem rota vinculada';
+        return <div className="mob-cash-row sm" key={expense.id} data-testid={`mob-caixa-expense-${expense.id}`}>
+          <WalletCards size={20} />
+          <span className="mob-row-main"><b>{expense.type || 'Despesa'}</b><small>{routeLabel}{expense.status === 'pending' ? ' · Aguardando aprovação' : ''}</small></span>
+          <b>−{money(expense.amount)}</b>
+        </div>;
+      })}
     </section>}
     {dayClosed
       ? <section className="mob-band" data-testid="mob-day-closed"><Lock size={20} /><b>Dia fechado. Lançamentos bloqueados.</b></section>
