@@ -681,9 +681,7 @@ async def add_expense(data: ResourceInput, user=Depends(current_user)):
     if user.get("role") != "admin":
         # Despesa do entregador entra aprovada; o admin pode recusar depois. O status enviado pelo app é ignorado.
         data.driver, data.status = user["name"], "approved"
-    viagem = await db.viagens.find_one({"id": data.viagem_id}, {"_id": 0}) if data.viagem_id else None
-    if viagem and viagem.get("status") == "finalizada" and user.get("role") != "admin":
-        raise HTTPException(400, "Esta rota já foi concluída — lance a despesa numa rota aberta ou peça ao admin")
+    viagem = await _own_viagem_or_404(data.viagem_id, user) if data.viagem_id else None
     expense_day = viagem.get("date") if viagem else today_local()
     await ensure_day_open(expense_day, data.driver or user["name"], user)
     doc = await create_resource("expenses", data, user)

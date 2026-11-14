@@ -3089,9 +3089,8 @@ function MobileDespesasTab({ user, date, viagens, viagemAtiva, onOpenViagens, da
   const [photo, setPhoto] = useState(null);
   const photoInputRef = useRef(null);
   useEffect(() => {
-    // Só rotas abertas: despesa em rota concluída mudaria o financeiro de uma rota já fechada.
-    const abertas = (viagens || []).filter(v => v.status !== 'finalizada');
-    setViagemId(prev => (prev && abertas.some(v => v.id === prev)) ? prev : (viagemAtiva?.id || abertas[0]?.id || ''));
+    const disponiveis = viagens || [];
+    setViagemId(prev => (prev && disponiveis.some(v => v.id === prev)) ? prev : (viagemAtiva?.id || disponiveis.find(v => v.status !== 'finalizada')?.id || disponiveis[0]?.id || ''));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viagemAtiva, viagens]);
 
@@ -3120,18 +3119,18 @@ function MobileDespesasTab({ user, date, viagens, viagemAtiva, onOpenViagens, da
   }
 
   const total = items.reduce((s, x) => s + Number(x.amount || 0), 0);
-  const viagensAbertas = (viagens || []).filter(v => v.status !== 'finalizada');
-  const hasTrips = viagensAbertas.length > 0;
+  const viagensDisponiveis = viagens || [];
+  const hasTrips = viagensDisponiveis.length > 0;
   return <>
     {dayClosed && <section className="mob-band" data-testid="mob-expense-day-closed"><Lock size={20} /><b>Dia fechado — despesas somente para consulta.</b></section>}
     {!dayClosed && !hasTrips && <section className="mob-card plain" data-testid="mob-expense-no-trip">
-      <div className="mob-card-body"><b className="mob-h20">{viagens?.length ? 'Nenhuma rota aberta agora.' : 'Nenhuma rota criada hoje.'}</b><span className="mob-muted">{viagens?.length ? 'As rotas de hoje já foram concluídas. Crie uma rota para lançar a despesa, ou peça ao admin para corrigir uma rota concluída.' : 'Crie uma rota para poder atribuir despesas a ela.'}</span></div>
+      <div className="mob-card-body"><b className="mob-h20">Nenhuma rota criada hoje.</b><span className="mob-muted">Crie uma rota para poder relacionar despesas a ela.</span></div>
       <MobBtn lead={Plus} icon={ArrowRight} onClick={() => onOpenViagens()}>Criar rota</MobBtn>
     </section>}
     {!dayClosed && hasTrips && <>
       <label className="mob-field"><b className="mob-label">Rota desta despesa</b>
         <select className="mob-input" value={viagemId} data-testid="mob-expense-viagem-select" onChange={e => setViagemId(e.target.value)}>
-          {viagensAbertas.map(v => <option key={v.id} value={v.id}>{`${viagemOptionLabel(v)}${v.status === 'execucao' ? ' (em execução)' : ''}`}</option>)}
+          {viagensDisponiveis.map(v => <option key={v.id} value={v.id}>{`${viagemOptionLabel(v)} (${v.status === 'finalizada' ? 'concluída' : v.status === 'execucao' ? 'em execução' : 'planejada'})`}</option>)}
         </select>
       </label>
       <section className="mob-field">

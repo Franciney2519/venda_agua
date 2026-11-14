@@ -76,7 +76,7 @@ def test_activity_logs_deleted_route_and_failed_delivery(c):
     assert any(a["action"] == "viagem_excluida" and a["target_id"] == vazia["id"] for a in log)
 
 
-def test_driver_expense_only_on_open_route(c):
+def test_driver_can_add_expense_to_finalized_route_and_refresh_totals(c):
     A, D = _auth(c)
     _, _, cust = _setup(c, A, "Agua DF")
     v = c.post("/api/viagens", json={"turno": 0, "date": _day(204), "carga_total": 5, "create_first_rota": True}, headers=D).json()
@@ -87,7 +87,10 @@ def test_driver_expense_only_on_open_route(c):
     c.patch(f"/api/viagens/{v['id']}/rotas/{rota['id']}/clientes/{cust['id']}", json={"status": "nao_entregue"}, headers=D)
     assert c.post(f"/api/viagens/{v['id']}/finalizar", headers=D).status_code == 200
     r = c.post("/api/expenses", json={"type": "Lanche", "amount": 2, "viagem_id": v["id"]}, headers=D)
-    assert r.status_code == 400 and "já foi concluída" in r.json()["detail"]
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "approved" and r.json()["viagem_codigo"] == v["codigo_viagem"]
+    trip = next(t for t in c.get("/api/viagens", headers=D).json()["viagens"] if t["id"] == v["id"])
+    assert (trip["despesas_total"], trip["saldo_liquido"]) == (5, -5)
     assert c.delete(f"/api/expenses/{x['id']}", headers=D).status_code == 400
     # O admin ainda corrige a rota concluída.
     assert c.post("/api/expenses", json={"type": "Ajuste", "amount": 1, "viagem_id": v["id"], "driver": v["driver"]}, headers=A).status_code == 200
