@@ -117,9 +117,9 @@ export function LeafletMap({ origin, stops = [], line, pick, onPick, height = 32
   return <div ref={el} className="rmap-map" style={{ height }} data-testid={testid} />;
 }
 
-// Painel da rota: mapa com o traçado, distância/tempo, detalhe de cada trecho, otimização e navegação.
+// Painel da rota: distância/tempo, detalhes de cada trecho, otimização e navegação.
 // stops: [{key, seq, name, address, lat, lng, status: 'pending'|'done'|'failed'}] já na sequência de entrega.
-export function RoutePanel({ origin, stops, onReorder, onLocate, onEditOrder, onSetOrigin, mapHeight = 320, testid = 'route-panel', compact }) {
+export function RoutePanel({ origin, stops, onReorder, onLocate, onEditOrder, onSetOrigin, testid = 'route-panel', compact }) {
   const pending = stops.filter(s => s.status === 'pending');
   const located = pending.filter(hasPos);
   const missing = pending.filter(s => !hasPos(s));
@@ -138,7 +138,6 @@ export function RoutePanel({ origin, stops, onReorder, onLocate, onEditOrder, on
   useEffect(() => { setProposal(null); setOptErr(''); }, [stops.map(s => s.key).join('|'), pathSig]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const link = googleMapsLink(null, pending);
-  const markers = stops.map(s => ({ lat: s.lat, lng: s.lng, label: String(s.seq).padStart(2, '0'), kind: s.status === 'pending' ? '' : 'done', title: s.name }));
   const offset = hasPos(origin) ? 1 : 0;
 
   async function optimize() {
@@ -159,15 +158,15 @@ export function RoutePanel({ origin, stops, onReorder, onLocate, onEditOrder, on
 
   return <div className={`rmap-panel${compact ? ' compact' : ''}`} data-testid={testid}>
     <div className="rmap-head">
-      <span><b>Trajeto nas ruas</b><small>{pending.length} parada{pending.length === 1 ? '' : 's'} pendente{pending.length === 1 ? '' : 's'}{route ? ` · ${routeSummary(route)}` : ''}</small></span>
+      <span><b>Resumo do trajeto</b><small>{pending.length} parada{pending.length === 1 ? '' : 's'} pendente{pending.length === 1 ? '' : 's'}{route ? ` · ${routeSummary(route)}` : ''}</small></span>
       {onSetOrigin && <button type="button" className="rmap-link" data-testid={`${testid}-origin`} onClick={onSetOrigin}>{hasPos(origin) ? 'Ponto de saída' : 'Definir ponto de saída'}</button>}
     </div>
+    <small className="rmap-note">O mapa interno está temporariamente indisponível. Use o Google Maps para navegar.</small>
     {link
       ? <a className="rmap-nav" href={link} target="_blank" rel="noreferrer" data-testid={`${testid}-gmaps`}>Navegar rota no Google Maps</a>
       : <span className="rmap-nav off">Sem paradas pendentes para navegar</span>}
     {pending.length > GMAPS_MAX_STOPS && <small className="rmap-note">O Google Maps abre as próximas {GMAPS_MAX_STOPS} paradas. Depois de entregá-las, toque de novo para as seguintes.</small>}
     {!hasPos(origin) && <small className="rmap-note">Sem ponto de saída cadastrado: o traçado começa na 1ª parada.</small>}
-    <LeafletMap origin={origin} stops={markers} line={route?.line} height={mapHeight} testid={`${testid}-map`} />
     {routeErr && <small className="rmap-note warn">{routeErr}</small>}
     {missing.length > 0 && <div className="rmap-missing" data-testid={`${testid}-missing`}>
       <b>{missing.length} parada{missing.length === 1 ? '' : 's'} sem local no mapa</b>

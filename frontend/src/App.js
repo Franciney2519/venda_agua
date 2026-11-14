@@ -2376,16 +2376,16 @@ function MobileRotaTab({ deposito, customers, onLocate, onReorder, viagemAtiva, 
 
     {!viagemAtiva && !dayClosed && <section className="mob-poster" data-testid="mob-trip-banner">
       <span className="mob-eyebrow">{lastDone ? `Rota ${lastDone.numero} concluída` : 'Nenhuma rota em execução'}</span>
-      <b>{plannedEmpty ? `Rota ${nextPlanned.numero} ainda sem clientes.` : nextPlanned ? `Rota ${nextPlanned.numero} pronta para sair.` : lastDone ? 'Quer fazer outra rota hoje?' : 'Crie a rota para liberar os lançamentos.'}</b>
+      <b>{plannedEmpty ? `${lastDone ? 'Próxima: ' : ''}Rota ${nextPlanned.numero} ainda sem clientes.` : nextPlanned ? `${lastDone ? 'Próxima: ' : ''}Rota ${nextPlanned.numero} pronta para sair.` : lastDone ? 'Quer fazer outra rota hoje?' : 'Crie a rota para liberar os lançamentos.'}</b>
       {plannedEmpty
         ? <MobBtn kind="white" lead={RouteIcon} icon={ArrowRight} data-testid="mob-build-planned-button" onClick={() => onOpenViagens(nextPlanned.id)}>Adicionar clientes da rota {nextPlanned.numero}</MobBtn>
         : nextPlanned
-          ? <MobBtn kind="white" lead={Truck} icon={ArrowRight} data-testid="mob-start-planned-button" onClick={() => setStartAsk(true)}>Iniciar rota {nextPlanned.numero} · {TURNO_LABELS[nextPlanned.turno]}</MobBtn>
+          ? <MobBtn kind="white" lead={Truck} icon={ArrowRight} data-testid="mob-start-planned-button" onClick={() => setStartAsk(true)}>{lastDone ? 'Iniciar próxima · ' : 'Iniciar rota '}{nextPlanned.numero} · {TURNO_LABELS[nextPlanned.turno]}</MobBtn>
           : <MobBtn kind="white" lead={Plus} icon={ArrowRight} data-testid="mob-new-delivery-button" onClick={() => onOpenViagens()}>Criar rota</MobBtn>}
       {/* Sair sem rota montada continua possível: dá para incluir clientes pela busca durante a viagem. */}
       {plannedEmpty && <button type="button" className="mob-link on-accent" data-testid="mob-start-planned-button" onClick={() => setStartAsk(true)}>Iniciar sem clientes<ChevronRight size={16} /></button>}
       {nextPlanned && !plannedEmpty && <button type="button" className="mob-link on-accent" data-testid="mob-poster-open-viagens" onClick={() => onOpenViagens(nextPlanned.id)}>Ver clientes da rota<ChevronRight size={16} /></button>}
-      {startAsk && nextPlanned && <MobileTripStartConfirm trip={nextPlanned} customers={customers} busy={starting} cancelLabel={plannedEmpty ? 'Voltar' : 'Revisar clientes'} confirmLabel={plannedEmpty ? 'Iniciar sem clientes' : 'Iniciar viagem'} testid="mob-trip-start-preflight" onCancel={() => { setStartAsk(false); if (!plannedEmpty) onOpenViagens(nextPlanned.id); }} onConfirm={confirmStart} />}
+      {startAsk && nextPlanned && <MobileTripStartConfirm trip={nextPlanned} customers={customers} busy={starting} cancelLabel={plannedEmpty ? 'Voltar' : 'Revisar clientes'} confirmLabel={plannedEmpty ? `Iniciar Rota ${nextPlanned.numero} sem clientes` : `Iniciar Rota ${nextPlanned.numero}`} testid="mob-trip-start-preflight" onCancel={() => { setStartAsk(false); if (!plannedEmpty) onOpenViagens(nextPlanned.id); }} onConfirm={confirmStart} />}
     </section>}
     {!viagemAtiva && <MobileDoneTrips viagens={viagens} entries={entries} />}
 
@@ -2454,7 +2454,7 @@ function MobileRotaTab({ deposito, customers, onLocate, onReorder, viagemAtiva, 
 
       {viagemAtiva && <section className="mob-card plain" data-testid="mob-route-map-card">
         <div className="mob-card-body">
-          <RoutePanel compact origin={deposito} stops={stops} mapHeight={260} onReorder={dayClosed ? undefined : onReorder} onLocate={dayClosed ? undefined : onLocate} onEditOrder={() => onOpenViagens(viagemAtiva.id)} testid="mob-route-map" />
+          <RoutePanel compact origin={deposito} stops={stops} onReorder={dayClosed ? undefined : onReorder} onLocate={dayClosed ? undefined : onLocate} onEditOrder={() => onOpenViagens(viagemAtiva.id)} testid="mob-route-map" />
         </div>
       </section>}
     </>}
@@ -2965,22 +2965,33 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
   </>
 }
 
-function MobileDiarioTab({ entries, date }) {
+function MobileDiarioTab({ entries, date, viagens }) {
   const [rotaFilter, setRotaFilter] = useState('');
   const todaysAll = entries.filter(e => e.date === date);
-  const rotaOptions = [...new Map(todaysAll.filter(e => e.rota_codigo).map(e => [e.rota_codigo, e])).values()];
-  const rotaToneByCode = new Map(rotaOptions.map(entry => [
-    entry.rota_codigo,
-    [...String(entry.rota_codigo)].reduce((sum, char) => sum + char.charCodeAt(0), 0) % 2,
+  const viagensById = new Map((viagens || []).map(v => [v.id, v]));
+  const viagensByCode = new Map((viagens || []).map(v => [v.codigo_viagem, v]));
+  const viagemOf = entry => viagensById.get(entry.viagem_id) || viagensByCode.get(entry.viagem_codigo);
+  const routeKeyOf = entry => viagemOf(entry)?.id || entry.viagem_id || entry.viagem_codigo || entry.rota_codigo || '';
+  const routeLabelOf = entry => {
+    const viagem = viagemOf(entry);
+    return viagem ? `${TURNO_LABELS[viagem.turno]} · Rota ${viagem.numero}` : entry.viagem_codigo ? `Rota ${entry.viagem_codigo}` : entry.rota_codigo || 'Sem rota vinculada';
+  };
+  const rotaOptions = [...new Map(todaysAll.filter(entry => routeKeyOf(entry)).map(entry => {
+    const key = routeKeyOf(entry);
+    return [key, { key, label: routeLabelOf(entry) }];
+  })).values()];
+  const rotaToneByCode = new Map(rotaOptions.map(route => [
+    route.key,
+    [...String(route.key)].reduce((sum, char) => sum + char.charCodeAt(0), 0) % 2,
   ]));
-  const todays = rotaFilter ? todaysAll.filter(e => e.rota_codigo === rotaFilter) : todaysAll;
+  const todays = rotaFilter ? todaysAll.filter(e => routeKeyOf(e) === rotaFilter) : todaysAll;
   const totals = todays.reduce((s, e) => ({ qty: s.qty + Number(e.billed_quantity || 0), pix: s.pix + Number(e.pix_value || 0), cash: s.cash + Number(e.cash_value || 0), comp: s.comp + Number(e.comp_value || 0), mf: s.mf + Number(e.mf_quantity || 0) }), { qty: 0, pix: 0, cash: 0, comp: 0, mf: 0 });
   const mfDetail = e => e.mf_plan === 'swap' ? 'trocado' : e.mf_plan === 'refused' ? 'cliente não quis' : (e.mf_date || '');
   return <>
     {rotaOptions.length > 0 && <label className="mob-field"><b className="mob-label">Filtrar por rota</b>
       <select className="mob-input" value={rotaFilter} data-testid="mob-diario-viagem-filter" onChange={e => setRotaFilter(e.target.value)}>
         <option value="">Todas as rotas de hoje</option>
-        {rotaOptions.map(e => <option key={e.rota_codigo} value={e.rota_codigo}>{e.rota_codigo}</option>)}
+        {rotaOptions.map(route => <option key={route.key} value={route.key}>{route.label}</option>)}
       </select>
     </label>}
     <section className="mob-stats3 mob-stats4">
@@ -2993,15 +3004,18 @@ function MobileDiarioTab({ entries, date }) {
     <section className="mob-list">
       <div className="mob-sec-head"><b>Lançamentos de hoje</b><b>{todays.length}</b></div>
       {todays.length === 0 && <p className="mob-muted pad">Nada lançado ainda. Conclua uma entrega na aba Rota.</p>}
-      {todays.map(e => <div className="mob-entry" key={e.id} data-route-tone={rotaToneByCode.get(e.rota_codigo)} data-testid={`mob-entry-${e.id}`}>
+      {todays.map(e => {
+        const routeKey = routeKeyOf(e);
+        return <div className="mob-entry" key={e.id} data-route-tone={rotaToneByCode.get(routeKey)} data-testid={`mob-entry-${e.id}`}>
         <div><b>{e.customer}{e.entry_number ? <small> Nº {e.entry_number}</small> : null}</b><b>{money(e.total)}</b></div>
         <div className="mob-chips">
           <span className="mob-chip">{entryItemsLabel(e)}</span>
           <span className="mob-chip">{entryPayLabel(e)}</span>
-          {e.rota_codigo && <span className="mob-chip mob-route-chip" data-route-tone={rotaToneByCode.get(e.rota_codigo)}>{e.rota_codigo}</span>}
+          <span className="mob-chip mob-route-chip" data-route-tone={rotaToneByCode.get(routeKey)}>{routeLabelOf(e)}</span>
           {e.mf_quantity > 0 && <span className="mob-chip warn">{e.mf_quantity} MF · {mfDetail(e)}</span>}
         </div>
-      </div>)}
+      </div>;
+      })}
     </section>
   </>
 }
@@ -3241,6 +3255,7 @@ function DriverMobileApp({ user, customers, onLogout, onSwitchRole, onCustomerUp
     const { data } = await api.get('/viagens', { ...auth(), params: { date } }); setViagens(data.viagens);
     // Viagem de outro dia que ficou em execução bloqueia o início das de hoje.
     try { const { data: abertas } = await api.get('/viagens', { ...auth(), params: { status: 'execucao' } }); setViagensPresas(abertas.viagens.filter(v => v.date !== date && v.status === 'execucao')); } catch { /* ignore */ }
+    return data.viagens;
   }
   async function loadExpenses() { const { data } = await api.get('/expenses', auth()); setTodaysExpenses(data.filter(x => (x.driver || '') === user.name && manausDate(x.created_at) === date && x.status !== 'rejected')); }
   async function loadMfPending() { try { const { data } = await api.get('/mf-pendentes', auth()); setMfPending(data.filter(m => !m.scheduled_viagem_id)); } catch { /* ignore */ } }
@@ -3276,8 +3291,21 @@ function DriverMobileApp({ user, customers, onLogout, onSwitchRole, onCustomerUp
   const offRoute = viagemAtiva && q ? customers.filter(c => !inTripIds.has(c.id) && (c.name.toLowerCase().includes(q) || (c.code || '').toLowerCase().includes(q) || (c.address || '').toLowerCase().includes(q))) : [];
 
   async function createViagem(payload) { const { data } = await api.post('/viagens', payload, auth()); await loadViagens(); return data; }
-  async function iniciarViagem(v) { await api.post(`/viagens/${v.id}/iniciar`, {}, auth()); await loadViagens(); setTab('rota'); showToast('Rota iniciada — bom trabalho!'); }
-  async function finalizarViagem(v) { await api.post(`/viagens/${v.id}/finalizar`, {}, auth()); setLaunchKey(null); setSearch(''); await Promise.all([loadViagens(), loadMfPending()]); showToast(`Rota ${v.numero || ''} concluída.`); }
+  async function iniciarViagem(v) {
+    const rotaAnterior = [...viagens].reverse().find(x => x.status === 'finalizada');
+    await api.post(`/viagens/${v.id}/iniciar`, {}, auth());
+    await loadViagens();
+    setTab('rota');
+    showToast(rotaAnterior ? `Rota ${v.numero} iniciada. Rota ${rotaAnterior.numero} já está concluída.` : 'Rota iniciada — bom trabalho!');
+  }
+  async function finalizarViagem(v) {
+    await api.post(`/viagens/${v.id}/finalizar`, {}, auth());
+    setLaunchKey(null);
+    setSearch('');
+    const [viagensAtualizadas] = await Promise.all([loadViagens(), loadMfPending()]);
+    const proximaRota = viagensAtualizadas.find(x => x.status === 'planejada');
+    showToast(proximaRota ? `Rota ${v.numero} concluída. Próxima: Rota ${proximaRota.numero}.` : `Rota ${v.numero} concluída.`);
+  }
   async function deleteViagem(v) { await api.delete(`/viagens/${v.id}`, auth()); await Promise.all([loadViagens(), loadMfPending()]); }
   async function addRota(viagemId, payload) { const { data } = await api.post(`/viagens/${viagemId}/rotas`, payload, auth()); await loadViagens(); return data; }
   async function addRotaCliente(viagemId, rotaId, cliente) { const { data } = await api.post(`/viagens/${viagemId}/rotas/${rotaId}/clientes`, cliente, auth()); await loadViagens(); return data; }
@@ -3352,7 +3380,7 @@ function DriverMobileApp({ user, customers, onLogout, onSwitchRole, onCustomerUp
       <main ref={mainRef} className="mob-main"><div className="mob-col">
         {tab === 'rota' && <MobileRotaTab deposito={deposito} customers={customers} onLocate={s => s.customer ? setLocating(s) : showToast('Cliente fora do cadastro: peça ao admin para cadastrar o endereço.')} onReorder={guard(async keys => { await reorderClientes(viagemAtiva.id, keys); showToast('Sequência de entrega atualizada.'); }, 'Não foi possível salvar a ordem de entrega.')} viagemAtiva={viagemAtiva} viagens={viagensComProgresso} stops={stops} entries={entries} date={date} search={search} setSearch={setSearch} mfPending={mfPending} viagensPresas={viagensPresas} onFinalizarPresa={finishTrip} dayClosed={dayClosed} onOpenStop={openStop} onOpenViagens={openViagens} onStartTrip={startTrip} onFinishTrip={finishTrip} offRoute={offRoute} onPickOffRoute={pickOffRoute} onReceipt={setReceiptEntry} onEditEntry={setEditingEntry} onDeleteEntry={deleteEntry} onIncludeMf={includeMf} />}
         {tab === 'viagens' && <MobileViagensScreen viagens={viagensComProgresso} customers={customers} entries={entries} mfPending={mfPending} dayClosed={dayClosed} viagemAtiva={viagemAtiva} openTripId={openTripId} setOpenTripId={setOpenTripId} onBack={() => setTab('rota')} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} onAddRota={addRota} onAddRotaCliente={addRotaCliente} onUpdateRotaCliente={updateRotaCliente} onRemoveRotaCliente={removeRotaCliente} onRemoveRota={removeRota} onReorder={reorderClientes} onScheduleMf={scheduleMf} toast={showToast} />}
-        {tab === 'diario' && <MobileDiarioTab entries={entries} date={date} />}
+        {tab === 'diario' && <MobileDiarioTab entries={entries} date={date} viagens={viagensComProgresso} />}
         {tab === 'caixa' && <MobileCaixaTab entries={entries} expenses={todaysExpenses} expensesTotal={expensesTotal} viagens={viagensComProgresso} date={date} pendingStops={pendingStops.length} onCloseDay={closeDay} onOpenViagens={openViagens} dayClosed={dayClosed} closingDay={closingDay} />}
         {tab === 'despesas' && <MobileDespesasTab user={user} date={date} viagens={viagensComProgresso} viagemAtiva={viagemAtiva} onOpenViagens={openViagens} dayClosed={dayClosed} toast={showToast} />}
         {tab === 'mais' && <MobileAjustesTab user={user} theme={theme} setTheme={setTheme} scale={scale} setTextScale={setTextScale} onLogout={onLogout} onSwitchRole={onSwitchRole} />}
