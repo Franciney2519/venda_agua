@@ -1,0 +1,750 @@
+.app-shell {
+  --ink: #172c43;
+  --muted: #64788e;
+  --line: #e2e9ef;
+  --blue: #0876c9;
+  --pale: #edf6fd;
+  --green: #14805e;
+  --orange: #a46108;
+  --red: #bd4141;
+  --app-bg: #f4f7fa;
+  --surface: #fff;
+  --surface-soft: #f8fafc;
+  --ease-ui: cubic-bezier(0.23, 1, 0.32, 1);
+  min-height: 100vh;
+  background: var(--app-bg);
+  color: var(--ink);
+  isolation: isolate;
+}
+
+.app-shell.dark {
+  --ink: #e7eef5;
+  --muted: #9aabbb;
+  --line: #293a4c;
+  --blue: #5aa9e8;
+  --pale: #152b40;
+  --green: #54c99a;
+  --orange: #e5b263;
+  --red: #f0837d;
+  --app-bg: #0c1723;
+  --surface: #111f2e;
+  --surface-soft: #152638;
+  background: var(--app-bg);
+}
+
+.app-shell .sidebar {
+  width: 248px;
+  padding: 24px 16px 18px;
+  background: var(--surface);
+  border-color: var(--line);
+  box-shadow: 1px 0 0 rgba(23, 44, 67, 0.015);
+}
+
+.app-shell .brand {
+  min-height: 42px;
+  padding: 0 10px;
+  color: var(--ink);
+  font-size: 19px;
+  letter-spacing: -0.5px;
+}
+
+.app-shell .brand-logo {
+  width: 36px;
+  height: 36px;
+}
+
+.app-shell .workspace {
+  margin: 32px 4px 22px;
+  padding: 13px 12px;
+  background: var(--surface-soft);
+  border-color: var(--line);
+  border-radius: 10px;
+}
+
+.app-shell .workspace small,
+.app-shell .eyebrow {
+  color: var(--muted);
+  letter-spacing: 0.08em;
+}
+
+.app-shell .sidebar nav {
+  gap: 5px;
+}
+
+.app-shell .sidebar nav a {
+  position: relative;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  color: var(--muted);
+  transition: color 160ms var(--ease-ui), background-color 160ms var(--ease-ui);
+}
+
+.app-shell .sidebar nav a.active {
+  background: var(--pale);
+  color: var(--blue);
+}
+
+.app-shell .sidebar nav a.active::before {
+  position: absolute;
+  left: 0;
+  width: 3px;
+  height: 20px;
+  border-radius: 0 3px 3px 0;
+  background: var(--blue);
+  content: "";
+}
+
+.app-shell .nav-badge {
+  background: var(--red);
+}
+
+.app-shell .support {
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+.app-shell .live-dot {
+  background: var(--green);
+}
+
+.app-shell .main {
+  width: calc(100% - 248px);
+  margin-left: 248px;
+  padding: 30px clamp(28px, 4.1vw, 60px) 64px;
+}
+
+.app-shell .main > header {
+  align-items: center;
+  margin-bottom: 42px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.app-shell .main > header h1 {
+  color: var(--ink);
+  font-size: 24px;
+  letter-spacing: -0.45px;
+}
+
+.app-shell .wave {
+  color: #d9972f;
+}
+
+.app-shell .header-actions {
+  gap: 12px;
+}
+
+.app-shell .notification {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 20px;
+}
+
+.app-shell .avatar,
+.app-shell .customer-avatar {
+  background: var(--pale);
+  color: var(--blue);
+}
+
+.app-shell .section-head {
+  align-items: center;
+  margin-bottom: 24px;
+  gap: 20px;
+}
+
+.app-shell .section-head h2 {
+  margin: 6px 0;
+  color: var(--ink);
+  font-size: clamp(28px, 2.2vw, 32px);
+  letter-spacing: -0.8px;
+}
+
+.app-shell .muted {
+  color: var(--muted);
+}
+
+.app-shell .dashboard-refresh {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.app-shell .dashboard-refresh small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.app-shell .stats {
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.app-shell .stat,
+.app-shell .panel,
+.app-shell .customer-card {
+  background: var(--surface);
+  border-color: var(--line);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(23, 44, 67, 0.035);
+}
+
+.app-shell .stat {
+  min-height: 112px;
+  padding: 19px;
+  gap: 13px;
+}
+
+.app-shell .stat-icon {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border-radius: 10px;
+  background: var(--pale);
+  color: var(--blue);
+}
+
+.app-shell .stat p {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.app-shell .stat strong {
+  color: var(--ink);
+  font-size: 21px;
+  letter-spacing: -0.35px;
+  font-variant-numeric: tabular-nums;
+}
+
+.app-shell .stat small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.app-shell .stat-icon.green {
+  background: #e9f6f0;
+  color: var(--green);
+}
+
+.app-shell .stat-icon.orange {
+  background: #fbf2e6;
+  color: var(--orange);
+}
+
+.app-shell .stat-icon.red {
+  background: #fbebeb;
+  color: var(--red);
+}
+
+.app-shell .dashboard-grid {
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.app-shell .performance,
+.app-shell .route-panel {
+  padding: 21px;
+}
+
+.app-shell .panel h3 {
+  color: var(--ink);
+  font-size: 16px;
+  letter-spacing: -0.2px;
+}
+
+.app-shell .panel select,
+.app-shell .table-wrap select {
+  min-height: 36px;
+  padding: 7px 10px;
+  border-color: var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.app-shell .route {
+  gap: 12px;
+  padding: 13px 0;
+  border-color: var(--line);
+}
+
+.app-shell .route b,
+.app-shell td b {
+  color: var(--ink);
+}
+
+.app-shell .route small,
+.app-shell td small {
+  color: var(--muted);
+}
+
+.app-shell .table-panel .panel-head {
+  padding: 20px 21px 16px;
+}
+
+.app-shell .table-wrap {
+  max-height: 65vh;
+}
+
+.app-shell table {
+  min-width: 650px;
+}
+
+.app-shell th {
+  padding: 12px 21px;
+  border-color: var(--line);
+  background: var(--surface-soft);
+  color: var(--muted);
+  letter-spacing: 0.045em;
+}
+
+.app-shell td {
+  padding: 14px 21px;
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+.app-shell tbody tr {
+  transition: background-color 140ms var(--ease-ui);
+}
+
+.app-shell .filter-row {
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.app-shell .filter-row button {
+  min-height: 38px;
+  padding: 8px 13px;
+  border-color: var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.app-shell .filter-row button.active {
+  border-color: #b7d8f0;
+  background: var(--pale);
+  color: var(--blue);
+}
+
+.app-shell .customer-grid {
+  gap: 14px;
+}
+
+.app-shell .customer-card {
+  padding: 17px;
+}
+
+.app-shell .customer-card small {
+  color: var(--muted);
+}
+
+.app-shell .primary,
+.app-shell .ghost-btn,
+.app-shell .secondary-btn,
+.app-shell .action-btn,
+.app-shell .header-logout,
+.app-shell .theme-toggle,
+.app-shell .logout,
+.app-shell .password-toggle,
+.app-shell .filter-row button,
+.app-shell .link-btn {
+  transition:
+    color 150ms var(--ease-ui),
+    background-color 150ms var(--ease-ui),
+    border-color 150ms var(--ease-ui),
+    box-shadow 150ms var(--ease-ui),
+    transform 150ms var(--ease-ui);
+}
+
+.app-shell .primary {
+  min-height: 44px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: var(--blue);
+  box-shadow: 0 2px 5px rgba(8, 118, 201, 0.18);
+}
+
+.app-shell .primary:hover {
+  background: #0566ae;
+  transform: translateY(-1px);
+}
+
+.app-shell .ghost-btn,
+.app-shell .secondary-btn {
+  min-height: 40px;
+  border-color: var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--blue);
+}
+
+.app-shell .ghost-btn:hover,
+.app-shell .secondary-btn:hover,
+.app-shell .header-logout:hover {
+  border-color: #b7d8f0;
+  background: var(--pale);
+  color: var(--blue);
+}
+
+.app-shell .action-btn {
+  min-height: 32px;
+  border-color: var(--line);
+  border-radius: 7px;
+}
+
+.app-shell .header-logout {
+  min-height: 40px;
+  border-color: var(--line);
+  border-radius: 9px;
+}
+
+.app-shell .theme-toggle {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.app-shell .theme-toggle:hover {
+  background: var(--pale);
+  color: var(--blue);
+}
+
+.app-shell :is(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+}
+
+.app-shell :is(input, select, textarea) {
+  border-radius: 8px;
+}
+
+.app-shell input:focus,
+.app-shell select:focus,
+.app-shell textarea:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(8, 118, 201, 0.14);
+}
+
+.app-shell .modal-backdrop {
+  background: rgba(13, 30, 47, 0.52);
+  backdrop-filter: blur(3px);
+}
+
+.app-shell .quick-modal {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 26px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 18px 48px rgba(13, 30, 47, 0.2);
+  transition:
+    opacity 180ms var(--ease-ui),
+    transform 180ms var(--ease-ui);
+}
+
+@starting-style {
+  .app-shell .quick-modal {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+.app-shell .quick-modal h3 {
+  color: var(--ink);
+  letter-spacing: -0.45px;
+}
+
+.app-shell .quick-modal label {
+  color: var(--muted);
+}
+
+.app-shell .quick-modal input,
+.app-shell .quick-modal select,
+.app-shell .daily-entry-form input,
+.app-shell .daily-entry-form select,
+.app-shell .report-filters input[type="date"],
+.app-shell .report-filters select,
+.app-shell .brand-price-row input {
+  min-height: 40px;
+  border-color: var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.login-page {
+  background: #fff;
+}
+
+.login-form {
+  color: #172c43;
+}
+
+.login-form input {
+  min-height: 44px;
+  border-color: #dce5ed;
+  border-radius: 8px;
+  transition: border-color 150ms var(--ease-ui), box-shadow 150ms var(--ease-ui);
+}
+
+.login-form input:focus {
+  border-color: #0876c9;
+  box-shadow: 0 0 0 3px rgba(8, 118, 201, 0.14);
+}
+
+.farewell {
+  background: #f4f7fa;
+}
+
+.app-shell.dark .stat-icon.green {
+  background: #12352c;
+}
+
+.app-shell.dark .stat-icon.orange {
+  background: #392b18;
+}
+
+.app-shell.dark .stat-icon.red {
+  background: #3b2022;
+}
+
+.app-shell.dark .filter-row button.active {
+  border-color: #315d7e;
+  background: var(--pale);
+}
+
+.app-shell.dark .quick-modal {
+  border-color: var(--line);
+}
+
+.app-shell.dark .quick-modal input,
+.app-shell.dark .quick-modal select,
+.app-shell.dark .daily-entry-form input,
+.app-shell.dark .daily-entry-form select,
+.app-shell.dark .report-filters input[type="date"],
+.app-shell.dark .report-filters select,
+.app-shell.dark .brand-price-row input {
+  border-color: var(--line);
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+.app-shell.dark .primary:hover {
+  background: #3e91d0;
+}
+
+.app-shell.dark .ghost-btn:hover,
+.app-shell.dark .secondary-btn:hover,
+.app-shell.dark .header-logout:hover,
+.app-shell.dark .theme-toggle:hover {
+  border-color: #315d7e;
+  background: var(--pale);
+}
+
+.mobile-app {
+  --ease-ui: cubic-bezier(0.23, 1, 0.32, 1);
+  --bg: #f4f7fa;
+  --text: #172c43;
+  --field: #fff;
+  --line: #dfe7ee;
+  --accent: #0876c9;
+  --accent-600: #066ab3;
+  --accent-700: #075995;
+  --accent-soft: #eaf5fd;
+  --link: #0876c9;
+  --ok: #14805e;
+  --ok-soft: #e9f6f0;
+}
+
+.mobile-app.dark {
+  --bg: #0c1723;
+  --text: #e7eef5;
+  --field: #111f2e;
+  --line: #293a4c;
+  --accent: #5aa9e8;
+  --accent-600: #75b8ed;
+  --accent-700: #3c8ac8;
+  --accent-soft: #152b40;
+  --link: #82c1f3;
+  --ok: #54c99a;
+  --ok-soft: #12352c;
+}
+
+.mobile-app :is(button, a, input, select, canvas):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.mobile-app button {
+  transition:
+    color 140ms var(--ease-ui),
+    background-color 140ms var(--ease-ui),
+    border-color 140ms var(--ease-ui),
+    transform 120ms var(--ease-ui);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .app-shell .sidebar nav a:hover {
+    background: var(--surface-soft);
+    color: var(--blue);
+  }
+
+  .app-shell .stat:hover,
+  .app-shell .panel:hover,
+  .app-shell .customer-card:hover {
+    border-color: var(--line);
+    box-shadow: 0 2px 8px rgba(23, 44, 67, 0.035);
+  }
+
+  .app-shell .action-btn:hover {
+    border-color: #c9d6e1;
+    background: var(--surface-soft);
+  }
+
+  .app-shell.dark .action-btn:hover {
+    border-color: #40566d;
+    background: var(--surface-soft);
+  }
+}
+
+.app-shell :is(button, a, [role="button"]):active:not(:focus-visible),
+.mobile-app button:active:not(:focus-visible) {
+  transform: scale(0.985);
+  transition-duration: 90ms;
+}
+
+.app-shell .primary:active:not(:focus-visible) {
+  transform: translateY(1px) scale(0.985);
+}
+
+@media (max-width: 1000px) {
+  .app-shell .main {
+    padding-right: 28px;
+    padding-left: 28px;
+  }
+}
+
+@media (max-width: 700px) {
+  .app-shell .sidebar {
+    width: min(280px, 86vw);
+    transition: transform 240ms var(--ease-ui);
+  }
+
+  .app-shell .main {
+    width: 100%;
+    margin-left: 0;
+    padding: 18px 18px 42px;
+  }
+
+  .app-shell .main > header {
+    margin-bottom: 30px;
+    padding-bottom: 14px;
+  }
+
+  .app-shell .main > header h1 {
+    font-size: 21px;
+  }
+
+  .app-shell .section-head {
+    align-items: flex-start;
+  }
+
+  .app-shell .section-head h2 {
+    font-size: 27px;
+  }
+
+  .app-shell .section-head .primary {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 10px;
+    border-radius: 9px;
+  }
+
+  .app-shell .section-head .primary svg {
+    flex: none;
+  }
+
+  .app-shell .stats {
+    gap: 9px;
+  }
+
+  .app-shell .stat {
+    min-height: 100px;
+    padding: 13px;
+    gap: 9px;
+    border-radius: 10px;
+  }
+
+  .app-shell .stat strong {
+    font-size: 18px;
+  }
+
+  .app-shell .stat small {
+    font-size: 10px;
+  }
+
+  .app-shell .performance,
+  .app-shell .route-panel {
+    padding: 16px;
+  }
+
+  .app-shell .table-panel .panel-head {
+    padding: 17px 16px 14px;
+  }
+
+  .app-shell th,
+  .app-shell td {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .app-shell .dashboard-refresh {
+    justify-items: start;
+  }
+
+  .login-page {
+    background: linear-gradient(180deg, #eaf5fd 0, #f4f7fa 62%);
+  }
+
+  .login-form {
+    border-radius: 14px;
+    box-shadow: 0 12px 32px rgba(23, 44, 67, 0.1);
+  }
+
+  .app-shell :is(.primary, .ghost-btn, .secondary-btn, .filter-row button, .header-logout, .theme-toggle) {
+    min-height: 44px;
+  }
+
+  .app-shell .theme-toggle {
+    width: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell *,
+  .mobile-app * {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .app-shell .spin,
+  .mobile-app .spin {
+    animation: none !important;
+  }
+
+  .app-shell :is(button, a, [role="button"]):active:not(:focus-visible),
+  .mobile-app button:active:not(:focus-visible) {
+    transform: none;
+  }
+}

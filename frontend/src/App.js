@@ -8,6 +8,7 @@ import logoImg from "./assets/logo.png";
 import { LOGO_PNG_BASE64 } from "./logoBase64";
 import "@/App.css";
 import "@/Operations.css";
+import "@/DesignPolish.css";
 import { RoutePanel, LocationModal, LeafletMap, lookupCep, cepAddress, fmtCep, onlyDigits as cepDigits, hasPos } from "./RouteMap";
 
 const api = axios.create({ baseURL: `${process.env.REACT_APP_BACKEND_URL}/api` });
