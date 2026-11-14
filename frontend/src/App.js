@@ -2806,11 +2806,12 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
   const concluidas = viagens.filter(v => v.status === 'finalizada');
   const shown = focus ? [focus] : [...abertas, ...(showDone ? concluidas : [])];
   function closeFocus() { setOpenTripId(null); setPicker(null); setConfig(null); }
+  function backToRota() { setOpenTripId(null); setPicker(null); setConfig(null); onBack(); }
 
   return <>
     {focus
       ? <button type="button" className="mob-link dark h44" data-testid="mob-viagens-all" onClick={closeFocus}><ArrowLeft size={18} />Todas as rotas</button>
-      : <button type="button" className="mob-link dark h44" data-testid="mob-viagens-close" onClick={onBack}><ArrowLeft size={18} />Voltar para a rota</button>}
+      : <button type="button" className="mob-link dark h44" data-testid="mob-viagens-close" onClick={backToRota}><ArrowLeft size={18} />Voltar para a rota</button>}
 
     {focus ? null : dayClosed
       ? <section className="mob-band" data-testid="mob-day-closed-banner"><Lock size={20} /><b>Dia fechado — rotas somente para consulta.</b></section>
@@ -2956,7 +2957,7 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
               </div>;
             })()}
           </div>}
-          {focus && <MobBtn kind="outline" h={52} icon={Check} data-testid="mob-viagem-focus-done" onClick={closeFocus}>Pronto — ver todas as rotas</MobBtn>}
+          {focus && <MobBtn kind="outline" h={52} icon={Check} data-testid="mob-viagem-focus-done" onClick={backToRota}>Voltar para a rota de hoje</MobBtn>}
         </div>
       })}
       {!focus && concluidas.length > 0 && <button type="button" className="mob-link h48" data-testid="mob-viagens-done-toggle" onClick={() => setShowDone(!showDone)}>{showDone ? <ChevronUp size={18} /> : <ChevronDown size={18} />}{showDone ? 'Ocultar' : 'Ver'} rotas concluídas ({concluidas.length})</button>}
