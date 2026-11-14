@@ -1851,6 +1851,52 @@ function MobileConfirm({ title, text, cancelLabel = 'Voltar', confirmLabel, onCa
   </section>
 }
 
+function MobileTripStartConfirm({ trip, customers = [], busy, cancelLabel = 'Voltar', confirmLabel = 'Iniciar viagem', onCancel, onConfirm, testid }) {
+  const customerById = new Map(customers.map(customer => [customer.id, customer]));
+  const stops = orderedClients(trip).map(({ c, r }, index) => {
+    const customer = customerById.get(c.id) || c;
+    const address = String(customer.address || '').trim();
+    return {
+      key: `${r.id}:${c.id}`,
+      name: c.name,
+      sequence: index + 1,
+      location: address || (hasPos(customer) ? 'Ponto marcado no mapa' : 'Sem endereço ou ponto no mapa'),
+      hasLocation: Boolean(address) || hasPos(customer),
+    };
+  });
+  const missingLocation = stops.filter(stop => !stop.hasLocation);
+  const load = trip.carga_items?.length
+    ? trip.carga_items.map(item => `${item.quantity} ${item.brand}`).join(' · ')
+    : Number(trip.carga_total) > 0 ? `${trip.carga_total} un` : 'Não informada';
+
+  return <section className="mob-trip-preflight" data-testid={testid}>
+    <b>Confira a rota antes de iniciar</b>
+    <div className="mob-preflight-stats">
+      <div><small>Clientes</small><strong>{stops.length}</strong></div>
+      <div><small>Carga</small><strong>{load}</strong></div>
+    </div>
+    {stops.length > 0
+      ? <>
+        <b className="mob-preflight-label">Ordem de entrega</b>
+        <ol className="mob-preflight-stops">
+          {stops.map(stop => <li key={stop.key}>
+            <span>{pad2(stop.sequence)}</span>
+            <div><b>{stop.name}</b><small>{stop.location}</small></div>
+          </li>)}
+        </ol>
+      </>
+      : <p className="mob-preflight-note">A rota está sem clientes. Você poderá adicioná-los durante a viagem.</p>}
+    {missingLocation.length > 0 && <p className="mob-preflight-warning"><TriangleAlert size={16} />{missingLocation.length === 1
+      ? `Sem endereço ou ponto no mapa: ${missingLocation[0].name}.`
+      : `Sem endereço ou ponto no mapa: ${missingLocation.map(stop => stop.name).join(', ')}.`}</p>}
+    {stops.length > 0 && missingLocation.length === 0 && <p className="mob-preflight-note"><Check size={16} />Todos os clientes têm endereço ou ponto no mapa.</p>}
+    <div className="mob-grid2">
+      <MobBtn kind="outline" h={52} data-testid={testid && `${testid}-cancel`} onClick={onCancel}>{cancelLabel}</MobBtn>
+      <MobBtn kind="ink" h={52} disabled={busy} data-testid={testid && `${testid}-ok`} onClick={onConfirm}>{confirmLabel}</MobBtn>
+    </div>
+  </section>
+}
+
 function MobileHeader({ user, title, theme, onToggleTheme, onLogout }) {
   const today = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Manaus', weekday: 'short', day: '2-digit', month: '2-digit' }).replace('.', '');
   return <header className="mob-header">
@@ -2268,7 +2314,9 @@ function MobileLaunchPanel({ stop, user, date, viagemId, cargaRestante, cargaBra
   </>
 }
 
-function MobileRotaTab({ deposito, onLocate, onReorder, viagemAtiva, viagens, stops, entries, date, search, setSearch, mfPending, viagensPresas, onFinalizarPresa, dayClosed, onOpenStop, onOpenViagens, onStartTrip, onFinishTrip, offRoute, onPickOffRoute, onReceipt, onEditEntry, onDeleteEntry, onIncludeMf }) {
+function MobileRotaTab({ deposito, customers, onLocate, onReorder, viagemAtiva, viagens, stops, entries, date, search, setSearch, mfPending, viagensPresas, onFinalizarPresa, dayClosed, onOpenStop, onOpenViagens, onStartTrip, onFinishTrip, offRoute, onPickOffRoute, onReceipt, onEditEntry, onDeleteEntry, onIncludeMf }) {
+  const [startAsk, setStartAsk] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [finishAsk, setFinishAsk] = useState(false);
   const [openDone, setOpenDone] = useState(null);
   const [deleteAsk, setDeleteAsk] = useState(null);
@@ -2298,6 +2346,12 @@ function MobileRotaTab({ deposito, onLocate, onReorder, viagemAtiva, viagens, st
   function askFinish() {
     setFinishAsk(true);
   }
+  async function confirmStart() {
+    if (!nextPlanned || starting) return;
+    setStarting(true);
+    try { await onStartTrip(nextPlanned); }
+    finally { setStarting(false); setStartAsk(false); }
+  }
   const diff = (carga || 0) - atual;
   // Carga por produto: somar marcas diferentes num "20/20" escondia o que ainda há de cada uma no caminhão.
   // Produto vendido sem estar na carga aparece à parte (saiu do estoque do depósito).
@@ -2326,11 +2380,12 @@ function MobileRotaTab({ deposito, onLocate, onReorder, viagemAtiva, viagens, st
       {plannedEmpty
         ? <MobBtn kind="white" lead={RouteIcon} icon={ArrowRight} data-testid="mob-build-planned-button" onClick={() => onOpenViagens(nextPlanned.id)}>Adicionar clientes da rota {nextPlanned.numero}</MobBtn>
         : nextPlanned
-          ? <MobBtn kind="white" lead={Truck} icon={ArrowRight} data-testid="mob-start-planned-button" onClick={() => onStartTrip(nextPlanned)}>Iniciar rota {nextPlanned.numero} · {TURNO_LABELS[nextPlanned.turno]}</MobBtn>
+          ? <MobBtn kind="white" lead={Truck} icon={ArrowRight} data-testid="mob-start-planned-button" onClick={() => setStartAsk(true)}>Iniciar rota {nextPlanned.numero} · {TURNO_LABELS[nextPlanned.turno]}</MobBtn>
           : <MobBtn kind="white" lead={Plus} icon={ArrowRight} data-testid="mob-new-delivery-button" onClick={() => onOpenViagens()}>Criar rota</MobBtn>}
       {/* Sair sem rota montada continua possível: dá para incluir clientes pela busca durante a viagem. */}
-      {plannedEmpty && <button type="button" className="mob-link on-accent" data-testid="mob-start-planned-button" onClick={() => onStartTrip(nextPlanned)}>Iniciar sem clientes<ChevronRight size={16} /></button>}
+      {plannedEmpty && <button type="button" className="mob-link on-accent" data-testid="mob-start-planned-button" onClick={() => setStartAsk(true)}>Iniciar sem clientes<ChevronRight size={16} /></button>}
       {nextPlanned && !plannedEmpty && <button type="button" className="mob-link on-accent" data-testid="mob-poster-open-viagens" onClick={() => onOpenViagens(nextPlanned.id)}>Ver clientes da rota<ChevronRight size={16} /></button>}
+      {startAsk && nextPlanned && <MobileTripStartConfirm trip={nextPlanned} customers={customers} busy={starting} cancelLabel={plannedEmpty ? 'Voltar' : 'Revisar clientes'} confirmLabel={plannedEmpty ? 'Iniciar sem clientes' : 'Iniciar viagem'} testid="mob-trip-start-preflight" onCancel={() => { setStartAsk(false); if (!plannedEmpty) onOpenViagens(nextPlanned.id); }} onConfirm={confirmStart} />}
     </section>}
     {!viagemAtiva && <MobileDoneTrips viagens={viagens} entries={entries} />}
 
@@ -2359,9 +2414,9 @@ function MobileRotaTab({ deposito, onLocate, onReorder, viagemAtiva, viagens, st
 
     {viagemAtiva && stops.length > 0 && pending.length === 0 && <section className="mob-card" data-testid="mob-all-done">
       <div className="mob-card-body">
-        <span className="mob-eyebrow red"><CircleCheck size={16} />Todas as entregas concluídas</span>
-        <b className="mob-h24">{done.length} entrega{done.length === 1 ? '' : 's'} · {money(tripTotal)}</b>
-        <span className="mob-muted">{failed.length > 0 ? `${failed.length} ${failed.length === 1 ? 'não entregue' : 'não entregues'}. ` : ''}Conclua para limpar a tela e devolver a sobra da carga.</span>
+        <span className="mob-eyebrow red"><CircleCheck size={16} />Rota pronta para encerrar</span>
+        <b className="mob-h24">{done.length} entregue{done.length === 1 ? '' : 's'}{failed.length > 0 ? ` · ${failed.length} não entregue${failed.length === 1 ? '' : 's'}` : ''} · {money(tripTotal)}</b>
+        <span className="mob-muted">Todas as paradas foram registradas. Encerre a rota para devolver a sobra da carga.</span>
       </div>
       {finishAsk
         ? <MobileConfirm testid="mob-finish-confirm" title="Encerrar a rota?" text={cargaPorProduto.length ? `${sobraTotal > 0 ? `${sobraTotal === 1 ? 'Volta' : 'Voltam'} para o estoque: ${sobraProdutos.map(p => `${p.qty} ${p.brand}`).join(', ')}. ` : 'Toda a carga foi entregue. '}Depois de encerrar, a rota fica só para consulta.` : `${!carga || diff === 0 ? '' : diff > 0 ? `${diff === 1 ? 'Sobra' : 'Sobram'} ${diff} un no caminhão (${atual}/${carga} entregues) — voltam para o estoque. ` : `Foram lançadas ${-diff} unidade(s) a mais que a carga total (${atual}/${carga}). `}Depois de encerrar, a rota fica só para consulta.`} confirmLabel="Encerrar rota" onCancel={() => setFinishAsk(false)} onConfirm={() => { setFinishAsk(false); onFinishTrip(viagemAtiva); }} />
@@ -2809,11 +2864,11 @@ function MobileViagensScreen({ viagens, customers, entries, mfPending, dayClosed
             <span className={`mob-tag ${v.status === 'execucao' ? 'warn' : 'neutral'}`}>{{ planejada: 'Planejada', execucao: 'Em execução', finalizada: 'Concluída' }[v.status]}</span>
           </div>
 
-          {v.status === 'planejada' && !dayClosed && asking === `ini:${v.id}` && <MobileConfirm testid="mob-viagem-iniciar-vazia-confirm" title="Iniciar sem nenhum cliente?" text="A rota ainda não tem clientes. Dá para incluir pela busca durante a rota." confirmLabel="Iniciar assim mesmo" busy={busy} onCancel={() => setAsking(null)} onConfirm={() => run(async () => { setAsking(null); await onIniciar(v); }, 'Não foi possível iniciar a rota.')} />}
+          {v.status === 'planejada' && !dayClosed && asking === `ini:${v.id}` && <MobileTripStartConfirm trip={v} customers={customers} busy={busy} testid={`mob-viagem-iniciar-confirm-${v.id}`} onCancel={() => setAsking(null)} onConfirm={() => run(async () => { setAsking(null); await onIniciar(v); }, 'Não foi possível iniciar a rota.')} />}
           {v.status === 'planejada' && !dayClosed && asking !== `ini:${v.id}` && (asking === `del:${v.id}`
             ? <MobileConfirm testid="mob-viagem-excluir-confirm" title={`Excluir a rota ${v.codigo_viagem}?`} text={allClients.length ? (allClients.length === 1 ? '1 cliente sai da rota.' : `${allClients.length} clientes saem da rota.`) : undefined} confirmLabel="Excluir" busy={busy} onCancel={() => setAsking(null)} onConfirm={() => run(async () => { await onDelete(v); setAsking(null); }, 'Não foi possível excluir a rota.')} />
             : <div className="mob-grid21">
-              <MobBtn h={52} icon={Play} kind={viagemAtiva ? 'disabled' : 'primary'} data-testid={`mob-viagem-iniciar-${v.id}`} onClick={() => viagemAtiva ? toast('Conclua a rota em execução primeiro.') : allClients.length === 0 ? setAsking(`ini:${v.id}`) : run(() => onIniciar(v), 'Não foi possível iniciar a rota.')}>{viagemAtiva ? 'Aguardando' : 'Iniciar viagem'}</MobBtn>
+              <MobBtn h={52} icon={Play} kind={viagemAtiva ? 'disabled' : 'primary'} data-testid={`mob-viagem-iniciar-${v.id}`} onClick={() => viagemAtiva ? toast('Conclua a rota em execução primeiro.') : setAsking(`ini:${v.id}`)}>{viagemAtiva ? 'Aguardando' : 'Iniciar viagem'}</MobBtn>
               <MobBtn h={52} kind="outline" data-testid={`mob-viagem-excluir-${v.id}`} onClick={() => setAsking(`del:${v.id}`)}>Excluir</MobBtn>
             </div>)}
 
@@ -3278,7 +3333,7 @@ function DriverMobileApp({ user, customers, onLogout, onSwitchRole, onCustomerUp
     <MobileHeader user={user} title={MOBILE_TITLES[tab]} theme={theme} onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} onLogout={onLogout} />
     <div className="mob-body">
       <main ref={mainRef} className="mob-main"><div className="mob-col">
-        {tab === 'rota' && <MobileRotaTab deposito={deposito} onLocate={s => s.customer ? setLocating(s) : showToast('Cliente fora do cadastro: peça ao admin para cadastrar o endereço.')} onReorder={guard(async keys => { await reorderClientes(viagemAtiva.id, keys); showToast('Sequência de entrega atualizada.'); }, 'Não foi possível salvar a ordem de entrega.')} viagemAtiva={viagemAtiva} viagens={viagensComProgresso} stops={stops} entries={entries} date={date} search={search} setSearch={setSearch} mfPending={mfPending} viagensPresas={viagensPresas} onFinalizarPresa={finishTrip} dayClosed={dayClosed} onOpenStop={openStop} onOpenViagens={openViagens} onStartTrip={startTrip} onFinishTrip={finishTrip} offRoute={offRoute} onPickOffRoute={pickOffRoute} onReceipt={setReceiptEntry} onEditEntry={setEditingEntry} onDeleteEntry={deleteEntry} onIncludeMf={includeMf} />}
+        {tab === 'rota' && <MobileRotaTab deposito={deposito} customers={customers} onLocate={s => s.customer ? setLocating(s) : showToast('Cliente fora do cadastro: peça ao admin para cadastrar o endereço.')} onReorder={guard(async keys => { await reorderClientes(viagemAtiva.id, keys); showToast('Sequência de entrega atualizada.'); }, 'Não foi possível salvar a ordem de entrega.')} viagemAtiva={viagemAtiva} viagens={viagensComProgresso} stops={stops} entries={entries} date={date} search={search} setSearch={setSearch} mfPending={mfPending} viagensPresas={viagensPresas} onFinalizarPresa={finishTrip} dayClosed={dayClosed} onOpenStop={openStop} onOpenViagens={openViagens} onStartTrip={startTrip} onFinishTrip={finishTrip} offRoute={offRoute} onPickOffRoute={pickOffRoute} onReceipt={setReceiptEntry} onEditEntry={setEditingEntry} onDeleteEntry={deleteEntry} onIncludeMf={includeMf} />}
         {tab === 'viagens' && <MobileViagensScreen viagens={viagensComProgresso} customers={customers} entries={entries} mfPending={mfPending} dayClosed={dayClosed} viagemAtiva={viagemAtiva} openTripId={openTripId} setOpenTripId={setOpenTripId} onBack={() => setTab('rota')} onCreate={createViagem} onIniciar={iniciarViagem} onFinalizar={finalizarViagem} onDelete={deleteViagem} onAddRota={addRota} onAddRotaCliente={addRotaCliente} onUpdateRotaCliente={updateRotaCliente} onRemoveRotaCliente={removeRotaCliente} onRemoveRota={removeRota} onReorder={reorderClientes} onScheduleMf={scheduleMf} toast={showToast} />}
         {tab === 'diario' && <MobileDiarioTab entries={entries} date={date} />}
         {tab === 'caixa' && <MobileCaixaTab entries={entries} expenses={todaysExpenses} expensesTotal={expensesTotal} viagens={viagensComProgresso} date={date} pendingStops={pendingStops.length} onCloseDay={closeDay} onOpenViagens={openViagens} dayClosed={dayClosed} closingDay={closingDay} />}

@@ -311,6 +311,23 @@
 .mob-trip-head{display:flex;align-items:center;gap:12px}
 .mob-trip-head .mob-row-main b{font-size:calc(16px * var(--s))}
 .mob-trip-head .mob-row-main small{font-size:calc(12px * var(--s))}
+.mob-trip-preflight{display:flex;flex-direction:column;gap:12px;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--neutral-100);color:var(--text)}
+.mob-trip-preflight>b:first-child{font-size:calc(16px * var(--s))}
+.mob-preflight-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.mob-preflight-stats>div{display:flex;flex-direction:column;gap:3px;min-width:0;padding:9px 10px;background:var(--neutral-200);border-radius:8px}
+.mob-preflight-stats small{color:var(--neutral-700);font-size:calc(11px * var(--s))}
+.mob-preflight-stats strong{font-size:calc(14px * var(--s));overflow-wrap:anywhere}
+.mob-preflight-label{font-size:calc(13px * var(--s))}
+.mob-preflight-stops{display:grid;gap:8px;max-height:220px;overflow:auto;margin:0;padding:0;list-style:none}
+.mob-preflight-stops li{display:flex;align-items:flex-start;gap:9px;min-width:0}
+.mob-preflight-stops li>span{display:grid;place-items:center;flex:none;width:26px;height:26px;border-radius:8px;background:var(--neutral-200);font-size:calc(11px * var(--s));font-weight:800}
+.mob-preflight-stops li>div{display:flex;flex-direction:column;gap:2px;min-width:0;padding-top:2px}
+.mob-preflight-stops li b{font-size:calc(13px * var(--s));overflow-wrap:anywhere}
+.mob-preflight-stops li small{color:var(--neutral-700);font-size:calc(11px * var(--s));overflow-wrap:anywhere}
+.mob-preflight-note,.mob-preflight-warning{display:flex;align-items:flex-start;gap:7px;margin:0;font-size:calc(12px * var(--s));line-height:1.4}
+.mob-preflight-note{color:var(--neutral-700)}
+.mob-preflight-warning{padding:9px 10px;border-radius:8px;background:var(--warn-100);color:var(--warn-800)}
+.mob-preflight-note svg,.mob-preflight-warning svg{flex:none;margin-top:1px}
 .mob-editor{display:flex;flex-direction:column;gap:10px;padding-left:12px;border-left:4px solid var(--text)}
 .mob-mfblock{display:flex;flex-direction:column;background:var(--warn-100);border:1px solid var(--warn-300);color:var(--warn-800)}
 .mob-mfblock-head{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--warn-300)}
