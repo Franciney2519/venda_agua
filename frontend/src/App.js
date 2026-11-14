@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import axios from "axios";
 import { BrowserRouter, Routes, Route, NavLink, Navigate, Link } from "react-router-dom";
-import { LayoutDashboard, Truck, Package, WalletCards, Users, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, Clock3, CircleDollarSign, BarChart3, Save, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle, CalendarCheck, Wallet, Eye, EyeOff, Minus, Sun, Moon, Camera, Search, Fuel, Utensils, Wrench, Receipt, ChevronRight, RefreshCw, Eraser, Percent, Route as RouteIcon, Ellipsis, ArrowRight, ArrowLeft, ChevronUp, ChevronDown, CircleCheck, CircleX, TriangleAlert, Flag, Lock, QrCode, Banknote, Split, CalendarClock, MessageCircle, MessageSquareText, Hand, Play, GripVertical } from "lucide-react";
+import { LayoutDashboard, Truck, Package, WalletCards, Users, LogOut, Plus, Menu, X, Droplets, ArrowUpRight, AlertTriangle, Clock3, CircleDollarSign, BarChart3, Save, Loader2, FileDown, FileText, ShieldCheck, UserPlus, KeyRound, Trash2, Pencil, Activity, Check, XCircle, CalendarCheck, Wallet, Eye, EyeOff, Minus, Sun, Moon, Camera, Search, Fuel, Utensils, Wrench, Receipt, ChevronRight, RefreshCw, Eraser, Percent, Route as RouteIcon, Ellipsis, ArrowRight, ArrowLeft, ChevronUp, ChevronDown, CircleCheck, CircleX, TriangleAlert, Flag, Lock, QrCode, Banknote, Split, CalendarClock, MessageCircle, MessageSquareText, Hand, Play, GripVertical, BellRing, Volume2 } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import logoImg from "./assets/logo.png";
@@ -3189,8 +3189,19 @@ function MobileDespesasTab({ user, date, viagens, viagemAtiva, onOpenViagens, da
   </>
 }
 
-function MobileAjustesTab({ user, theme, setTheme, scale, setTextScale, onLogout, onSwitchRole }) {
+function MobileAjustesTab({ user, theme, setTheme, scale, setTextScale, routeAlertsEnabled, routeAlertMessage, onEnableRouteAlerts, onDisableRouteAlerts, onTestRouteAlert, onLogout, onSwitchRole }) {
   return <>
+    <section className="mob-field">
+      <b className="mob-label">Alertas de novas rotas</b>
+      <p className="mob-muted">Receba uma notificação com a logo, vibração e som quando uma rota nova aparecer. Ao concluir uma rota, o app anuncia se há uma próxima ou se as viagens terminaram. Os avisos funcionam com o app aberto e visível, não minimizado ou fechado; a vibração depende do suporte do celular.</p>
+      {routeAlertMessage && <p className="mob-muted" role="status">{routeAlertMessage}</p>}
+      {routeAlertsEnabled
+        ? <div className="mob-grid2">
+          <MobBtn kind="outline" lead={Volume2} data-testid="mob-route-alert-test" onClick={onTestRouteAlert}>Testar alerta</MobBtn>
+          <MobBtn kind="outline" lead={X} data-testid="mob-route-alert-disable" onClick={onDisableRouteAlerts}>Desativar</MobBtn>
+        </div>
+        : <MobBtn kind="outline" lead={BellRing} data-testid="mob-route-alert-enable" onClick={onEnableRouteAlerts}>Ativar alertas</MobBtn>}
+    </section>
     <section className="mob-field">
       <b className="mob-label">Tamanho do texto</b>
       <div className="mob-seg">{MOBILE_SCALES.map(([v, label]) => <button type="button" key={v} className={scale === v ? 'on' : ''} style={{ fontSize: `${16 * v}px` }} data-testid={`mob-scale-${v}`} onClick={() => setTextScale(v)}>{label}</button>)}</div>
@@ -3233,11 +3244,113 @@ function DriverMobileApp({ user, customers, onLogout, onSwitchRole, onCustomerUp
   const [toast, setToast] = useState('');
   const [wide, setWide] = useState(false);
   const rootRef = useRef(null);
+  const routeAlertsKey = `hydro_route_alerts:${user.id || user.name}`;
+  const [routeAlertsEnabled, setRouteAlertsEnabled] = useState(() => localStorage.getItem(routeAlertsKey) === 'true');
+  const [routeAlertMessage, setRouteAlertMessage] = useState('');
+  const routeAlertAudioRef = useRef(null);
+  const observedTripIdsRef = useRef(null);
   // A rolagem é do mesmo contêiner para todas as abas: cada aba abre do topo.
   const mainRef = useRef(null);
   useEffect(() => { if (mainRef.current) mainRef.current.scrollTop = 0; }, [tab]);
   const toastTimer = useRef(null);
   const date = todayISO(0);
+
+  useEffect(() => {
+    if (routeAlertsEnabled && (!('Notification' in window) || Notification.permission !== 'granted')) {
+      localStorage.removeItem(routeAlertsKey);
+      setRouteAlertsEnabled(false);
+      setRouteAlertMessage('A permissão de notificações foi removida. Ative os alertas novamente para continuar.');
+    }
+  }, [routeAlertsEnabled, routeAlertsKey]);
+
+  function playRouteAlertSound() {
+    const AudioContextType = window.AudioContext || window.webkitAudioContext;
+    const context = routeAlertAudioRef.current;
+    if (!context || !AudioContextType) {
+      setRouteAlertMessage('O navegador não oferece reprodução de som para alertas.');
+      return;
+    }
+    const play = () => {
+      const now = context.currentTime;
+      [[740, 0], [988, 0.2]].forEach(([frequency, offset]) => {
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        const start = now + offset;
+        oscillator.frequency.value = frequency;
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(0.14, start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.17);
+        oscillator.connect(gain);
+        gain.connect(context.destination);
+        oscillator.start(start);
+        oscillator.stop(start + 0.18);
+      });
+    };
+    if (context.state === 'suspended') context.resume().then(play).catch(() => setRouteAlertMessage('O navegador bloqueou o som. Toque em Testar alerta para liberar o áudio.'));
+    else play();
+  }
+
+  function showRouteNotification(title, body, tag) {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    const options = { body, icon: '/icon-192.png', badge: '/icon-192.png', tag, renotify: true, vibrate: [250, 120, 250], data: { url: '/' } };
+    const display = async () => {
+      const registration = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null;
+      if (registration) {
+        await registration.showNotification(title, options);
+        return;
+      }
+      const notification = new Notification(title, options);
+      notification.onclick = () => { window.focus(); notification.close(); };
+    };
+    display().catch(() => setRouteAlertMessage('Não foi possível exibir a notificação. Confira a permissão de notificações do celular.'));
+  }
+
+  function alertForNewRoute(trip, test = false) {
+    if (!routeAlertsEnabled) return;
+    const label = trip.numero ? `Rota ${trip.numero}` : 'Nova rota';
+    const title = test ? 'Teste de alerta' : 'Nova rota disponível';
+    const body = test ? 'Som, vibração e notificação estão ativos.' : `${label} foi atribuída para você.`;
+    if (navigator.vibrate) navigator.vibrate([250, 120, 250]);
+    playRouteAlertSound();
+    showToast(test ? 'Teste de alerta enviado.' : `${label} atribuída para você.`, 5000);
+    showRouteNotification(title, body, test ? `route-alert-test-${Date.now()}` : `route-${trip.id}`);
+  }
+
+  async function enableRouteAlerts() {
+    if (!('Notification' in window)) {
+      setRouteAlertMessage('Este navegador não oferece notificações. Tente instalar o app no celular.');
+      return;
+    }
+    const AudioContextType = window.AudioContext || window.webkitAudioContext;
+    if (AudioContextType) {
+      try {
+        routeAlertAudioRef.current = new AudioContextType();
+        await routeAlertAudioRef.current.resume();
+      } catch {
+        setRouteAlertMessage('O navegador pode bloquear o som. Use Testar alerta após ativar as notificações.');
+      }
+    }
+    try {
+      const permission = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission;
+      if (permission !== 'granted') {
+        setRouteAlertMessage(permission === 'denied'
+          ? 'Notificações bloqueadas. Libere a permissão nas configurações do navegador ou do celular.'
+          : 'Permita as notificações para receber alertas de novas rotas.');
+        return;
+      }
+      localStorage.setItem(routeAlertsKey, 'true');
+      setRouteAlertsEnabled(true);
+      setRouteAlertMessage('Alertas ativados. Faça um teste para confirmar o som e a vibração.');
+    } catch {
+      setRouteAlertMessage('Não foi possível ativar os alertas. Confira as permissões do navegador.');
+    }
+  }
+
+  function disableRouteAlerts() {
+    localStorage.removeItem(routeAlertsKey);
+    setRouteAlertsEnabled(false);
+    setRouteAlertMessage('Alertas desativados.');
+  }
 
   useEffect(() => {
     const el = rootRef.current;
@@ -3252,10 +3365,16 @@ function DriverMobileApp({ user, customers, onLogout, onSwitchRole, onCustomerUp
 
   async function loadEntries() { const { data } = await api.get('/daily-entries', { ...auth(), params: { driver: user.name } }); setEntries(data); }
   async function loadViagens() {
-    const { data } = await api.get('/viagens', { ...auth(), params: { date } }); setViagens(data.viagens);
+    const { data } = await api.get('/viagens', { ...auth(), params: { date } });
+    const nextTrips = data.viagens || [];
+    const observedIds = observedTripIdsRef.current;
+    const newTrips = observedIds ? nextTrips.filter(trip => !observedIds.has(trip.id)) : [];
+    observedTripIdsRef.current = new Set(nextTrips.map(trip => trip.id));
+    if (newTrips.length) newTrips.forEach(trip => alertForNewRoute(trip));
+    setViagens(nextTrips);
     // Viagem de outro dia que ficou em execução bloqueia o início das de hoje.
     try { const { data: abertas } = await api.get('/viagens', { ...auth(), params: { status: 'execucao' } }); setViagensPresas(abertas.viagens.filter(v => v.date !== date && v.status === 'execucao')); } catch { /* ignore */ }
-    return data.viagens;
+    return nextTrips;
   }
   async function loadExpenses() { const { data } = await api.get('/expenses', auth()); setTodaysExpenses(data.filter(x => (x.driver || '') === user.name && manausDate(x.created_at) === date && x.status !== 'rejected')); }
   async function loadMfPending() { try { const { data } = await api.get('/mf-pendentes', auth()); setMfPending(data.filter(m => !m.scheduled_viagem_id)); } catch { /* ignore */ } }
@@ -3290,7 +3409,12 @@ function DriverMobileApp({ user, customers, onLogout, onSwitchRole, onCustomerUp
   const inTripIds = new Set(stops.map(s => s.id));
   const offRoute = viagemAtiva && q ? customers.filter(c => !inTripIds.has(c.id) && (c.name.toLowerCase().includes(q) || (c.code || '').toLowerCase().includes(q) || (c.address || '').toLowerCase().includes(q))) : [];
 
-  async function createViagem(payload) { const { data } = await api.post('/viagens', payload, auth()); await loadViagens(); return data; }
+  async function createViagem(payload) {
+    const { data } = await api.post('/viagens', payload, auth());
+    if (observedTripIdsRef.current && data.id) observedTripIdsRef.current.add(data.id);
+    await loadViagens();
+    return data;
+  }
   async function iniciarViagem(v) {
     const rotaAnterior = [...viagens].reverse().find(x => x.status === 'finalizada');
     await api.post(`/viagens/${v.id}/iniciar`, {}, auth());
@@ -3305,6 +3429,21 @@ function DriverMobileApp({ user, customers, onLogout, onSwitchRole, onCustomerUp
     const [viagensAtualizadas] = await Promise.all([loadViagens(), loadMfPending()]);
     const proximaRota = viagensAtualizadas.find(x => x.status === 'planejada');
     showToast(proximaRota ? `Rota ${v.numero} concluída. Próxima: Rota ${proximaRota.numero}.` : `Rota ${v.numero} concluída.`);
+    if (routeAlertsEnabled) {
+      const message = proximaRota
+        ? `Rota concluída. Vamos seguir para a próxima, rota ${proximaRota.numero}.`
+        : 'Viagens encerradas, até a próxima.';
+      if (window.speechSynthesis && window.SpeechSynthesisUtterance) {
+        window.speechSynthesis.cancel();
+        const utterance = new window.SpeechSynthesisUtterance(message);
+        utterance.lang = 'pt-BR';
+        utterance.rate = 0.95;
+        window.speechSynthesis.speak(utterance);
+      } else {
+        playRouteAlertSound();
+      }
+      if (navigator.vibrate) navigator.vibrate([120, 80, 120]);
+    }
   }
   async function deleteViagem(v) { await api.delete(`/viagens/${v.id}`, auth()); await Promise.all([loadViagens(), loadMfPending()]); }
   async function addRota(viagemId, payload) { const { data } = await api.post(`/viagens/${viagemId}/rotas`, payload, auth()); await loadViagens(); return data; }
@@ -3383,7 +3522,7 @@ function DriverMobileApp({ user, customers, onLogout, onSwitchRole, onCustomerUp
         {tab === 'diario' && <MobileDiarioTab entries={entries} date={date} viagens={viagensComProgresso} />}
         {tab === 'caixa' && <MobileCaixaTab entries={entries} expenses={todaysExpenses} expensesTotal={expensesTotal} viagens={viagensComProgresso} date={date} pendingStops={pendingStops.length} onCloseDay={closeDay} onOpenViagens={openViagens} dayClosed={dayClosed} closingDay={closingDay} />}
         {tab === 'despesas' && <MobileDespesasTab user={user} date={date} viagens={viagensComProgresso} viagemAtiva={viagemAtiva} onOpenViagens={openViagens} dayClosed={dayClosed} toast={showToast} />}
-        {tab === 'mais' && <MobileAjustesTab user={user} theme={theme} setTheme={setTheme} scale={scale} setTextScale={setTextScale} onLogout={onLogout} onSwitchRole={onSwitchRole} />}
+        {tab === 'mais' && <MobileAjustesTab user={user} theme={theme} setTheme={setTheme} scale={scale} setTextScale={setTextScale} routeAlertsEnabled={routeAlertsEnabled} routeAlertMessage={routeAlertMessage} onEnableRouteAlerts={enableRouteAlerts} onDisableRouteAlerts={disableRouteAlerts} onTestRouteAlert={() => alertForNewRoute({}, true)} onLogout={onLogout} onSwitchRole={onSwitchRole} />}
       </div></main>
       {/* No tablet, o painel lateral só aparece quando há parada para lançar; fora disso a tela usa a largura toda. */}
       {(launchStop || (wide && tab === 'rota' && viagemAtiva && pendingStops.length > 0)) && <aside className={`mob-panel ${wide ? 'side' : 'cover'}${launchStop ? '' : ' empty'}`} data-testid="mob-launch-panel">
